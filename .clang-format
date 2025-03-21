@@ -1,0 +1,94 @@
+Language: Cpp
+Standard: Latest
+UseTab: Never
+IndentWidth: 2
+TabWidth: 2
+
+AccessModifierOffset: -2
+
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+BinPackArguments: false
+BinPackParameters: false
+
+PenaltyExcessCharacter: 20              
+ColumnLimit: 120                        
+
+AlignAfterOpenBracket: AlwaysBreak  
+AlignOperands: Align              
+AllowAllParametersOfDeclarationOnNextLine: false
+
+BreakBeforeBinaryOperators: NonAssignment
+PenaltyBreakBeforeFirstCallParameter: 200
+PenaltyBreakOpenParenthesis: 0      
+Cpp11BracedListStyle: true          
+AlignConsecutiveAssignments: true   
+AlignConsecutiveDeclarations: true  
+SpaceBeforeCpp11BracedList: false
+
+BreakConstructorInitializers: AfterColon
+
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+SeparateDefinitionBlocks: Always    
+EmptyLineBeforeAccessModifier: Always  
+EmptyLineAfterAccessModifier: Always   
+
+ReflowComments: true          
+CommentPragmas: '^ NOTE:'         
+
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+BreakInheritanceList: BeforeColon
+FixNamespaceComments: true
+
+NamespaceIndentation: None
+QualifierAlignment: Left
+SortIncludes: CaseSensitive
+SortUsingDeclarations: true
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+IndentWrappedFunctionNames: false
+
+SpaceBeforeParens: Never
+SpaceInEmptyBlock: false
+SpacesInContainerLiterals: false
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceBeforeAssignmentOperators: true
+
+SpaceBeforeInheritanceColon: true
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceBeforeSquareBrackets: false
+SpacesInAngles: Never
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+BreakStringLiterals: false
+
+IncludeCategories:
+  - Regex:           '^<.*\.h>'
+    Priority:        2
+  - Regex:           '^<.*'
+    Priority:        3
+  - Regex:           '.*'
+    Priority:        4
