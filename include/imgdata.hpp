@@ -328,26 +328,26 @@ private:
 
   static const inline pair<int, int> resolution = {2048, 2048};
 
-  static const struct ExifKey {
+  struct ExifKey {
     static const inline string latitude = "Exif.GPSInfo.GPSLatitude", longitude = "Exif.GPSInfo.GPSLongitude",
                                altitude = "Exif.GPSInfo.GPSAltitude", model = "Exif.Image.Model",
                                focal_length = "Exif.Photo.FocalLength";
     static const inline vector<string> keys = {latitude, longitude, altitude, model, focal_length};
-  } exif_keys;
+  };
 
-  static const struct XmpKey {
+  struct XmpKey {
     static const inline string latitude = "Xmp.drone-dji.GpsLatitude", longitude = "Xmp.drone-dji.GpsLongitude",
                                altitude = "Xmp.drone-dji.RelativeAltitude", yaw = "Xmp.drone-dji.GimbalYawDegree",
                                pitch = "Xmp.drone-dji.GimbalPitchDegree", roll = "Xmp.drone-dji.GimbalRollDegree";
     static const inline vector<string> keys = {latitude, longitude, altitude, yaw, pitch, roll};
-  } xmp_keys;
+  };
 
   static const inline unordered_set<string> extensions =
       {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
 
-  template <typename U, typename E, typename T>
-  static optional<string> validate(const T& data, const E& keys) {
-    for(const auto& key : keys.keys) {
+  template <typename U, typename T>
+  static optional<string> validate(const T& data, const vector<string>& keys) {
+    for(const auto& key : keys) {
       if(data.findKey(U(key)) == data.end()) {
         std::stringstream ss;
         ss << "Error: Key " << key << " not found\n";
@@ -378,12 +378,12 @@ public:
     if(exif.empty() || xmp.empty()) {
       return nullopt;
     }
-    optional<string> res = validate<Exiv2::ExifKey>(exif, exif_keys);
+    optional<string> res = validate<Exiv2::ExifKey>(exif, ExifKey::keys);
     if(res.has_value()) {
       cerr << path << " " << res.value();
       return nullopt;
     }
-    res = validate<Exiv2::XmpKey>(xmp, xmp_keys);
+    res = validate<Exiv2::XmpKey>(xmp, XmpKey::keys);
     if(res.has_value()) {
       cerr << path << " " << res.value();
       return nullopt;
@@ -398,19 +398,19 @@ public:
     if(factor > 1.0) {
       cv::resize(img, img, cv::Size(), 1.0 / factor, 1.0 / factor, cv::INTER_AREA);
     }
-    auto intrinsic = IntrinsicFactory::build(
-        exif[exif_keys.model].toString(), exif[exif_keys.focal_length].toFloat(), img.cols, img.rows);
+    auto intrinsic =
+        IntrinsicFactory::build(exif[ExifKey::model].toString(), exif[ExifKey::focal_length].toFloat(), img.cols, img.rows);
     if(!intrinsic.has_value()) {
       return nullopt;
     }
     return ImgData(
         move(Coordinate(
-            xmp[xmp_keys.yaw].toFloat(),
-            xmp[xmp_keys.pitch].toFloat(),
-            xmp[xmp_keys.roll].toFloat(),
-            xmp[xmp_keys.latitude].toFloat(),
-            xmp[xmp_keys.longitude].toFloat(),
-            xmp[xmp_keys.altitude].toFloat())),
+            xmp[XmpKey::yaw].toFloat(),
+            xmp[XmpKey::pitch].toFloat(),
+            xmp[XmpKey::roll].toFloat(),
+            xmp[XmpKey::latitude].toFloat(),
+            xmp[XmpKey::longitude].toFloat(),
+            xmp[XmpKey::altitude].toFloat())),
         move(intrinsic.value()),
         move(path),
         move(exif),
