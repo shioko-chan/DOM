@@ -1,3 +1,6 @@
+#ifndef IMGDATA_HPP
+#define IMGDATA_HPP
+
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -6,6 +9,7 @@
 #include <iostream>
 #include <optional>
 #include <ranges>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -102,7 +106,7 @@ private:
 
   Angle            yaw, pitch, roll;
   Property<double> latitude, longitude, altitude;
-  cv::Mat          R_, t_;
+  cv::Mat          R_, t_, T_;
 
 public:
 
@@ -140,11 +144,14 @@ public:
     m1_.copyTo(R_);
     cv::Mat m2_ = (cv::Mat_<double>(3, 1) << latitude.get(), longitude.get(), altitude.get());
     m2_.copyTo(t_);
+    cv::hconcat(R_, t_, T_);
   }
 
   const cv::Mat& R() const { return R_; }
 
   const cv::Mat& t() const { return t_; }
+
+  const cv::Mat& T() const { return T_; }
 
   friend ostream& operator<<(ostream& os, const Coordinate& coord) {
     os << "Yaw: " << coord.yaw << "\n"
@@ -190,7 +197,8 @@ class IntrinsicFactory {
 private:
 
   static unordered_map<string, double> build_sensor_width_database() {
-    fs::path                      sensor_width_database_path(SENSOR_WIDTH_DATABASE);
+    fs::path sensor_width_database_path(SENSOR_WIDTH_DATABASE);
+
     unordered_map<string, double> sensor_width_database;
     if(!fs::exists(sensor_width_database_path)) {
       cerr << "Error: Sensor width database not found\n";
@@ -203,10 +211,9 @@ private:
     }
     string line;
     while(std::getline(ifs, line)) {
-      vector<string> tokens;
-      for(auto&& token_range : views::split(line, ';')) {
-        tokens.emplace_back(token_range.begin(), token_range.end());
-      }
+      auto v = line | views::split(';')
+               | views::transform([](auto token_range) { return string(token_range.begin(), token_range.end()); });
+      vector<string> tokens(v.begin(), v.end());
       if(tokens.size() != 2) {
         cerr << "Error: Invalid sensor width entry format of the line: " << line << "\n";
         continue;
@@ -238,6 +245,7 @@ public:
   Property<Exiv2::ExifData> exif;
   Property<Exiv2::XmpData>  xmp;
   Property<cv::Mat>         img, ortho;
+
   ImgData() = delete;
 
   explicit ImgData(
@@ -249,7 +257,7 @@ public:
       cv::Mat&&         img) :
       coord(move(coord)), intrinsic(move(intrinsic)), path(move(path)), exif(move(exif)), xmp(move(xmp)),
       img(move(img)) {
-    ortho = Property<cv::Mat>(orthorectify());
+    ortho = Property<cv::Mat>(orthorectify(img.cols, img.rows));
   }
 
   friend ostream& operator<<(ostream& os, const ImgData& data) {
@@ -269,7 +277,50 @@ public:
     output_img->writeMetadata();
   }
 
-  cv::Mat orthorectify() {}
+  void write_ortho(const fs::path& output_path) const {
+    cv::imwrite(output_path.string(), ortho.get());
+    Exiv2::ExifData info           = exif.get();
+    info["Exif.Image.ImageWidth"]  = ortho.get().cols;
+    info["Exif.Image.ImageLength"] = ortho.get().rows;
+    auto output_img                = Exiv2::ImageFactory::open(output_path.string());
+    output_img->setExifData(info);
+    output_img->writeMetadata();
+  }
+
+private:
+
+  cv::Point2d project(const cv::Point2d& point) {
+    cv::Mat point_ = (cv::Mat_<double>(3, 1) << point.x, point.y, 1);
+    double  gamma  = -cv::Mat(coord.t().at<double>(2, 0) / (coord.R().row(2) * intrinsic.camera_matrix.inv() * point_))
+                        .at<double>(0, 0);
+    cv::Mat xyz_c = gamma * intrinsic.camera_matrix.inv() * point_;
+    cv::Mat xyz_c_homo =
+        (cv::Mat_<double>(4, 1) << xyz_c.at<double>(0, 0), xyz_c.at<double>(1, 0), xyz_c.at<double>(2, 0), 1);
+    cv::Mat xy_w = coord.T().rowRange(0, 1) * xyz_c_homo;
+    return cv::Point2d(xy_w.at<double>(0, 0), xy_w.at<double>(0, 1));
+  }
+
+  cv::Mat orthorectify(const double w, const double h) {
+    vector<cv::Point2d> src = {cv::Point2d(0, 0), cv::Point2d(w, 0), cv::Point2d(w, h), cv::Point2d(0, h)}, dst;
+    std::transform(src.begin(), src.end(), std::back_inserter(dst), [this](auto&& point) { return project(point); });
+    cv::Point2d min_ =
+        std::accumulate(dst.begin(), dst.end(), cv::Point2d(0.0, 0.0), [](cv::Point2d min_, auto&& point) {
+          return cv::Point2d(std::min(point.x, min_.x), std::min(point.y, min_.y));
+        });
+    std::for_each(dst.begin(), dst.end(), [&min_](auto&& point) {
+      point.x -= min_.x;
+      point.y -= min_.y;
+    });
+    cv::Size dst_size = std::accumulate(dst.begin(), dst.end(), cv::Size(0, 0), [](cv::Size cur, auto&& point) {
+      return cv::Size(
+          std::max(cur.width, static_cast<int>(std::ceil(point.x))),
+          std::max(cur.height, static_cast<int>(std::ceil(point.y))));
+    });
+    cv::Mat  M        = cv::getPerspectiveTransform(src, dst);
+    cv::Mat  dst_img;
+    cv::warpPerspective(img.get(), dst_img, M, dst_size, cv::INTER_CUBIC);
+    return dst_img;
+  }
 };
 
 class ImgDataFactory {
@@ -277,47 +328,38 @@ private:
 
   static const inline pair<int, int> resolution = {2048, 2048};
 
-  static const struct {
+  static const struct ExifKey {
     static const inline string latitude = "Exif.GPSInfo.GPSLatitude", longitude = "Exif.GPSInfo.GPSLongitude",
                                altitude = "Exif.GPSInfo.GPSAltitude", model = "Exif.Image.Model",
                                focal_length = "Exif.Photo.FocalLength";
+    static const inline vector<string> keys = {latitude, longitude, altitude, model, focal_length};
   } exif_keys;
 
-  static const struct {
+  static const struct XmpKey {
     static const inline string latitude = "Xmp.drone-dji.GpsLatitude", longitude = "Xmp.drone-dji.GpsLongitude",
                                altitude = "Xmp.drone-dji.RelativeAltitude", yaw = "Xmp.drone-dji.GimbalYawDegree",
                                pitch = "Xmp.drone-dji.GimbalPitchDegree", roll = "Xmp.drone-dji.GimbalRollDegree";
+    static const inline vector<string> keys = {latitude, longitude, altitude, yaw, pitch, roll};
   } xmp_keys;
-
-  template <typename T>
-    requires(std::tuple_size_v<std::decay_t<T>> >= 0 && std::is_lvalue_reference_v<T>)
-  auto each_member(T&& t) {
-    constexpr auto size = std::tuple_size_v<std::remove_cvref_t<T>>;
-    return each_member_impl(std::forward<T>(t), std::make_index_sequence<size>());
-  }
-
-  template <typename T, size_t... Is>
-  auto each_member_impl(T&& t, std::index_sequence<Is...>) {
-    using ElemT = std::tuple_element_t<Is, std::remove_cvref_t<T>>;
-    return std::vector<std::reference_wrapper<ElemT>>{std::ref(std::get<Is>(t))...};
-  }
 
   static const inline unordered_set<string> extensions =
       {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
 
   template <typename U, typename E, typename T>
-  static bool validate(const T& data, const E& keys) {
-    for(const auto& key : each_member(keys)) {
+  static optional<string> validate(const T& data, const E& keys) {
+    for(const auto& key : keys.keys) {
       if(data.findKey(U(key)) == data.end()) {
-        return false;
+        std::stringstream ss;
+        ss << "Error: Key " << key << " not found\n";
+        return ss.str();
       }
     }
-    return true;
+    return nullopt;
   }
 
 public:
 
-  static optional<ImgData> build(fs::path& path) {
+  static optional<ImgData> build(fs::path path) {
     if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
       return nullopt;
     }
@@ -336,7 +378,14 @@ public:
     if(exif.empty() || xmp.empty()) {
       return nullopt;
     }
-    if(!validate<Exiv2::ExifKey>(exif, exif_keys) || !validate<Exiv2::XmpKey>(xmp, xmp_keys)) {
+    optional<string> res = validate<Exiv2::ExifKey>(exif, exif_keys);
+    if(res.has_value()) {
+      cerr << path << " " << res.value();
+      return nullopt;
+    }
+    res = validate<Exiv2::XmpKey>(xmp, xmp_keys);
+    if(res.has_value()) {
+      cerr << path << " " << res.value();
       return nullopt;
     }
     cv::Mat img = cv::imread(path.string());
@@ -370,3 +419,5 @@ public:
   }
 };
 } // namespace Ortho
+
+#endif
