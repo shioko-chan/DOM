@@ -142,7 +142,8 @@ public:
     // clang-format on
     cv::Mat m1_ = yaw_ * pitch_ * roll_;
     m1_.copyTo(R_);
-    cv::Mat m2_ = (cv::Mat_<double>(3, 1) << latitude.get(), longitude.get(), altitude.get());
+    // cv::Mat m2_ = (cv::Mat_<double>(3, 1) << latitude.get(), longitude.get(), altitude.get());
+    cv::Mat m2_ = (cv::Mat_<double>(3, 1) << 0.0, 0.0, altitude.get());
     m2_.copyTo(t_);
     cv::hconcat(R_, t_, T_);
   }
@@ -215,7 +216,7 @@ private:
                | views::transform([](auto token_range) { return string(token_range.begin(), token_range.end()); });
       vector<string> tokens(v.begin(), v.end());
       if(tokens.size() != 2) {
-        cerr << "Error: Invalid sensor width entry format of the line: " << line << "\n";
+        // cerr << "Error: Invalid sensor width entry format of the line: " << line << "\n";
         continue;
       }
       sensor_width_database[tokens[0]] = std::stod(tokens[1]);
@@ -229,7 +230,7 @@ public:
 
   static optional<Intrinsic> build(const string& sensor, const double& focal, const double& w, const double& h) {
     if(sensor_width_database.count(sensor) == 0) {
-      cerr << "Error: Sensor width not found in the database\n";
+      cerr << "Error: Sensor width not found in the database. Sensor name is " << sensor << "\n";
       return nullopt;
     }
     return Intrinsic(sensor_width_database.at(sensor), focal, w, h);
@@ -328,26 +329,26 @@ private:
 
   static const inline pair<int, int> resolution = {2048, 2048};
 
-  static const struct ExifKey {
+  struct ExifKey {
     static const inline string latitude = "Exif.GPSInfo.GPSLatitude", longitude = "Exif.GPSInfo.GPSLongitude",
                                altitude = "Exif.GPSInfo.GPSAltitude", model = "Exif.Image.Model",
-                               focal_length = "Exif.Photo.FocalLength";
-    static const inline vector<string> keys = {latitude, longitude, altitude, model, focal_length};
-  } exif_keys;
+                               make = "Exif.Image.Make", focal_length = "Exif.Photo.FocalLength";
+    static const inline vector<string> keys = {latitude, longitude, altitude, model, make, focal_length};
+  };
 
-  static const struct XmpKey {
+  struct XmpKey {
     static const inline string latitude = "Xmp.drone-dji.GpsLatitude", longitude = "Xmp.drone-dji.GpsLongitude",
                                altitude = "Xmp.drone-dji.RelativeAltitude", yaw = "Xmp.drone-dji.GimbalYawDegree",
                                pitch = "Xmp.drone-dji.GimbalPitchDegree", roll = "Xmp.drone-dji.GimbalRollDegree";
     static const inline vector<string> keys = {latitude, longitude, altitude, yaw, pitch, roll};
-  } xmp_keys;
+  };
 
   static const inline unordered_set<string> extensions =
       {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
 
-  template <typename U, typename E, typename T>
-  static optional<string> validate(const T& data, const E& keys) {
-    for(const auto& key : keys.keys) {
+  template <typename U, typename T>
+  static optional<string> validate(const T& data, const vector<string>& keys) {
+    for(const auto& key : keys) {
       if(data.findKey(U(key)) == data.end()) {
         std::stringstream ss;
         ss << "Error: Key " << key << " not found\n";
@@ -378,12 +379,12 @@ public:
     if(exif.empty() || xmp.empty()) {
       return nullopt;
     }
-    optional<string> res = validate<Exiv2::ExifKey>(exif, exif_keys);
+    optional<string> res = validate<Exiv2::ExifKey>(exif, ExifKey::keys);
     if(res.has_value()) {
       cerr << path << " " << res.value();
       return nullopt;
     }
-    res = validate<Exiv2::XmpKey>(xmp, xmp_keys);
+    res = validate<Exiv2::XmpKey>(xmp, XmpKey::keys);
     if(res.has_value()) {
       cerr << path << " " << res.value();
       return nullopt;
@@ -398,19 +399,21 @@ public:
     if(factor > 1.0) {
       cv::resize(img, img, cv::Size(), 1.0 / factor, 1.0 / factor, cv::INTER_AREA);
     }
-    auto intrinsic = IntrinsicFactory::build(
-        exif[exif_keys.model].toString(), exif[exif_keys.focal_length].toFloat(), img.cols, img.rows);
+    std::stringstream sensor_name;
+    sensor_name << exif[ExifKey::make].toString() << " " << exif[ExifKey::model].toString();
+    auto intrinsic =
+        IntrinsicFactory::build(sensor_name.str(), exif[ExifKey::focal_length].toFloat(), img.cols, img.rows);
     if(!intrinsic.has_value()) {
       return nullopt;
     }
     return ImgData(
         move(Coordinate(
-            xmp[xmp_keys.yaw].toFloat(),
-            xmp[xmp_keys.pitch].toFloat(),
-            xmp[xmp_keys.roll].toFloat(),
-            xmp[xmp_keys.latitude].toFloat(),
-            xmp[xmp_keys.longitude].toFloat(),
-            xmp[xmp_keys.altitude].toFloat())),
+            xmp[XmpKey::yaw].toFloat(),
+            xmp[XmpKey::pitch].toFloat(),
+            xmp[XmpKey::roll].toFloat(),
+            xmp[XmpKey::latitude].toFloat(),
+            xmp[XmpKey::longitude].toFloat(),
+            xmp[XmpKey::altitude].toFloat())),
         move(intrinsic.value()),
         move(path),
         move(exif),
