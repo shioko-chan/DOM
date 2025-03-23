@@ -20,11 +20,11 @@
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "utility/imgdata.hpp"
-#include "utility/progress.hpp"
+#include "imgdata.hpp"
+#include "progress.hpp"
 
-namespace fs = std::filesystem;
-namespace views = std::views;
+namespace fs     = std::filesystem;
+namespace views  = std::views;
 namespace ranges = std::ranges;
 
 using std::cerr;
@@ -34,8 +34,8 @@ using std::string;
 using std::vector;
 
 cv::Mat computeHomography(const cv::Mat& cameraMatrix, const cv::Mat& R, const cv::Mat& t) {
-  cv::Mat r1 = R.col(0);
-  cv::Mat r2 = R.col(1);
+  cv::Mat r1        = R.col(0);
+  cv::Mat r2        = R.col(1);
   cv::Mat extrinsic = cv::Mat::zeros(3, 3, CV_64F);
   r1.copyTo(extrinsic.col(0));
   r2.copyTo(extrinsic.col(1));
@@ -86,8 +86,8 @@ cv::Mat generateOrthoImage(const cv::Mat& undistorted, const cv::Mat& H, const O
     for(int x = 0; x < cols; ++x) {
       double  worldX = params.bounds.x + x * params.resolution;
       double  worldY = params.bounds.y + y * params.resolution;
-      cv::Mat pt = (cv::Mat_<double>(3, 1) << worldX, worldY, 1);
-      cv::Mat pixel = H * pt;
+      cv::Mat pt     = (cv::Mat_<double>(3, 1) << worldX, worldY, 1);
+      cv::Mat pixel  = H * pt;
       pixel /= pixel.at<double>(2); // 齐次坐标归一化
       mapX.at<float>(y, x) = pixel.at<double>(0);
       mapY.at<float>(y, x) = pixel.at<double>(1);
@@ -100,23 +100,23 @@ cv::Mat generateOrthoImage(const cv::Mat& undistorted, const cv::Mat& H, const O
 int findMode(auto data) {
   std::unordered_map<int, int> freqMap;
   int                          maxCount = 0;
-  int                          mode = static_cast<int>(std::round(data[0]));
+  int                          mode     = static_cast<int>(std::round(data[0]));
 
   for(int num : data) {
     freqMap[num]++;
     if(freqMap[num] > maxCount) {
       maxCount = freqMap[num];
-      mode = num;
+      mode     = num;
     }
   }
   return mode;
 }
 
 auto generate_start_end(int total, int dividor) {
-  int  base = total / dividor;
+  int  base      = total / dividor;
   int  remainder = total % dividor;
-  auto sequence = views::iota(0, dividor) | views::transform([=](int i) { return i < remainder ? base + 1 : base; });
-  std::vector<int> cumulative {0};
+  auto sequence  = views::iota(0, dividor) | views::transform([=](int i) { return i < remainder ? base + 1 : base; });
+  std::vector<int> cumulative{0};
   std::partial_sum(sequence.begin(), sequence.end(), std::back_inserter(cumulative));
   return views::iota(0, dividor)
          | views::transform([cumulative](int i) { return std::make_pair(cumulative[i], cumulative[i + 1]); });
@@ -140,8 +140,8 @@ public:
   std::thread launch(int start, int end) {
     return std::thread([this, start = start, end = end]() {
       for(int i = start; i < end; i++) {
-        auto&       img_data = imgs_data[i];
-        const auto& img = img_data.img.get();
+        auto&       img_data    = imgs_data[i];
+        const auto& img         = img_data.img.get();
         fs::path    output_path = output_dir / img_data.path.get().filename();
         cv::Mat     dst;
 
@@ -166,22 +166,22 @@ public:
         // cv::Mat ortho = generateOrthoImage(img, H, params);
         // fs::path output_path = output_dir / img_data.path.filename();
         // cv::imwrite(output_path.string(), ortho);
-        auto   yaw = img_data.yaw.to_degrees();
+        auto   yaw  = img_data.yaw.to_degrees();
         double diff = avg_yaw - yaw;
         ;
         if(std::abs(std::round(diff)) > 5.0) {
           cv::Point2f center(dst.cols / 2.0f, dst.rows / 2.0f);
           cv::Mat     rot_mat = cv::getRotationMatrix2D(center, diff, 1.0);
-          cv::Rect2f  bbox = cv::RotatedRect(cv::Point2f(), dst.size(), diff).boundingRect2f();
+          cv::Rect2f  bbox    = cv::RotatedRect(cv::Point2f(), dst.size(), diff).boundingRect2f();
           rot_mat.at<double>(0, 2) += bbox.width / 2.0 - dst.cols / 2.0;
           rot_mat.at<double>(1, 2) += bbox.height / 2.0 - dst.rows / 2.0;
           cv::warpAffine(dst, dst, rot_mat, bbox.size(), cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
         }
         cv::imwrite(output_path.string(), dst);
-        Exiv2::ExifData info = img_data.exif.get();
-        info["Exif.Image.ImageWidth"] = dst.cols;
+        Exiv2::ExifData info           = img_data.exif.get();
+        info["Exif.Image.ImageWidth"]  = dst.cols;
         info["Exif.Image.ImageLength"] = dst.rows;
-        auto output_img = Exiv2::ImageFactory::open(output_path.string());
+        auto output_img                = Exiv2::ImageFactory::open(output_path.string());
         output_img->setExifData(info);
         output_img->writeMetadata();
         progress.update();

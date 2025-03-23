@@ -47,15 +47,24 @@ private:
 
 public:
 
-  Property() = delete;
+  explicit Property() : value(T()) {}
 
   explicit Property(const T& value) : value(value) {}
 
   explicit Property(T&& value) : value(move(value)) {}
 
+  Property& operator=(const T& value) = delete;
+
+  Property& operator=(T&& value) {
+    set(value);
+    return *this;
+  }
+
   const T& get() const { return value; }
 
   void set(const T& value) { this->value = value; }
+
+  void set(T&& value) { this->value = move(value); }
 
   friend ostream& operator<<(ostream& os, const Property& prop) {
     os << prop.get();
@@ -93,11 +102,15 @@ private:
 
   Angle            yaw, pitch, roll;
   Property<double> latitude, longitude, altitude;
-  cv::Mat          R_, t_, T_;
+  cv::Mat          R_, t_;
 
 public:
 
   Coordinate() = delete;
+
+  explicit Coordinate(Coordinate&& coord) :
+      yaw(move(coord.yaw)), pitch(move(coord.pitch)), roll(move(coord.roll)), latitude(move(coord.latitude)),
+      longitude(move(coord.longitude)), altitude(move(coord.altitude)), R_(move(coord.R_)), t_(move(coord.t_)) {}
 
   explicit Coordinate(
       const double& yaw_d,
@@ -109,32 +122,29 @@ public:
       yaw(yaw_d), pitch(pitch_d), roll(roll_d), latitude(latitude_d), longitude(longitude_d), altitude(altitude_d) {
     // clang-format off
     cv::Mat yaw_ = (cv::Mat_<double>(3, 3) << 
-      cos(yaw.to_radians()),  -sin(yaw.to_radians()),   0,
-      sin(yaw.to_radians()),   cos(yaw.to_radians()),   0,
-      0,                             0,                 1);
-
+      1,  0,                       0,
+      0,  cos(yaw.to_radians()),  -sin(yaw.to_radians()),
+      0,  sin(yaw.to_radians()),   cos(yaw.to_radians()));
+    
     cv::Mat pitch_ = (cv::Mat_<double>(3, 3) << 
       cos(pitch.to_radians()),  0,  sin(pitch.to_radians()),
       0,                        1,  0,
      -sin(pitch.to_radians()),  0,  cos(pitch.to_radians()));
-    
-     cv::Mat roll_ = (cv::Mat_<double>(3, 3) << 
-      1,  0,                        0,
-      0,  cos(roll.to_radians()),  -sin(roll.to_radians()),
-      0,  sin(roll.to_radians()),   cos(roll.to_radians()));
+
+    cv::Mat roll_ = (cv::Mat_<double>(3, 3) << 
+      cos(roll.to_radians()),  -sin(roll.to_radians()),   0,
+      sin(roll.to_radians()),   cos(roll.to_radians()),   0,
+      0,                        0,                        1);
     // clang-format on
     cv::Mat m1_ = yaw_ * pitch_ * roll_;
     m1_.copyTo(R_);
     cv::Mat m2_ = (cv::Mat_<double>(3, 1) << latitude.get(), longitude.get(), altitude.get());
     m2_.copyTo(t_);
-    cv::hconcat(R_, t_, T_);
   }
 
   const cv::Mat& R() const { return R_; }
 
   const cv::Mat& t() const { return t_; }
-
-  const cv::Mat& T() const { return T_; }
 
   friend ostream& operator<<(ostream& os, const Coordinate& coord) {
     os << "Yaw: " << coord.yaw << "\n"
@@ -145,17 +155,27 @@ public:
        << "Altitude: " << coord.altitude << "\n";
     return os;
   }
-
-  // friend
 };
 
 struct Intrinsic {
   cv::Mat camera_matrix;
   cv::Mat distortion_coefficients;
+
   Intrinsic() = delete;
 
-  explicit Intrinsic(const double& focal, const double& w, const double& h) {
-    cv::Mat m_ = (cv::Mat_<double>(3, 3) << focal, 0, w / 2, 0, focal, h / 2, 0, 0, 1);
+  explicit Intrinsic(Intrinsic&& intrinsic) : camera_matrix(move(intrinsic.camera_matrix)) {}
+
+  Intrinsic(const Intrinsic& intrinsic) : camera_matrix(intrinsic.camera_matrix.clone()) {}
+
+  explicit Intrinsic(const double& sensor_width, const double& focal, const double& w, const double& h) {
+    double pix_f = std::max(w, h) * focal / sensor_width;
+    // clang-format off
+    cv::Mat m_ = (cv::Mat_<double>(3, 3) << 
+      pix_f,      0,  w / 2,
+          0,  pix_f,  h / 2,
+          0,      0,      1
+    );
+    // clang-format on
     m_.copyTo(camera_matrix);
   }
 
@@ -168,8 +188,6 @@ struct Intrinsic {
 
 class IntrinsicFactory {
 private:
-
-  static const unordered_map<string, double> sensor_width_database;
 
   static unordered_map<string, double> build_sensor_width_database() {
     fs::path                      sensor_width_database_path(SENSOR_WIDTH_DATABASE);
@@ -198,6 +216,8 @@ private:
     return sensor_width_database;
   }
 
+  static const inline unordered_map<string, double> sensor_width_database = build_sensor_width_database();
+
 public:
 
   static optional<Intrinsic> build(const string& sensor, const double& focal, const double& w, const double& h) {
@@ -205,14 +225,9 @@ public:
       cerr << "Error: Sensor width not found in the database\n";
       return nullopt;
     }
-    double sensor_width = sensor_width_database.at(sensor);
-    double pixel_focal  = std::max(w, h) * focal / sensor_width;
-    return Intrinsic(pixel_focal, w, h);
+    return Intrinsic(sensor_width_database.at(sensor), focal, w, h);
   }
 };
-
-const unordered_map<string, double> IntrinsicFactory::sensor_width_database =
-    IntrinsicFactory::build_sensor_width_database();
 
 struct ImgData {
 public:
@@ -222,18 +237,20 @@ public:
   Property<fs::path>        path;
   Property<Exiv2::ExifData> exif;
   Property<Exiv2::XmpData>  xmp;
-  Property<cv::Mat>         img;
+  Property<cv::Mat>         img, ortho;
   ImgData() = delete;
 
   explicit ImgData(
-      const Coordinate&      coord,
-      const Intrinsic&       intrinsic,
-      const fs::path&        path,
-      const Exiv2::ExifData& exif,
-      const Exiv2::XmpData&  xmp,
-      const cv::Mat&         img) :
+      Coordinate&&      coord,
+      Intrinsic&&       intrinsic,
+      fs::path&&        path,
+      Exiv2::ExifData&& exif,
+      Exiv2::XmpData&&  xmp,
+      cv::Mat&&         img) :
       coord(move(coord)), intrinsic(move(intrinsic)), path(move(path)), exif(move(exif)), xmp(move(xmp)),
-      img(move(img)) {}
+      img(move(img)) {
+    ortho = Property<cv::Mat>(orthorectify());
+  }
 
   friend ostream& operator<<(ostream& os, const ImgData& data) {
     os << "Path: " << data.path.get() << "\n"
@@ -241,10 +258,24 @@ public:
        << "Coordinate: " << data.coord << "\n";
     return os;
   }
+
+  void write(const fs::path& output_path) const {
+    cv::imwrite(output_path.string(), img.get());
+    Exiv2::ExifData info           = exif.get();
+    info["Exif.Image.ImageWidth"]  = img.get().cols;
+    info["Exif.Image.ImageLength"] = img.get().rows;
+    auto output_img                = Exiv2::ImageFactory::open(output_path.string());
+    output_img->setExifData(info);
+    output_img->writeMetadata();
+  }
+
+  cv::Mat orthorectify() {}
 };
 
 class ImgDataFactory {
 private:
+
+  static const inline pair<int, int> resolution = {2048, 2048};
 
   static const struct {
     static const inline string latitude = "Exif.GPSInfo.GPSLatitude", longitude = "Exif.GPSInfo.GPSLongitude",
@@ -273,7 +304,6 @@ private:
 
   static const inline unordered_set<string> extensions =
       {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
-  static const inline pair<int, int> resolution = {1920, 1080};
 
   template <typename U, typename E, typename T>
   static bool validate(const T& data, const E& keys) {
@@ -325,18 +355,18 @@ public:
       return nullopt;
     }
     return ImgData(
-        Coordinate(
+        move(Coordinate(
             xmp[xmp_keys.yaw].toFloat(),
             xmp[xmp_keys.pitch].toFloat(),
             xmp[xmp_keys.roll].toFloat(),
             xmp[xmp_keys.latitude].toFloat(),
             xmp[xmp_keys.longitude].toFloat(),
-            xmp[xmp_keys.altitude].toFloat()),
-        intrinsic.value(),
-        path,
-        exif,
-        xmp,
-        img);
+            xmp[xmp_keys.altitude].toFloat())),
+        move(intrinsic.value()),
+        move(path),
+        move(exif),
+        move(xmp),
+        move(img));
   }
 };
 } // namespace Ortho
