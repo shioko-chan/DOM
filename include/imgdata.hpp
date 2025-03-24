@@ -258,8 +258,8 @@ public:
       Exiv2::ExifData&& exif,
       Exiv2::XmpData&&  xmp,
       cv::Mat&&         img) : coord(move(coord)), intrinsic(move(intrinsic)), path(move(path)), img(move(img)) {
-    this.exif.set(exif.copy());
-    this.xmp.set(xmp.copy());
+    this->exif.set(exif);
+    this->xmp.set(xmp);
     ortho = Property<cv::Mat>(orthorectify(img.cols, img.rows));
   }
 
