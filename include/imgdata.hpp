@@ -172,7 +172,8 @@ struct Intrinsic {
 
   Intrinsic() = delete;
 
-  explicit Intrinsic(Intrinsic&& intrinsic) : camera_matrix(move(intrinsic.camera_matrix)) {}
+  explicit Intrinsic(Intrinsic&& intrinsic) :
+      camera_matrix(move(intrinsic.camera_matrix)), distortion_coefficients(intrinsic.distortion_coefficients) {}
 
   Intrinsic(const Intrinsic& intrinsic) : camera_matrix(intrinsic.camera_matrix.clone()) {}
 
@@ -256,9 +257,9 @@ public:
       fs::path&&        path,
       Exiv2::ExifData&& exif,
       Exiv2::XmpData&&  xmp,
-      cv::Mat&&         img) :
-      coord(move(coord)), intrinsic(move(intrinsic)), path(move(path)), exif(move(exif)), xmp(move(xmp)),
-      img(move(img)) {
+      cv::Mat&&         img) : coord(move(coord)), intrinsic(move(intrinsic)), path(move(path)), img(move(img)) {
+    this.exif.set(exif.copy());
+    this.xmp.set(xmp.copy());
     ortho = Property<cv::Mat>(orthorectify(img.cols, img.rows));
   }
 
@@ -270,21 +271,21 @@ public:
   }
 
   void write(const fs::path& output_path) const {
-    cv::imwrite(output_path.string(), img.get());
+    cv::imwrite(output_path, img.get());
     Exiv2::ExifData info           = exif.get();
     info["Exif.Image.ImageWidth"]  = img.get().cols;
     info["Exif.Image.ImageLength"] = img.get().rows;
-    auto output_img                = Exiv2::ImageFactory::open(output_path.string());
+    auto output_img                = std::unique_ptr<Exiv2::Image>(Exiv2::ImageFactory::open(output_path));
     output_img->setExifData(info);
     output_img->writeMetadata();
   }
 
   void write_ortho(const fs::path& output_path) const {
-    cv::imwrite(output_path.string(), ortho.get());
+    cv::imwrite(output_path, ortho.get());
     Exiv2::ExifData info           = exif.get();
     info["Exif.Image.ImageWidth"]  = ortho.get().cols;
     info["Exif.Image.ImageLength"] = ortho.get().rows;
-    auto output_img                = Exiv2::ImageFactory::open(output_path.string());
+    auto output_img                = std::unique_ptr<Exiv2::Image>(Exiv2::ImageFactory::open(output_path));
     output_img->setExifData(info);
     output_img->writeMetadata();
   }
@@ -365,7 +366,7 @@ public:
     if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
       return nullopt;
     }
-    auto image_info = Exiv2::ImageFactory::open(path);
+    auto image_info = std::unique_ptr<Exiv2::Image>(Exiv2::ImageFactory::open(path));
     if(image_info.get() == 0) {
       return nullopt;
     }
@@ -390,7 +391,7 @@ public:
       cerr << path << " " << res.value();
       return nullopt;
     }
-    cv::Mat img = cv::imread(path.string());
+    cv::Mat img = cv::imread(path);
     if(img.empty()) {
       return nullopt;
     }
