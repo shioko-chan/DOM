@@ -126,10 +126,11 @@ public:
       const double& altitude_d) :
       yaw(yaw_d), pitch(pitch_d), roll(roll_d), latitude(latitude_d), longitude(longitude_d), altitude(altitude_d) {
     // clang-format off
+
     cv::Mat yaw_ = (cv::Mat_<double>(3, 3) << 
-      1,  0,                       0,
-      0,  cos(yaw.to_radians()),  -sin(yaw.to_radians()),
-      0,  sin(yaw.to_radians()),   cos(yaw.to_radians()));
+      cos(yaw.to_radians()),  -sin(yaw.to_radians()),   0,
+      sin(yaw.to_radians()),   cos(yaw.to_radians()),   0,
+      0,                       0,                       1);
     
     cv::Mat pitch_ = (cv::Mat_<double>(3, 3) << 
       cos(pitch.to_radians()),  0,  sin(pitch.to_radians()),
@@ -137,10 +138,12 @@ public:
      -sin(pitch.to_radians()),  0,  cos(pitch.to_radians()));
 
     cv::Mat roll_ = (cv::Mat_<double>(3, 3) << 
-      cos(roll.to_radians()),  -sin(roll.to_radians()),   0,
-      sin(roll.to_radians()),   cos(roll.to_radians()),   0,
-      0,                        0,                        1);
+      1,  0,                        0,
+      0,  cos(roll.to_radians()),  -sin(roll.to_radians()),
+      0,  sin(roll.to_radians()),   cos(roll.to_radians()));
+
     // clang-format on
+
     cv::Mat m1_ = yaw_ * pitch_ * roll_;
     m1_.copyTo(R_);
     // cv::Mat m2_ = (cv::Mat_<double>(3, 1) << latitude.get(), longitude.get(), altitude.get());
@@ -292,7 +295,7 @@ public:
 
 private:
 
-  cv::Point2d project(const cv::Point2d& point) {
+  cv::Point2f project(const cv::Point2f& point) {
     cv::Mat point_ = (cv::Mat_<double>(3, 1) << point.x, point.y, 1);
     double  gamma  = -cv::Mat(coord.t().at<double>(2, 0) / (coord.R().row(2) * intrinsic.camera_matrix.inv() * point_))
                         .at<double>(0, 0);
@@ -300,27 +303,30 @@ private:
     cv::Mat xyz_c_homo =
         (cv::Mat_<double>(4, 1) << xyz_c.at<double>(0, 0), xyz_c.at<double>(1, 0), xyz_c.at<double>(2, 0), 1);
     cv::Mat xy_w = coord.T().rowRange(0, 1) * xyz_c_homo;
-    return cv::Point2d(xy_w.at<double>(0, 0), xy_w.at<double>(0, 1));
+    return cv::Point2f(xy_w.at<double>(0, 0), xy_w.at<double>(0, 1));
   }
 
   cv::Mat orthorectify(const double w, const double h) {
-    vector<cv::Point2d> src = {cv::Point2d(0, 0), cv::Point2d(w, 0), cv::Point2d(w, h), cv::Point2d(0, h)}, dst;
+    vector<cv::Point2f> src = {cv::Point2f(0, 0), cv::Point2f(w, 0), cv::Point2f(w, h), cv::Point2f(0, h)}, dst;
     std::transform(src.begin(), src.end(), std::back_inserter(dst), [this](auto&& point) { return project(point); });
-    cv::Point2d min_ =
-        std::accumulate(dst.begin(), dst.end(), cv::Point2d(0.0, 0.0), [](cv::Point2d min_, auto&& point) {
-          return cv::Point2d(std::min(point.x, min_.x), std::min(point.y, min_.y));
+    cv::Point2f min_ =
+        std::accumulate(dst.begin(), dst.end(), cv::Point2f(0.0, 0.0), [](cv::Point2f min_, auto&& point) {
+          return cv::Point2f(std::min(point.x, min_.x), std::min(point.y, min_.y));
         });
     std::for_each(dst.begin(), dst.end(), [&min_](auto&& point) {
       point.x -= min_.x;
       point.y -= min_.y;
     });
+    std::cout << "Points:";
     cv::Size dst_size = std::accumulate(dst.begin(), dst.end(), cv::Size(0, 0), [](cv::Size cur, auto&& point) {
+      std::cout << point << " ";
       return cv::Size(
           std::max(cur.width, static_cast<int>(std::ceil(point.x))),
           std::max(cur.height, static_cast<int>(std::ceil(point.y))));
     });
-    cv::Mat  M        = cv::getPerspectiveTransform(src, dst);
-    cv::Mat  dst_img;
+    std::cout << "\n" << dst_size << std::endl;
+    cv::Mat M = cv::getPerspectiveTransform(src, dst);
+    cv::Mat dst_img;
     cv::warpPerspective(img.get(), dst_img, M, dst_size, cv::INTER_CUBIC);
     return dst_img;
   }
