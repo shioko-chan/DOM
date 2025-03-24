@@ -292,7 +292,7 @@ public:
 
 private:
 
-  cv::Point2d project(const cv::Point2d& point) {
+  cv::Point2f project(const cv::Point2f& point) {
     cv::Mat point_ = (cv::Mat_<double>(3, 1) << point.x, point.y, 1);
     double  gamma  = -cv::Mat(coord.t().at<double>(2, 0) / (coord.R().row(2) * intrinsic.camera_matrix.inv() * point_))
                         .at<double>(0, 0);
@@ -300,15 +300,15 @@ private:
     cv::Mat xyz_c_homo =
         (cv::Mat_<double>(4, 1) << xyz_c.at<double>(0, 0), xyz_c.at<double>(1, 0), xyz_c.at<double>(2, 0), 1);
     cv::Mat xy_w = coord.T().rowRange(0, 1) * xyz_c_homo;
-    return cv::Point2d(xy_w.at<double>(0, 0), xy_w.at<double>(0, 1));
+    return cv::Point2f(xy_w.at<double>(0, 0), xy_w.at<double>(0, 1));
   }
 
   cv::Mat orthorectify(const double w, const double h) {
-    vector<cv::Point2d> src = {cv::Point2d(0, 0), cv::Point2d(w, 0), cv::Point2d(w, h), cv::Point2d(0, h)}, dst;
+    vector<cv::Point2f> src = {cv::Point2f(0, 0), cv::Point2f(w, 0), cv::Point2f(w, h), cv::Point2f(0, h)}, dst;
     std::transform(src.begin(), src.end(), std::back_inserter(dst), [this](auto&& point) { return project(point); });
-    cv::Point2d min_ =
-        std::accumulate(dst.begin(), dst.end(), cv::Point2d(0.0, 0.0), [](cv::Point2d min_, auto&& point) {
-          return cv::Point2d(std::min(point.x, min_.x), std::min(point.y, min_.y));
+    cv::Point2f min_ =
+        std::accumulate(dst.begin(), dst.end(), cv::Point2f(0.0, 0.0), [](cv::Point2f min_, auto&& point) {
+          return cv::Point2f(std::min(point.x, min_.x), std::min(point.y, min_.y));
         });
     std::for_each(dst.begin(), dst.end(), [&min_](auto&& point) {
       point.x -= min_.x;
