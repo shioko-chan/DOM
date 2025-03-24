@@ -247,7 +247,7 @@ public:
   Property<fs::path>        path;
   Property<Exiv2::ExifData> exif;
   Property<Exiv2::XmpData>  xmp;
-  Property<cv::Mat>         img, ortho;
+  Property<cv::Mat>         img;
 
   ImgData() = delete;
 
@@ -260,7 +260,6 @@ public:
       cv::Mat&&         img) : coord(move(coord)), intrinsic(move(intrinsic)), path(move(path)), img(move(img)) {
     this->exif.set(exif);
     this->xmp.set(xmp);
-    ortho = Property<cv::Mat>(orthorectify(img.cols, img.rows));
   }
 
   friend ostream& operator<<(ostream& os, const ImgData& data) {
@@ -281,10 +280,11 @@ public:
   }
 
   void write_ortho(const fs::path& output_path) const {
-    cv::imwrite(output_path, ortho.get());
+    cv::Mat ortho = orthorectify(img.get().cols, img.get().rows);
+    cv::imwrite(output_path, ortho);
     Exiv2::ExifData info           = exif.get();
-    info["Exif.Image.ImageWidth"]  = ortho.get().cols;
-    info["Exif.Image.ImageLength"] = ortho.get().rows;
+    info["Exif.Image.ImageWidth"]  = ortho.cols;
+    info["Exif.Image.ImageLength"] = ortho.rows;
     auto output_img                = std::unique_ptr<Exiv2::Image>(Exiv2::ImageFactory::open(output_path));
     output_img->setExifData(info);
     output_img->writeMetadata();
@@ -292,7 +292,7 @@ public:
 
 private:
 
-  cv::Point2f project(const cv::Point2f& point) {
+  cv::Point2f project(const cv::Point2f& point) const {
     cv::Mat point_ = (cv::Mat_<double>(3, 1) << point.x, point.y, 1);
     double  gamma  = -cv::Mat(coord.t().at<double>(2, 0) / (coord.R().row(2) * intrinsic.camera_matrix.inv() * point_))
                         .at<double>(0, 0);
@@ -303,7 +303,7 @@ private:
     return cv::Point2f(xy_w.at<double>(0, 0), xy_w.at<double>(0, 1));
   }
 
-  cv::Mat orthorectify(const double w, const double h) {
+  cv::Mat orthorectify(const double w, const double h) const {
     vector<cv::Point2f> src = {cv::Point2f(0, 0), cv::Point2f(w, 0), cv::Point2f(w, h), cv::Point2f(0, h)}, dst;
     std::transform(src.begin(), src.end(), std::back_inserter(dst), [this](auto&& point) { return project(point); });
     cv::Point2f min_ =
