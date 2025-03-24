@@ -114,7 +114,8 @@ public:
 
   explicit Coordinate(Coordinate&& coord) :
       yaw(move(coord.yaw)), pitch(move(coord.pitch)), roll(move(coord.roll)), latitude(move(coord.latitude)),
-      longitude(move(coord.longitude)), altitude(move(coord.altitude)), R_(move(coord.R_)), t_(move(coord.t_)) {}
+      longitude(move(coord.longitude)), altitude(move(coord.altitude)), R_(move(coord.R_)), t_(move(coord.t_)),
+      T_(move(coord.T_)) {}
 
   explicit Coordinate(
       const double& yaw_d,
