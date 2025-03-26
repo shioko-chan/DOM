@@ -1,5 +1,4 @@
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
-
+FROM nvidia/cuda:12.6.0-cudnn-devel-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 ARG HTTP_PROXY
@@ -13,10 +12,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates apt-transport-https software-properties-common \
     build-essential gnupg pkg-config ninja-build \
     wget curl zip unzip tar git \
-    libpng-dev libjpeg-dev libtiff-dev libxxf86vm1 libxxf86vm-dev \
-    libxi-dev libxrandr-dev \
-    libopencv-dev libceres-dev libboost-all-dev \
-    libatlas-base-dev libglfw3-dev libmpfr-dev libgmp-dev  \
+    libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CMake
@@ -33,15 +29,7 @@ RUN wget https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnx
     && wget https://github.com/Exiv2/exiv2/releases/download/v0.28.5/exiv2-0.28.5-Linux-x86_64.tar.gz \
     && tar -xvf exiv2-0.28.5-Linux-x86_64.tar.gz \
     && cp -r exiv2-0.28.5-Linux-x86_64/* /usr/local/ \
-    && rm -r onnxruntime onnxruntime-linux-x64-gpu-1.21.0.tgz exiv2-0.28.5-Linux-x86_64 exiv2-0.28.5-Linux-x86_64.tar.gz
-
-# Install Dependi CGAL
-WORKDIR /opt
-RUN wget https://github.com/CGAL/cgal/releases/download/v6.0.1/CGAL-6.0.1.tar.xz \
-    && tar -xvf CGAL-6.0.1.tar.xz \
-    && cd CGAL-6.0.1 \
-    && cmake . && make install \
-    && rm -r /opt/CGAL-6.0.1/ /opt/CGAL-6.0.1.tar.xz
+    && rm -r onnxruntime-linux-x64-gpu-1.21.0 onnxruntime-linux-x64-gpu-1.21.0.tgz exiv2-0.28.5-Linux-x86_64 exiv2-0.28.5-Linux-x86_64.tar.gz
 
 WORKDIR /opt
 ENTRYPOINT [ "/bin/bash" ]
