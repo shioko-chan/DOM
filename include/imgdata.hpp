@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -20,18 +21,17 @@
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "lru.hpp"
+
 #ifndef SENSOR_WIDTH_DATABASE
   #define SENSOR_WIDTH_DATABASE "sensor_width_database.txt"
 #endif
 
 using std::cerr;
-using std::cos;
 using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
-using std::sin;
-using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 
@@ -40,6 +40,8 @@ namespace ranges = std::ranges;
 namespace views  = std::views;
 
 namespace Ortho {
+
+void pipeline_initilize() { Exiv2::XmpParser::initialize(); }
 
 void pipeline_terminate() { Exiv2::XmpParser::terminate(); }
 
@@ -77,14 +79,165 @@ public:
   }
 };
 
-class Image : public Property<cv::Mat> {
+class Image {
+private:
+
+  struct Image_ : public CacheElem<fs::path> {
+  private:
+
+    static inline std::mutex mtx;
+
+    cv::Mat         img_;
+    fs::path        path;
+    Exiv2::ExifData exif_;
+    Exiv2::XmpData  xmp_;
+
+    void load_img() {
+      if(!img_.empty() && img_.channels() == 3) {
+        return;
+      }
+      if(!img_.empty()) {
+        cv::cvtColor(img_, img_, cv::COLOR_GRAY2BGR);
+      } else {
+        img_ = cv::imread(path.string());
+        if(img_.empty()) {
+          cerr << "Error: " << path.string() << " could not be read by OpenCV\n";
+          return;
+        }
+      }
+      size = img_.cols * img_.rows * img_.channels() * img_.elemSize1();
+    }
+
+    void load_img_gray() {
+      if(!img_.empty() && img_.channels() == 1) {
+        return;
+      }
+      if(!img_.empty()) {
+        cv::cvtColor(img_, img_, cv::COLOR_BGR2GRAY);
+      } else {
+        img_ = cv::imread(path.string(), cv::IMREAD_GRAYSCALE);
+        if(img_.empty()) {
+          cerr << "Error: " << path.string() << " could not be read by OpenCV\n";
+          return;
+        }
+      }
+      size = img_.cols * img_.rows * img_.channels() * img_.elemSize1();
+    }
+
+    void load_exif_xmp() {
+      if(!exif_.empty() && !xmp_.empty()) {
+        return;
+      }
+      std::lock_guard<std::mutex> lock(mtx);
+
+      auto image_info = Exiv2::ImageFactory::open(path.string());
+      if(!image_info) {
+        cerr << "Error: " << path.string() << " could not be opened by Exiv2\n";
+        return;
+      }
+      try {
+        image_info->readMetadata();
+      } catch(std::exception& e) {
+        cerr << "Error: readMetadata " << e.what() << "\n";
+        return;
+      }
+      exif_ = image_info->exifData();
+      xmp_  = image_info->xmpData();
+    }
+
+    void write_img(const fs::path& dst_path) const {
+      if(img_.empty()) {
+        cerr << "Error: " << path.string() << " is not in memory\n";
+        return;
+      }
+      cv::imwrite(dst_path.string(), img_);
+    }
+
+    void write_exif_xmp(const fs::path& output_path) const {
+      if(exif_.empty() || xmp_.empty()) {
+        cerr << "Error: Exif or Xmp data is empty\n";
+        return;
+      }
+      if(!fs::exists(output_path)) {
+        cerr << "Error: " << output_path << " does not exist\n";
+        return;
+      }
+      if(img_.empty()) {
+        cerr << "Error: Image is empty\n";
+        return;
+      }
+
+      Exiv2::ExifData exif_           = exif_;
+      exif_["Exif.Image.ImageWidth"]  = img_.cols;
+      exif_["Exif.Image.ImageLength"] = img_.rows;
+
+      auto output_img = Exiv2::ImageFactory::open(output_path.string());
+      output_img->setExifData(exif_);
+      output_img->setXmpData(xmp_);
+      try {
+        output_img->writeMetadata();
+      } catch(std::exception& e) {
+        std::cerr << "Error: writeMetadata " << e.what() << std::endl;
+      }
+    }
+
+    void release() {
+      if(!img_.empty()) {
+        img_.release();
+      }
+    }
+
+  public:
+
+    Image_() = default;
+
+    Image_(fs::path& path_) : path(path_) {
+      if(!fs::exists(path) || !fs::is_regular_file(path)) {
+        throw std::runtime_error("Error: " + path.string() + " does not exist or is not a regular file");
+      }
+    }
+
+    const cv::Mat& img() {
+      load_img();
+      return img_;
+    }
+
+    const cv::Mat& gray() {
+      load_img_gray();
+      return img_;
+    }
+
+    const Exiv2::ExifData& exif_data() {
+      load_exif_xmp();
+      return exif_;
+    }
+
+    const Exiv2::XmpData& xmp_data() {
+      load_exif_xmp();
+      return xmp_;
+    }
+
+    void write(const fs::path& output_path) {
+      write_img(output_path);
+      write_exif_xmp(output_path);
+    }
+
+    void swap_in() override { load_img(); }
+
+    void swap_out() override { release(); }
+
+    const key_type& get_key() const override { return path; }
+  };
+
+  static inline LRU<Image_> cache(10u * (1 << 20));
+
 public:
+
+  explicit Image() = default;
 
   template <typename U>
     requires std::same_as<std::decay_t<U>, cv::Mat>
   explicit Image(U&& img) : Property(std::forward<U>(img)) {}
-
-  explicit Image() : Property() {}
 
   ~Image() {
     if(!get().empty()) {
@@ -102,18 +255,13 @@ public:
 };
 
 class Angle : public Property<float> {
-private:
-
-  static float normalize(const float& degrees) {
-    return degrees;
-    // return std::fmod(std::fmod(degrees, 360.0f) + 360.0f, 360.0f);
-  }
-
 public:
 
   static constexpr float PI = 3.1415926535897932384626433832795;
 
-  explicit Angle(const float& degrees) : Property(normalize(degrees)) {}
+  explicit Angle() : Property() {}
+
+  explicit Angle(const float& degrees) : Property(degrees) {}
 
   float radians() const { return get() * PI / 180.0f; }
 
@@ -146,29 +294,31 @@ public:
   static cv::Mat Rx(float radians) {
     // clang-format off
     return (cv::Mat_<float>(3, 3) << 
-      1,  0,             0,
-      0,  cos(radians), -sin(radians),
-      0,  sin(radians),  cos(radians));
+      1, 0                ,  0                ,
+      0, std::cos(radians), -std::sin(radians),
+      0, std::sin(radians),  std::cos(radians));
     // clang-format on
   }
 
   static cv::Mat Ry(float radians) {
     // clang-format off
     return (cv::Mat_<float>(3, 3) << 
-     cos(radians),  0, sin(radians),
-     0,             1, 0,
-    -sin(radians),  0, cos(radians));
+     std::cos(radians), 0, std::sin(radians),
+     0                , 1, 0                ,
+    -std::sin(radians), 0, std::cos(radians));
     // clang-format on
   }
 
   static cv::Mat Rz(float radians) {
     // clang-format off
     return (cv::Mat_<float>(3, 3) << 
-    cos(radians), -sin(radians), 0,
-    sin(radians),  cos(radians), 0,
-    0,             0,            1);
+    std::cos(radians), -std::sin(radians), 0,
+    std::sin(radians),  std::cos(radians), 0,
+    0                ,  0                , 1);
     // clang-format on
   }
+
+  explicit Pose() = default;
 
   explicit Pose(
       const float& yaw_d,
@@ -215,6 +365,8 @@ private:
 
 public:
 
+  explicit Intrinsic() = default;
+
   explicit Intrinsic(Intrinsic&& intrinsic) :
       camera_matrix(std::move(intrinsic.camera_matrix)), distortion_coefficients(intrinsic.distortion_coefficients) {}
 
@@ -228,6 +380,12 @@ public:
     );
     // clang-format on
     m_.copyTo(camera_matrix);
+  }
+
+  Intrinsic& operator=(Intrinsic&& val) {
+    camera_matrix           = std::move(val.camera_matrix);
+    distortion_coefficients = std::move(val.distortion_coefficients);
+    return *this;
   }
 
   const cv::Mat& K() const { return camera_matrix; }
@@ -249,13 +407,11 @@ private:
 
     unordered_map<std::string, float> sensor_width_database;
     if(!fs::exists(sensor_width_database_path)) {
-      cerr << "Error: Sensor width database not found\n";
-      return sensor_width_database;
+      throw std::runtime_error("Error: Sensor width database not found");
     }
     std::ifstream ifs(sensor_width_database_path);
     if(!ifs.is_open()) {
-      cerr << "Error: Failed to open sensor width database\n";
-      return sensor_width_database;
+      throw std::runtime_error("Error: Failed to open sensor width database");
     }
     std::string line;
     while(std::getline(ifs, line)) {
@@ -263,7 +419,6 @@ private:
                | views::transform([](auto token_range) { return std::string(token_range.begin(), token_range.end()); });
       std::vector<std::string> tokens(v.begin(), v.end());
       if(tokens.size() != 2) {
-        // cerr << "Error: Invalid sensor width entry format of the line: " << line << "\n";
         continue;
       }
       sensor_width_database.emplace(tokens[0], std::stod(tokens[1]));
@@ -287,12 +442,15 @@ public:
 struct ImgData {
 public:
 
-  Pose                      pose;
-  Intrinsic                 intrinsic;
-  Property<fs::path>        path;
-  Property<Exiv2::ExifData> exif;
-  Property<Exiv2::XmpData>  xmp;
-  Image                     img, ortho;
+  Pose                               pose;
+  Intrinsic                          intrinsic;
+  Property<fs::path>                 path;
+  Property<Exiv2::ExifData>          exif;
+  Property<Exiv2::XmpData>           xmp;
+  Image                              img, ortho;
+  Property<std::vector<cv::Point2i>> keypoints;
+
+  explicit ImgData() = default;
 
   explicit ImgData(Pose&& pose, Intrinsic&& intrinsic, fs::path&& path, Exiv2::ExifData&& exif, Exiv2::XmpData&& xmp) :
       pose(std::move(pose)), intrinsic(std::move(intrinsic)), path(std::move(path)), exif(std::move(exif)),
@@ -302,6 +460,17 @@ public:
       pose(std::move(val.pose)), intrinsic(std::move(val.intrinsic)), path(std::move(val.path)),
       img(std::move(val.img)), ortho(std::move(val.ortho)), exif(std::move(val.exif)), xmp(std::move(val.xmp)) {}
 
+  ImgData& operator=(Ortho::ImgData&& val) {
+    pose      = std::move(val.pose);
+    intrinsic = std::move(val.intrinsic);
+    path      = std::move(val.path);
+    img       = std::move(val.img);
+    ortho     = std::move(val.ortho);
+    exif      = std::move(val.exif);
+    xmp       = std::move(val.xmp);
+    return *this;
+  }
+
   friend ostream& operator<<(ostream& os, const ImgData& data) {
     os << "Path: " << data.path.get() << "\n"
        << "Camera Matrix: " << data.intrinsic << "\n"
@@ -309,7 +478,10 @@ public:
     return os;
   }
 
-  void read() {
+  void read_img() {
+    if(!img.get().empty()) {
+      return;
+    }
     cv::Mat img_ = cv::imread(path.get().string());
     if(img_.empty()) {
       return;
@@ -324,7 +496,15 @@ public:
     }
   }
 
-  void generate_ortho() { ortho.set(orthorectify(img.get().cols, img.get().rows)); }
+  void generate_ortho() {
+    if(!ortho.get().empty()) {
+      return;
+    }
+    if(img.get().empty()) {
+      throw std::runtime_error("Error: Image is empty");
+    }
+    ortho.set(orthorectify(img.get().cols, img.get().rows));
+  }
 
   void write(const fs::path& output_dir) const {
     fs::path output_path = output_dir / path.get().filename();
@@ -348,15 +528,16 @@ public:
 
 private:
 
-  static const inline pair<int, int> resolution = {4096, 4096};
+  static const inline pair<int, int> resolution = {1024, 1024};
 
   void write_exif_xmp(const int w, const int h, const fs::path& output_path) const {
-    Exiv2::ExifData info           = exif.get();
-    info["Exif.Image.ImageWidth"]  = w;
-    info["Exif.Image.ImageLength"] = h;
+    Exiv2::ExifData exif_           = exif.get();
+    exif_["Exif.Image.ImageWidth"]  = w;
+    exif_["Exif.Image.ImageLength"] = h;
 
     auto output_img = Exiv2::ImageFactory::open(output_path.string());
-    output_img->setExifData(info);
+    output_img->readMetadata();
+    output_img->setExifData(exif_);
     output_img->setXmpData(xmp.get());
     output_img->writeMetadata();
   }
@@ -397,6 +578,8 @@ private:
   }
 };
 
+using ImgsData = std::vector<ImgData>;
+
 class ImgDataFactory {
 private:
 
@@ -431,12 +614,14 @@ private:
 
 public:
 
-  static optional<unique_ptr<ImgData>> build(fs::path path) {
+  static optional<ImgData> build(fs::path path) {
     if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
+      cerr << "Error: " << path << " is not a valid image file\n";
       return nullopt;
     }
     auto image_info = Exiv2::ImageFactory::open(path.string());
     if(image_info.get() == 0) {
+      cerr << "Error: " << path << " could not be opened by Exiv2\n";
       return nullopt;
     }
     try {
@@ -448,6 +633,7 @@ public:
     Exiv2::ExifData exif = image_info->exifData();
     Exiv2::XmpData  xmp  = image_info->xmpData();
     if(exif.empty() || xmp.empty()) {
+      cerr << path << " Error: Exif or Xmp data is empty\n";
       return nullopt;
     }
     optional<std::string> res = validate<Exiv2::ExifKey>(exif, ExifKey::keys);
@@ -467,10 +653,11 @@ public:
 
     auto intrinsic = IntrinsicFactory::build(sensor_name.str(), exif[ExifKey::focal_length].toFloat(), width, height);
     if(!intrinsic.has_value()) {
+      cerr << "Error: Intrinsic could not be built, sensor not found in data table, please add it\n";
       return nullopt;
     }
 
-    return std::make_unique<ImgData>(
+    return std::make_optional<ImgData>(
         std::move(Pose(
             xmp[XmpKey::yaw].toFloat(),
             xmp[XmpKey::pitch].toFloat(),

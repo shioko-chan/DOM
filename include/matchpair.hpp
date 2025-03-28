@@ -11,9 +11,11 @@ public:
 
   int first, second;
 
+  bool valid = true;
+
   MatchPair() = default;
 
-  MatchPair(int first, int second) : first(first), second(second) {}
+  MatchPair(int first, int second) : first(first), second(second), valid(true) {}
 
   friend bool operator==(const MatchPair& lhs, const MatchPair& rhs) {
     return lhs.first == rhs.first && lhs.second == rhs.second;
@@ -30,6 +32,8 @@ public:
     return os;
   }
 };
+
+using MatchPairs = std::vector<MatchPair>;
 
 } // namespace Ortho
 

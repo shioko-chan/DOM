@@ -35,7 +35,7 @@ public:
             dataset)
         | std::views::filter([index](auto&& pair) { return pair.second != index; }) | std::views::common;
 
-    std::vector<std::pair<double, int>> distances(v.begin(), v.end());
+    std::vector<std::pair<float, int>> distances(v.begin(), v.end());
     std::sort(distances.begin(), distances.end());
 
     auto w = distances | std::views::take(k_) | std::views::transform([](const auto& pair) { return pair.second; })
@@ -49,7 +49,7 @@ private:
   const int    k_;
   const Points dataset;
 
-  static double euclidean_distance(const Point& a, const Point& b) {
+  static float euclidean_distance(const Point& a, const Point& b) {
     return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2));
   }
 };

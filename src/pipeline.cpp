@@ -15,6 +15,7 @@
 
 #include "imgdata.hpp"
 #include "knn.hpp"
+#include "matcher.hpp"
 #include "matchpair.hpp"
 #include "progress.hpp"
 
@@ -27,14 +28,11 @@ using namespace Ortho;
 struct MultiThreadProcess {
 private:
 
-  using UPtrImgData  = std::unique_ptr<ImgData>;
-  using UPtrProgress = std::unique_ptr<Progress>;
-
-  UPtrProgress             progress;
-  std::vector<fs::path>    img_paths;
-  fs::path                 output_dir;
-  std::vector<UPtrImgData> img_data;
-  std::vector<MatchPair>   match_pairs;
+  Progress              progress;
+  std::vector<fs::path> img_paths;
+  fs::path              output_dir;
+  ImgsData              imgs_data;
+  MatchPairs            match_pairs;
 
   static auto generate_start_end(unsigned int total, unsigned int dividor) {
     int  base      = total / dividor;
@@ -48,16 +46,16 @@ private:
 
   auto run(std::function<void(int)>&& process) {
     std::vector<std::thread> threads;
-    progress->rerun();
-    auto v = generate_start_end(img_paths.size(), std::thread::hardware_concurrency())
-             | views::transform([this, &process](auto&& start_end) {
-                 auto&& [start, end] = start_end;
-                 return std::thread([this, start, end, &process]() {
-                   for(int i = start; i < end; i++, progress->update()) {
-                     process(i);
-                   }
-                 });
+    progress.rerun();
+    // auto v = generate_start_end(img_paths.size(), std::thread::hardware_concurrency())
+    auto v = generate_start_end(img_paths.size(), 1) | views::transform([this, &process](auto&& start_end) {
+               auto&& [start, end] = start_end;
+               return std::thread([this, start, end, &process]() {
+                 for(int i = start; i < end; i++, progress.update()) {
+                   process(i);
+                 }
                });
+             });
     threads.assign(v.begin(), v.end());
 
     for(auto&& thread : threads) {
@@ -70,21 +68,21 @@ private:
   void find_and_set_reference_coord() {
     std::vector<float> latitude, longitude, altitude;
 
-    for(auto&& data : img_data) {
-      latitude.push_back(data->pose.latitude.get());
-      longitude.push_back(data->pose.longitude.get());
-      altitude.push_back(data->pose.altitude.get());
+    for(auto&& data : imgs_data) {
+      latitude.push_back(data.pose.latitude.get());
+      longitude.push_back(data.pose.longitude.get());
+      altitude.push_back(data.pose.altitude.get());
     }
 
-    auto latitude_ref  = std::accumulate(latitude.begin(), latitude.end(), 0.0) / latitude.size();
-    auto longitude_ref = std::accumulate(longitude.begin(), longitude.end(), 0.0) / longitude.size();
+    auto latitude_ref  = std::accumulate(latitude.begin(), latitude.end(), 0.0f) / latitude.size();
+    auto longitude_ref = std::accumulate(longitude.begin(), longitude.end(), 0.0f) / longitude.size();
     auto altitude_ref  = std::accumulate(
         altitude.begin(), altitude.end(), std::numeric_limits<float>::min(), [](const float& max, const float& x) {
           return std::max(max, x);
         });
 
-    for(auto&& data : img_data) {
-      data->pose.set_reference(latitude_ref, longitude_ref, altitude_ref);
+    for(auto&& data : imgs_data) {
+      data.pose.set_reference(latitude_ref, longitude_ref, altitude_ref);
     }
   }
 
@@ -96,8 +94,8 @@ public:
         fs::directory_iterator(),
         std::back_inserter(img_paths),
         [](const auto& entry) { return entry.path(); });
-    progress = std::make_unique<Progress>(img_paths.size());
-    std::generate_n(std::back_inserter(img_data), img_paths.size(), []() { return UPtrImgData{nullptr}; });
+    progress.reset(img_paths.size());
+    imgs_data.resize(img_paths.size());
   }
 
   void get_image_info() {
@@ -109,27 +107,29 @@ public:
         std::cerr << "Error: " << img_path << " could not be processed\n";
         return;
       }
-      img_data[i] = std::move(res.value());
+      imgs_data[i] = std::move(res.value());
     });
     find_and_set_reference_coord();
   }
 
   void orthorectify() {
     run([this](int i) {
-      img_data[i]->read();
-      img_data[i]->generate_ortho();
-      img_data[i]->img.release();
+      imgs_data[i].read_img();
+      imgs_data[i].generate_ortho();
+      imgs_data[i].img.release();
     });
   }
 
   void write_ortho() {
-    run([this](int i) { img_data[i]->write_ortho(output_dir); });
+    for(auto&& data : imgs_data) {
+      data.write_ortho(output_dir);
+    }
   }
 
   void find_neighbours() {
-    auto knn = KNN(15, img_data | views::transform([](auto&& data) { return data->pose.coord.get(); }) | views::common);
+    auto knn = KNN(15, imgs_data | views::transform([](auto&& data) { return data.pose.coord.get(); }) | views::common);
 
-    std::vector<std::vector<MatchPair>> matches(img_data.size());
+    std::vector<std::vector<MatchPair>> matches(imgs_data.size());
     run([this, &knn, &matches](int i) {
       auto neighbours = knn.find_nearest_neighbour(i);
       for(auto&& neighbour : neighbours) {
@@ -149,9 +149,11 @@ public:
 
   void panorama() {
     std::vector<cv::Mat> orthos;
-    for(auto&& data : img_data) {
-      orthos.push_back(std::move(data->ortho.get_mut()));
-      data.reset();
+    for(auto&& data : imgs_data) {
+      data.read_img();
+      orthos.push_back(std::move(data.img.get_mut()));
+      // orthos.push_back(std::move(data.ortho.get_mut()));
+      data.img.release();
     }
 
     auto stitcher = cv::Stitcher::create(cv::Stitcher::SCANS);
@@ -182,6 +184,12 @@ public:
       cv::imwrite("panorama.jpg", panorama);
     }
   }
+
+  void match() {
+    find_neighbours();
+    Matcher matcher;
+    matcher.match(match_pairs, imgs_data, progress);
+  }
 };
 
 int main(int argc, char* const argv[]) {
@@ -205,12 +213,12 @@ int main(int argc, char* const argv[]) {
   std::cout << "[1/3] Getting image information\n";
   process.get_image_info();
   std::cout << "[2/3] Orthorectifying images\n";
-  process.orthorectify();
-  std::cout << "[3/3] Writing orthorectified images\n";
-  process.find_neighbours();
+  // process.orthorectify();
+  // std::cout << "[3/3] Writing orthorectified images\n";
+  // process.find_neighbours();
   // process.write_ortho();
-  // process.panorama();
-
+  process.panorama();
+  // process.match();
   pipeline_terminate();
   return 0;
 }

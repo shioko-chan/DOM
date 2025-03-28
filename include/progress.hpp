@@ -12,7 +12,7 @@ struct Progress {
 private:
 
   std::mutex mtx;
-  double     factor = 0.0;
+  float      factor = 0.0f;
   int        cnt = 0, total = 0;
 
 public:
@@ -21,27 +21,27 @@ public:
 
   Progress(int total) : total(total) {}
 
-  void update() {
+  void update(const int inc = 1) {
     std::lock_guard<std::mutex> lock(mtx);
-    cnt += 1;
+    cnt += inc;
     if(cnt >= static_cast<int>(std::round(factor * total))) {
-      factor = cnt * 1.0 / total;
+      factor = cnt * 1.0f / total;
       std::cout << "\r[" << std::fixed << std::setprecision(2) << factor * 100 << "%] (" << cnt << "/" << total << ")\n";
-      factor = std::min(factor + 0.01, 1.0);
+      factor = std::min(factor + 0.01f, 1.0f);
     }
   }
 
   void rerun() {
     std::lock_guard<std::mutex> lock(mtx);
     cnt    = 0;
-    factor = 0.0;
+    factor = 0.0f;
   }
 
-  void reset(int total) {
+  void reset(const int total_) {
     std::lock_guard<std::mutex> lock(mtx);
-    this->total = total;
-    cnt         = 0;
-    factor      = 0.0;
+    total  = total_;
+    cnt    = 0;
+    factor = 0.0f;
   }
 };
 } // namespace Ortho
