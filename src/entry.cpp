@@ -35,7 +35,7 @@ int main(int argc, char* const argv[]) {
   std::cout << "[3/3] Matching neighbor images\n";
   // process.find_neighbors();
   // process.write_ortho();
-  // process.match();
+  process.match();
 
   pipeline_terminate();
   return 0;

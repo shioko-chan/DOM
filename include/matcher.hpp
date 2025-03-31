@@ -156,8 +156,8 @@ private:
 
 public:
 
-  Matcher(fs::path tempory_save_path) :
-      temporary_save_path(tempory_save_path), superpoint("[superpoint]", SUPERPOINT_WEIGHT),
+  Matcher(fs::path temporary_save_path) :
+      temporary_save_path(temporary_save_path), superpoint("[superpoint]", SUPERPOINT_WEIGHT),
       lightglue("[lightglue]", LIGHTGLUE_WEIGHT) {}
 
   void match(MatchPairs& pairs, ImgsData& imgs_data, Progress& progress) {

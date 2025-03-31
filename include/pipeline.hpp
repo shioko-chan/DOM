@@ -50,15 +50,15 @@ private:
   auto run(std::function<void(int)>&& process) {
     std::vector<std::thread> threads;
     progress.rerun();
-    // auto v = generate_start_end(img_paths.size(), std::thread::hardware_concurrency())
-    auto v = generate_start_end(img_paths.size(), 1) | views::transform([this, &process](auto&& start_end) {
-               auto&& [start, end] = start_end;
-               return std::thread([this, start, end, &process]() {
-                 for(int i = start; i < end; i++, progress.update()) {
-                   process(i);
-                 }
+    auto v = generate_start_end(img_paths.size(), std::thread::hardware_concurrency())
+             | views::transform([this, &process](auto&& start_end) {
+                 auto&& [start, end] = start_end;
+                 return std::thread([this, start, end, &process]() {
+                   for(int i = start; i < end; i++, progress.update()) {
+                     process(i);
+                   }
+                 });
                });
-             });
     threads.assign(v.begin(), v.end());
 
     for(auto&& thread : threads) {
