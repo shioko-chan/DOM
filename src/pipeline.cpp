@@ -1,196 +1,13 @@
-#include <algorithm>
 #include <filesystem>
-#include <functional>
 #include <iostream>
-#include <limits>
-#include <memory>
-#include <numeric>
-#include <optional>
-#include <ranges>
-#include <set>
-#include <thread>
-#include <vector>
 
 #include <opencv2/opencv.hpp>
 
-#include "imgdata.hpp"
-#include "knn.hpp"
-#include "matcher.hpp"
-#include "matchpair.hpp"
-#include "progress.hpp"
+#include "pipeline.hpp"
 
-namespace fs     = std::filesystem;
-namespace views  = std::views;
-namespace ranges = std::ranges;
+namespace fs = std::filesystem;
 
 using namespace Ortho;
-
-struct MultiThreadProcess {
-private:
-
-  Progress              progress;
-  std::vector<fs::path> img_paths;
-  fs::path              output_dir;
-  ImgsData              imgs_data;
-  MatchPairs            match_pairs;
-
-  static auto generate_start_end(unsigned int total, unsigned int dividor) {
-    int  base      = total / dividor;
-    int  remainder = total % dividor;
-    auto sequence = views::iota(0u, dividor) | views::transform([=](int i) { return i < remainder ? base + 1 : base; });
-    std::vector<int> cumulative{0};
-    std::partial_sum(sequence.begin(), sequence.end(), std::back_inserter(cumulative));
-    return views::iota(0u, dividor)
-           | views::transform([cumulative](int i) { return std::make_pair(cumulative[i], cumulative[i + 1]); });
-  }
-
-  auto run(std::function<void(int)>&& process) {
-    std::vector<std::thread> threads;
-    progress.rerun();
-    // auto v = generate_start_end(img_paths.size(), std::thread::hardware_concurrency())
-    auto v = generate_start_end(img_paths.size(), 1) | views::transform([this, &process](auto&& start_end) {
-               auto&& [start, end] = start_end;
-               return std::thread([this, start, end, &process]() {
-                 for(int i = start; i < end; i++, progress.update()) {
-                   process(i);
-                 }
-               });
-             });
-    threads.assign(v.begin(), v.end());
-
-    for(auto&& thread : threads) {
-      if(thread.joinable()) {
-        thread.join();
-      }
-    }
-  }
-
-  void find_and_set_reference_coord() {
-    std::vector<float> latitude, longitude, altitude;
-
-    for(auto&& data : imgs_data) {
-      latitude.push_back(data.pose.latitude.get());
-      longitude.push_back(data.pose.longitude.get());
-      altitude.push_back(data.pose.altitude.get());
-    }
-
-    auto latitude_ref  = std::accumulate(latitude.begin(), latitude.end(), 0.0f) / latitude.size();
-    auto longitude_ref = std::accumulate(longitude.begin(), longitude.end(), 0.0f) / longitude.size();
-    auto altitude_ref  = std::accumulate(
-        altitude.begin(), altitude.end(), std::numeric_limits<float>::min(), [](const float& max, const float& x) {
-          return std::max(max, x);
-        });
-
-    for(auto&& data : imgs_data) {
-      data.pose.set_reference(latitude_ref, longitude_ref, altitude_ref);
-    }
-  }
-
-public:
-
-  MultiThreadProcess(fs::path input_dir, fs::path output_dir) : output_dir(output_dir) {
-    std::transform(
-        fs::directory_iterator(input_dir),
-        fs::directory_iterator(),
-        std::back_inserter(img_paths),
-        [](const auto& entry) { return entry.path(); });
-    progress.reset(img_paths.size());
-    imgs_data.resize(img_paths.size());
-  }
-
-  void get_image_info() {
-    run([this](int i) {
-      fs::path& img_path = img_paths[i];
-
-      auto res = ImgDataFactory::build(img_path);
-      if(!res.has_value()) {
-        std::cerr << "Error: " << img_path << " could not be processed\n";
-        return;
-      }
-      imgs_data[i] = std::move(res.value());
-    });
-    find_and_set_reference_coord();
-  }
-
-  void orthorectify() {
-    run([this](int i) {
-      imgs_data[i].read_img();
-      imgs_data[i].generate_ortho();
-      imgs_data[i].img.release();
-    });
-  }
-
-  void write_ortho() {
-    for(auto&& data : imgs_data) {
-      data.write_ortho(output_dir);
-    }
-  }
-
-  void find_neighbours() {
-    auto knn = KNN(15, imgs_data | views::transform([](auto&& data) { return data.pose.coord.get(); }) | views::common);
-
-    std::vector<std::vector<MatchPair>> matches(imgs_data.size());
-    run([this, &knn, &matches](int i) {
-      auto neighbours = knn.find_nearest_neighbour(i);
-      for(auto&& neighbour : neighbours) {
-        if(i < neighbour) {
-          matches[i].emplace_back(i, neighbour);
-        } else {
-          matches[i].emplace_back(neighbour, i);
-        }
-      }
-    });
-
-    auto v = matches | views::join | views::common;
-
-    std::set<MatchPair> match_set(v.begin(), v.end());
-    match_pairs.assign(match_set.begin(), match_set.end());
-  }
-
-  void panorama() {
-    std::vector<cv::Mat> orthos;
-    for(auto&& data : imgs_data) {
-      data.read_img();
-      orthos.push_back(std::move(data.img.get_mut()));
-      // orthos.push_back(std::move(data.ortho.get_mut()));
-      data.img.release();
-    }
-
-    auto stitcher = cv::Stitcher::create(cv::Stitcher::SCANS);
-    // stitcher->setWaveCorrection(false);
-    cv::Mat panorama;
-    auto    status = cv::Stitcher::Status::OK;
-    try {
-      status = stitcher->stitch(orthos, panorama);
-    } catch(cv::Exception& e) {
-      std::cerr << "Error: " << e.what() << std::endl;
-    }
-    if(status != cv::Stitcher::OK) {
-      std::cerr << "拼接失败，错误代码: " << static_cast<int>(status) << std::endl;
-      switch(status) {
-        case cv::Stitcher::ERR_NEED_MORE_IMGS:
-          std::cerr << "错误原因: 图像数量不足或重叠区域不够。" << std::endl;
-          break;
-        case cv::Stitcher::ERR_HOMOGRAPHY_EST_FAIL:
-          std::cerr << "错误原因: 单应性矩阵估计失败。" << std::endl;
-          break;
-        case cv::Stitcher::ERR_CAMERA_PARAMS_ADJUST_FAIL:
-          std::cerr << "错误原因: 相机参数调整失败。" << std::endl;
-          break;
-        default:
-          std::cerr << "未知错误。" << std::endl;
-      }
-    } else {
-      cv::imwrite("panorama.jpg", panorama);
-    }
-  }
-
-  void match() {
-    find_neighbours();
-    Matcher matcher;
-    matcher.match(match_pairs, imgs_data, progress);
-  }
-};
 
 int main(int argc, char* const argv[]) {
   if(argc != 3) {
@@ -208,17 +25,18 @@ int main(int argc, char* const argv[]) {
     fs::create_directory(output_dir);
   }
 
-  auto process = MultiThreadProcess(input_dir, output_dir);
+  pipeline_initialize();
 
+  auto process = MultiThreadProcess(input_dir, output_dir, output_dir / "tmp");
   std::cout << "[1/3] Getting image information\n";
   process.get_image_info();
-  std::cout << "[2/3] Orthorectifying images\n";
-  // process.orthorectify();
-  // std::cout << "[3/3] Writing orthorectified images\n";
-  // process.find_neighbours();
+  std::cout << "[2/3] Rotate rectifying images\n";
+  process.rotate_rectify();
+  std::cout << "[3/3] Matching neighbor images\n";
+  // process.find_neighbors();
   // process.write_ortho();
-  process.panorama();
   // process.match();
+
   pipeline_terminate();
   return 0;
 }

@@ -73,7 +73,7 @@ public:
         shape.size()));
   }
 
-  const std::vector<Ort::Value> infer() {
+  std::vector<Ort::Value> infer() {
     return session->Run(
         Ort::RunOptions{nullptr},
         input_names_cstr.data(),

@@ -1,5 +1,6 @@
 file(GLOB_RECURSE SOURCES *.cpp)
 find_package(OpenCV REQUIRED)
+
 add_executable(orthophoto ${SOURCES})
 target_include_directories(orthophoto PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>

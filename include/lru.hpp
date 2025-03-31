@@ -2,10 +2,18 @@
 #define ORTHO_LRU_HPP
 
 #include <list>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 namespace Ortho {
+
+using Lock = std::unique_lock<std::mutex>;
+
+template <typename T>
+using TRefLockPair = std::pair<const T&, Lock>;
+
 template <typename T>
 concept Hashable = requires(T a) {
   { std::hash<T>{}(a) } -> std::convertible_to<std::size_t>;
@@ -16,23 +24,19 @@ template <typename K>
 struct CacheElem {
 public:
 
-  using key_type     = K;
-  std::size_t size   = 0;
-  bool        in_mem = false;
+  using key_type = K;
 
-  void swap_in_() {
-    swap_in();
-    in_mem = true;
-  }
+  bool                        in_mem;
+  std::unique_ptr<std::mutex> mtx;
 
-  void swap_out_() {
-    swap_out();
-    in_mem = false;
-  }
+  CacheElem() : mtx(std::make_unique<std::mutex>()), in_mem(false) {};
 
-  virtual void            swap_in()       = 0;
-  virtual void            swap_out()      = 0;
-  virtual const key_type& get_key() const = 0;
+  CacheElem(const bool in_mem) : mtx(std::make_unique<std::mutex>()), in_mem(in_mem) {}
+
+  virtual void                   swap_in()       = 0;
+  virtual void                   swap_out()      = 0;
+  virtual inline const key_type& get_key() const = 0;
+  virtual inline std::size_t     size() const    = 0;
 };
 
 template <typename T>
@@ -50,12 +54,18 @@ private:
   ListT       lru_list;
   UMapT       k_v;
 
-  void release_space(const size_t size) {
+  void ensure_space(const size_t size) {
     auto iter = lru_list.rbegin();
     while(occupied + size > capacity && iter != lru_list.rend()) {
       if(iter->in_mem) {
-        iter->swap_out_();
-        occupied -= iter->size;
+        std::unique_lock<std::mutex> lock(*iter->mtx, std::try_to_lock);
+        if(!lock.owns_lock()) {
+          ++iter;
+          continue;
+        }
+        occupied -= iter->size();
+        iter->swap_out();
+        iter->in_mem = false;
       }
       ++iter;
     }
@@ -63,10 +73,10 @@ private:
 
 public:
 
-  LRU(const size_t capacity = 16 * (1 << 30)) : capacity(capacity) {}
+  LRU(const size_t capacity = 8ul * (1ul << 30)) : capacity(capacity) {}
 
   void put(T&& value) {
-    auto& key = value.get_key();
+    Key key = value.get_key();
 
     std::lock_guard<std::mutex> lock(mtx);
 
@@ -76,10 +86,12 @@ public:
       k_v.erase(it);
     }
 
-    release_space(value.size);
-    if(occupied + value.size > capacity) {
+    std::size_t need_size = value.size();
+    ensure_space(need_size);
+    if(occupied + need_size > capacity) {
       throw std::runtime_error("LRU cache is full");
     }
+    occupied += need_size;
 
     auto iter = lru_list.insert(lru_list.begin(), std::move(value));
     try {
@@ -88,21 +100,31 @@ public:
       lru_list.erase(iter);
       throw std::runtime_error("LRU cache insertion failed");
     }
-    occupied += value.size;
   }
 
-  std::optional<const T&> get(const Key& key) {
+  std::optional<TRefLockPair<T>> get(const Key& key) {
     std::lock_guard<std::mutex> lock(mtx);
 
     auto it = k_v.find(key);
     if(it != k_v.end()) {
-      const T& value = *it->second;
+      T& value = *it->second;
+
+      std::unique_lock<std::mutex> lock(*value.mtx, std::try_to_lock);
+      if(!lock.owns_lock()) {
+        return std::nullopt;
+      }
       if(!value.in_mem) {
-        value.swap_in_();
-        occupied += value.size;
+        value.swap_in();
+        std::size_t need_size = value.size();
+        ensure_space(need_size);
+        if(occupied + need_size > capacity) {
+          throw std::runtime_error("LRU cache is full");
+        }
+        occupied += need_size;
+        value.in_mem = true;
       }
       lru_list.splice(lru_list.begin(), lru_list, it->second);
-      return value;
+      return std::make_pair(std::ref(value), std::move(lock));
     }
     return std::nullopt;
   }

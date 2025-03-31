@@ -11,7 +11,9 @@ public:
 
   int first, second;
 
-  bool valid = true;
+  bool valid = false;
+
+  cv::Mat M;
 
   MatchPair() = default;
 
