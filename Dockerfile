@@ -7,7 +7,6 @@ ARG HTTPS_PROXY
 ENV http_proxy=${HTTP_PROXY}
 ENV https_proxy=${HTTPS_PROXY}
 
-# Install basic packages
 RUN apt-get update && apt-get install -y \
     ca-certificates apt-transport-https software-properties-common \
     build-essential gnupg pkg-config ninja-build \
@@ -15,7 +14,6 @@ RUN apt-get update && apt-get install -y \
     libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install CMake
 WORKDIR /opt
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null \
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null \
@@ -25,11 +23,22 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 WORKDIR /opt
 RUN wget https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-gpu-1.21.0.tgz \
     && tar -xvf onnxruntime-linux-x64-gpu-1.21.0.tgz \
-    && cp -r onnxruntime-linux-x64-gpu-1.21.0/* /usr/local/ \
+    && mkdir /usr/local/onnxruntime -p \
+    && cp -r onnxruntime-linux-x64-gpu-1.21.0/* /usr/local/onnxruntime \
     && wget https://github.com/Exiv2/exiv2/releases/download/v0.28.5/exiv2-0.28.5-Linux-x86_64.tar.gz \
     && tar -xvf exiv2-0.28.5-Linux-x86_64.tar.gz \
-    && cp -r exiv2-0.28.5-Linux-x86_64/* /usr/local/ \
+    && mkdir /usr/local/exiv2 -p \
+    && cp -r exiv2-0.28.5-Linux-x86_64/* /usr/local/exiv2 \
     && rm -r onnxruntime-linux-x64-gpu-1.21.0 onnxruntime-linux-x64-gpu-1.21.0.tgz exiv2-0.28.5-Linux-x86_64 exiv2-0.28.5-Linux-x86_64.tar.gz
+
+
+COPY . /opt/DOM
+RUN cd /opt/DOM \
+    && mkdir build \
+    && cd build \
+    && cmake -DCMAKE_BUILD_TYPE=Release .. \
+    && make -j$(nproc) \
+    && make install
 
 WORKDIR /opt
 ENTRYPOINT [ "/bin/bash" ]
