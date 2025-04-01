@@ -23,14 +23,16 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 WORKDIR /opt
 RUN wget https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-gpu-1.21.0.tgz \
     && tar -xvf onnxruntime-linux-x64-gpu-1.21.0.tgz \
-    && mkdir /usr/local/onnxruntime -p \
-    && cp -r onnxruntime-linux-x64-gpu-1.21.0/* /usr/local/onnxruntime \
+    && mkdir -p /usr/local/onnxruntime \
+    && cp -r onnxruntime-linux-x64-gpu-1.21.0/include /usr/local/onnxruntime/include \
+    && cp -r onnxruntime-linux-x64-gpu-1.21.0/lib /usr/local/onnxruntime/lib \
+    && ln -s /usr/local/onnxruntime/lib /usr/local/onnxruntime/lib64 \
     && wget https://github.com/Exiv2/exiv2/releases/download/v0.28.5/exiv2-0.28.5-Linux-x86_64.tar.gz \
     && tar -xvf exiv2-0.28.5-Linux-x86_64.tar.gz \
     && mkdir /usr/local/exiv2 -p \
-    && cp -r exiv2-0.28.5-Linux-x86_64/* /usr/local/exiv2 \
+    && cp -r exiv2-0.28.5-Linux-x86_64/include /usr/local/exiv2/include \
+    && cp -r exiv2-0.28.5-Linux-x86_64/lib /usr/local/exiv2/lib \
     && rm -r onnxruntime-linux-x64-gpu-1.21.0 onnxruntime-linux-x64-gpu-1.21.0.tgz exiv2-0.28.5-Linux-x86_64 exiv2-0.28.5-Linux-x86_64.tar.gz
-
 
 COPY . /opt/DOM
 RUN cd /opt/DOM \
