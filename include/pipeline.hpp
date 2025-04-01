@@ -15,6 +15,7 @@
 
 #include "imgdata.hpp"
 #include "knn.hpp"
+#include "log.hpp"
 #include "matcher.hpp"
 #include "matchpair.hpp"
 #include "progress.hpp"
@@ -107,7 +108,7 @@ public:
 
       auto res = ImgDataFactory::build(img_path, temporary_save_dir);
       if(!res.has_value()) {
-        std::cerr << "Error: " << img_path << " could not be processed\n";
+        ERROR("Error: {} could not be processed", img_path.string());
         return;
       }
       imgs_data[i] = std::move(res.value());

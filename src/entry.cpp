@@ -3,6 +3,7 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "log.hpp"
 #include "pipeline.hpp"
 
 namespace fs = std::filesystem;
@@ -11,13 +12,13 @@ using namespace Ortho;
 
 int main(int argc, char* const argv[]) {
   if(argc != 3) {
-    std::cout << "Usage: " << argv[0] << " input_dir output_dir\n";
+    MESSAGE("Usage: {} <input_dir> <output_dir>", argv[0]);
     return 1;
   }
 
   fs::path input_dir(argv[1]);
   if(!fs::exists(input_dir)) {
-    std::cerr << "Error: " << input_dir << " does not exist\n";
+    ERROR("Input directory \"{}\" does not exist", input_dir.string());
     return 1;
   }
   fs::path output_dir(argv[2]);
@@ -28,13 +29,12 @@ int main(int argc, char* const argv[]) {
   pipeline_initialize();
 
   auto process = MultiThreadProcess(input_dir, output_dir, output_dir / "tmp");
-  std::cout << "[1/3] Getting image information\n";
+  MESSAGE("[1/3] Getting image information");
   process.get_image_info();
-  std::cout << "[2/3] Rotate rectifying images\n";
+  MESSAGE("[2/3] Rotate rectifying images");
   process.rotate_rectify();
-  std::cout << "[3/3] Matching neighbor images\n";
+  MESSAGE("[3/3] Matching neighbor images");
   // process.find_neighbors();
-  // process.write_ortho();
   process.match();
 
   pipeline_terminate();

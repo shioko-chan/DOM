@@ -15,17 +15,12 @@
 #include <opencv2/opencv.hpp>
 
 #include "imgdata.hpp"
+#include "log.hpp"
 #include "matchpair.hpp"
 #include "ort.hpp"
 #include "progress.hpp"
-
-#ifndef LIGHTGLUE_WEIGHT
-  #define LIGHTGLUE_WEIGHT "superpoint_lightglue_fused_fp16.onnx"
-#endif
-
-#ifndef SUPERPOINT_WEIGHT
-  #define SUPERPOINT_WEIGHT "superpoint.onnx"
-#endif
+#include "static.h"
+#include "utility.hpp"
 
 namespace fs = std::filesystem;
 
@@ -34,7 +29,7 @@ class Matcher {
 private:
 
   static constexpr float superpoint_threshold = 0.2f, lightglue_threshold = 0.5f;
-  static constexpr int   inlier_cnt_threshold = 300;
+  static constexpr int   inlier_cnt_threshold = 300, superpoint_keypoint_threshold = 500;
 
   struct KeypointsAndDescriptors : public CacheElem<fs::path> {
   private:
@@ -45,8 +40,11 @@ private:
 
   public:
 
-    KeypointsAndDescriptors(const key_type& path, std::vector<float>&& keypoints, std::vector<float>&& descriptors) :
-        CacheElem(true), path(path), keypoints(std::move(keypoints)), descriptors(std::move(descriptors)) {}
+    KeypointsAndDescriptors(
+        const key_type&           path,
+        const std::vector<float>& keypoints,
+        const std::vector<float>& descriptors) :
+        CacheElem(true), path(path), keypoints(keypoints), descriptors(descriptors) {}
 
     std::vector<float> keypoints, descriptors;
 
@@ -106,20 +104,46 @@ private:
   InferEnv superpoint, lightglue;
   fs::path temporary_save_path;
 
-  std::pair<std::vector<float>, std::vector<float>> infer_keypoints_and_descriptors(ImgData& img_data) {
-    auto&& [img_, lock] = img_data.img.img();
-
+  cv::Mat preprocess(const cv::Mat& img_) {
     cv::Mat img_processed;
-    preprocess(&img_processed, img_, {1024, 1024});
-    lock.unlock();
+    cv::cvtColor(img_, img_processed, cv::COLOR_BGR2GRAY);
+    img_processed.convertTo(img_processed, CV_32FC1, 1.0 / 255.0);
+    return img_processed;
+  }
+
+  std::pair<std::vector<float>, std::vector<float>> infer_keypoints_and_descriptors(ImgData& img_data) {
+    fs::path path = temporary_save_path / (img_data.img.get_img_stem().string() + ".desc");
+
+    auto elem = cache.get(path);
+    if(elem.has_value()) {
+      auto&& [kp_desc, lock]       = elem.value();
+      std::vector<float> keypoints = kp_desc.keypoints, descriptors = kp_desc.descriptors;
+      lock.unlock();
+      return {keypoints, descriptors};
+    }
+
+    std::vector<float> keypoints, descriptors;
+
+    auto&& [img, lock_img] = img_data.img.rotate();
+    cv::Mat img_reshaped   = img.clone();
+    decimate_keep_aspect_ratio(&img_reshaped, {1024, 1024});
+    lock_img.unlock();
+
+    auto&& [mask, lock_mask] = img_data.img.rotate_mask();
+    cv::Mat mask_processed   = mask.clone();
+    decimate_keep_aspect_ratio(&mask_processed, {1024, 1024});
+    lock_mask.unlock();
+
+    cv::Mat img_processed = preprocess(img_reshaped);
+    img_reshaped.release();
 
     std::vector<float> img_vec(img_processed.begin<float>(), img_processed.end<float>());
-
-    const int64_t h = img_processed.rows, w = img_processed.cols;
+    const int64_t      h = img_processed.rows, w = img_processed.cols;
     img_processed.release();
 
     superpoint.set_input("image", img_vec, {1, 1, h, w});
     auto&& res = superpoint.infer();
+    img_vec.clear();
 
     const int      cnt    = res[superpoint.get_output_index("keypoints")].GetTensorTypeAndShapeInfo().GetShape()[1];
     const int64_t* kps    = res[superpoint.get_output_index("keypoints")].GetTensorData<int64_t>();
@@ -127,31 +151,18 @@ private:
                 *descs    = res[superpoint.get_output_index("descriptors")].GetTensorData<float>();
 
     std::vector<float> filtered_keypoints, filtered_descriptors;
-    float              w_f_2 = w / 2.0f, h_f_2 = h / 2.0f;
-    std::cout << "keypoints: " << cnt << "\n";
+    float              wf2 = w / 2.0f, hf2 = h / 2.0f;
+    INFO("keypoints: {}", cnt);
     for(int j = 0; j < cnt; ++j) {
-      if(scores[j] >= superpoint_threshold) {
-        filtered_keypoints
-            .insert(filtered_keypoints.end(), {(kps[j * 2] - w_f_2) / w_f_2, (kps[j * 2 + 1] - h_f_2) / h_f_2});
+      if(scores[j] >= superpoint_threshold && mask_processed.at<uchar>(kps[j * 2 + 1], kps[j * 2]) != 0) {
+        filtered_keypoints.insert(filtered_keypoints.end(), {(kps[j * 2] - wf2) / wf2, (kps[j * 2 + 1] - hf2) / hf2});
         filtered_descriptors.insert(filtered_descriptors.end(), descs + j * 256, descs + (j + 1) * 256);
       }
     }
-    return std::make_pair(std::move(filtered_keypoints), std::move(filtered_descriptors));
-  }
 
-  void preprocess(cv::Mat* img_processed, const cv::Mat& img_, cv::Size resolution = {1024, 1024}) {
-    cv::cvtColor(img_, *img_processed, cv::COLOR_BGR2GRAY);
-    if(img_processed->empty()) {
-      throw std::runtime_error("Error: img could not be converted to grayscale");
-    }
-    float scale = std::min(
-        resolution.width / static_cast<float>(img_processed->cols),
-        resolution.height / static_cast<float>(img_processed->rows));
-    cv::resize(*img_processed, *img_processed, cv::Size(), scale, scale);
-    if(img_processed->empty()) {
-      throw std::runtime_error("Error: img could not be resized");
-    }
-    img_processed->convertTo(*img_processed, CV_32FC1, 1.0 / 255.0);
+    cache.put(KeypointsAndDescriptors(path, filtered_keypoints, filtered_descriptors));
+
+    return {filtered_keypoints, filtered_descriptors};
   }
 
 public:
@@ -171,46 +182,40 @@ public:
 
       auto&& [keypoints0, descriptors0] = infer_keypoints_and_descriptors(imgs_data[i]);
 
-      if(keypoints0.empty() || descriptors0.empty()) {
-        std::cerr << "Warning: Keypoints or Descriptors are empty\n";
+      if(keypoints0.size() < superpoint_keypoint_threshold) {
+        WARN(
+            "Image \"{}\": Not enough keypoints, threshold is {} points.",
+            imgs_data[i].img.get_img_name().string(),
+            superpoint_keypoint_threshold);
         continue;
       }
+
       lightglue.set_input("kpts0", keypoints0, {1, static_cast<int64_t>(keypoints0.size()) / 2, 2});
       lightglue.set_input("desc0", descriptors0, {1, static_cast<int64_t>(keypoints0.size()) / 2, 256});
 
       for(auto&& pair : batch) {
         const int j = pair.second;
-        if(i == j) {
-          throw std::runtime_error("Error: i == j");
-        }
 
-        fs::path path = temporary_save_path / (std::to_string(j) + ".desc");
+        auto&& [keypoints1, descriptors1] = infer_keypoints_and_descriptors(imgs_data[i]);
 
-        std::vector<float> keypoints1, descriptors1;
-
-        auto elem = cache.get(path);
-        if(elem.has_value()) {
-          auto&& [kp_desc, lock] = elem.value();
-          keypoints1             = kp_desc.keypoints;
-          descriptors1           = kp_desc.descriptors;
-          lock.unlock();
-        } else {
-          std::tie(keypoints1, descriptors1) = infer_keypoints_and_descriptors(imgs_data[j]);
-        }
-        if(keypoints1.empty() || descriptors1.empty()) {
-          std::cerr << "Warning: Keypoints or Descriptors are empty\n";
+        if(keypoints1.size() < superpoint_keypoint_threshold) {
+          WARN(
+              "Image \"{}\": Not enough keypoints, threshold is {} points.",
+              imgs_data[i].img.get_img_name().string(),
+              superpoint_keypoint_threshold);
           continue;
         }
+
         lightglue.set_input("kpts1", keypoints1, {1, static_cast<int64_t>(keypoints1.size()) / 2, 2});
         lightglue.set_input("desc1", descriptors1, {1, static_cast<int64_t>(keypoints1.size()) / 2, 256});
 
-        std::vector<Ort::Value> res = std::move(lightglue.infer());
+        std::vector<Ort::Value> res = lightglue.infer();
 
         const int      cnt     = res[lightglue.get_output_index("matches0")].GetTensorTypeAndShapeInfo().GetShape()[0];
         const int64_t* matches = res[lightglue.get_output_index("matches0")].GetTensorData<int64_t>();
         const float*   scores  = res[lightglue.get_output_index("mscores0")].GetTensorData<float>();
 
-        std::cout << "matches: " << cnt << "\n";
+        INFO("all matches: {}", cnt);
 
         std::map<int, std::pair<int, float>> match_score0, match_score1;
 
@@ -218,11 +223,11 @@ public:
           if(scores[j] >= lightglue_threshold) {
             const int idx0 = matches[j * 2], idx1 = matches[j * 2 + 1];
             if(idx0 < 0 || idx1 < 0) {
-              std::cerr << "Warning: Invalid match\n";
+              WARN("Warning: Invalid match");
               continue;
             }
             if(idx0 >= keypoints0.size() / 2 || idx1 >= keypoints1.size() / 2) {
-              std::cerr << "Warning: Index out of range\n";
+              WARN("Warning: Index out of range");
               continue;
             }
             if(match_score0.count(idx0) == 0 || match_score0[idx0].second < scores[j]) {
@@ -244,7 +249,7 @@ public:
           points1.emplace_back(keypoints1[idx1 * 2], keypoints1[idx1 * 2 + 1]);
         }
         if(points0.size() < 4 || points1.size() < 4) {
-          std::cerr << "Warning: Not enough matches\n";
+          WARN("Warning: Not enough matches");
           continue;
         }
 
@@ -260,12 +265,12 @@ public:
           }
         }
         if(inlier_matches.size() < inlier_cnt_threshold) {
-          std::cerr << "Warning: Not enough inlier matches\n";
+          WARN("Warning: Not enough inlier matches");
           continue;
         }
         cv::Mat resultImg, img1, img2;
-        imgs_data[i].img.img().first.copyTo(img1);
-        imgs_data[j].img.img().first.copyTo(img2);
+        imgs_data[i].img.rotate().first.copyTo(img1);
+        imgs_data[j].img.rotate().first.copyTo(img2);
 
         {
           std::vector<cv::Point2f> corners =
@@ -307,11 +312,11 @@ public:
           cv::Mat mask2;
           cv::bitwise_or(mask, mask1, mask2);
           avg.copyTo(res, ~mask2);
+          if(!fs::exists(temporary_save_path / "foo")) {
+            fs::create_directories(temporary_save_path / "foo");
+          }
 
-          cv::imshow("img1", img1);
-          cv::imshow("img2", img2);
-          cv::imshow("result", res);
-          cv::waitKey(0);
+          cv::imwrite(temporary_save_path / "foo" / (std::to_string(i) + "_" + std::to_string(j) + "_avg.jpg"), avg);
         }
         std::vector<cv::KeyPoint> kpts1, kpts2;
         for(size_t i = 0; i < keypoints0.size() / 2; i++) {
@@ -323,17 +328,11 @@ public:
               cv::KeyPoint((keypoints1[i * 2] + 1) * img2.cols / 2, (keypoints1[i * 2 + 1] + 1) * img2.rows / 2, 1));
         }
 
-        if(!elem.has_value()) {
-          cache.put(std::move(KeypointsAndDescriptors(path, std::move(keypoints1), std::move(descriptors1))));
-        }
-
-        std::cout << "inlier matches: " << inlier_matches.size() << "\n";
+        INFO("inlier matches: {}", inlier_matches.size());
         cv::drawKeypoints(img1, kpts1, img1, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
         cv::drawKeypoints(img2, kpts2, img2, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
         cv::drawMatches(img1, kpts1, img2, kpts2, inlier_matches, resultImg);
-        if(!fs::exists(temporary_save_path / "foo")) {
-          fs::create_directories(temporary_save_path / "foo");
-        }
+
         cv::imwrite(temporary_save_path / "foo" / (std::to_string(i) + "_" + std::to_string(j) + ".jpg"), resultImg);
 
         pair.valid = true;

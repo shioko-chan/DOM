@@ -36,32 +36,11 @@ namespace views  = std::views;
 namespace Ortho {
 
 struct ImgData {
-public:
-
   Pose      pose;
   Intrinsic intrinsic;
   Image     img;
 
-  explicit ImgData() = default;
-
-  ImgData(const ImgData&) = delete;
-
-  ImgData& operator=(const ImgData&) = delete;
-
   void rotate_rectify() { img.rotate_rectify(pose, intrinsic); }
-
-  explicit ImgData(Pose&& pose, Intrinsic&& intrinsic, const fs::path& path, const fs::path& mid_save_path) :
-      pose(std::move(pose)), intrinsic(std::move(intrinsic)), img(path, mid_save_path) {}
-
-  explicit ImgData(ImgData&& val) :
-      pose(std::move(val.pose)), intrinsic(std::move(val.intrinsic)), img(std::move(val.img)) {}
-
-  ImgData& operator=(Ortho::ImgData&& val) {
-    pose      = std::move(val.pose);
-    intrinsic = std::move(val.intrinsic);
-    img       = std::move(val.img);
-    return *this;
-  }
 
   friend ostream& operator<<(ostream& os, const ImgData& data) {
     os << "Camera Matrix: " << data.intrinsic << "\n"
@@ -82,43 +61,27 @@ public:
 
   static std::optional<ImgData> build(fs::path path, fs::path temp_save_path) {
     if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
-      std::cerr << "Error: " << path << " is not a valid image file\n";
-      return std::nullopt;
-    }
-    auto image_info = Exiv2::ImageFactory::open(path.string());
-    if(image_info.get() == 0) {
-      std::cerr << "Error: " << path << " could not be opened by Exiv2\n";
-      return std::nullopt;
-    }
-    try {
-      image_info->readMetadata();
-    } catch(std::exception& e) {
-      std::cerr << "Error: " << e.what() << "\n";
-      return std::nullopt;
-    }
-    Exiv2::ExifData exif = image_info->exifData();
-    Exiv2::XmpData  xmp  = image_info->xmpData();
-    if(exif.empty() || xmp.empty()) {
-      std::cerr << path << " Error: Exif or Xmp data is empty\n";
+      ERROR("Error: {} is not a valid image file", path.string());
       return std::nullopt;
     }
 
-    std::optional<std::string> res;
-    res = IntrinsicFactory::validate_exif(exif);
+    Image img(path, temp_save_path);
+
+    auto&& res = IntrinsicFactory::validate_exif(img.exif_data());
     if(res.has_value()) {
       std::cerr << res.value();
       return std::nullopt;
     }
-    res = PoseFactory::validate_xmp(xmp);
+    res = PoseFactory::validate_xmp(img.xmp_data());
     if(res.has_value()) {
       std::cerr << res.value();
       return std::nullopt;
     }
 
-    Pose      pose      = PoseFactory::build(xmp);
-    Intrinsic intrinsic = IntrinsicFactory::build(exif);
+    Intrinsic intrinsic = IntrinsicFactory::build(img.exif_data());
+    Pose      pose      = PoseFactory::build(img.xmp_data());
 
-    return std::make_optional<ImgData>(std::move(pose), std::move(intrinsic), path, temp_save_path);
+    return {{pose, intrinsic, img}};
   }
 };
 } // namespace Ortho

@@ -1,8 +1,9 @@
-#ifndef KNNFORGPS_HPP
-#define KNNFORGPS_HPP
+#ifndef ORTHO_KNN_ON_EUCLIDEAN_DISTANCE_HPP
+#define ORTHO_KNN_ON_EUCLIDEAN_DISTANCE_HPP
 
 #include <algorithm>
 #include <cmath>
+#include <concepts>
 #include <ranges>
 #include <utility>
 #include <vector>

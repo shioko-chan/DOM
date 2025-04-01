@@ -12,10 +12,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "angle.hpp"
-
-#ifndef SENSOR_WIDTH_DATABASE
-  #define SENSOR_WIDTH_DATABASE "sensor_width_database.txt"
-#endif
+#include "static.h"
 
 using std::unordered_map;
 
@@ -24,15 +21,31 @@ namespace views = std::views;
 
 namespace Ortho {
 struct Pose {
-private:
-
-  cv::Mat R_, t_, T_;
-
 public:
 
   Angle       yaw, pitch, roll, latitude, longitude;
   float       altitude, altitude_ref;
   cv::Point2f coord;
+
+  Pose() = default;
+
+  explicit Pose(
+      const float& yaw_,
+      const float& pitch_,
+      const float& roll_,
+      const float& latitude_,
+      const float& longitude_,
+      const float& altitude_) :
+      yaw(yaw_), pitch(pitch_), roll(roll_), latitude(latitude_), longitude(longitude_), altitude(altitude_) {
+    cv::Mat R_z = Rz(yaw.radians());
+    cv::Mat R_y = Ry(pitch.radians());
+    cv::Mat R_x = Rx(roll.radians());
+    cv::Mat m1_ = R_z * R_y * R_x * Ry(Angle::PI / 2);
+    m1_.copyTo(R_);
+    cv::Mat m2_ = (cv::Mat_<float>(3, 1) << 0.0f, 0.0f, -altitude);
+    m2_.copyTo(t_);
+    cv::hconcat(R_, t_, T_);
+  }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
     altitude_ref           = altitude_ref_;
@@ -69,26 +82,6 @@ public:
     // clang-format on
   }
 
-  explicit Pose() = default;
-
-  explicit Pose(
-      const float& yaw_,
-      const float& pitch_,
-      const float& roll_,
-      const float& latitude_,
-      const float& longitude_,
-      const float& altitude_) :
-      yaw(yaw_), pitch(pitch_), roll(roll_), latitude(latitude_), longitude(longitude_), altitude(altitude_) {
-    cv::Mat R_z = Rz(yaw.radians());
-    cv::Mat R_y = Ry(pitch.radians());
-    cv::Mat R_x = Rx(roll.radians());
-    cv::Mat m1_ = R_z * R_y * R_x * Ry(Angle::PI / 2);
-    m1_.copyTo(R_);
-    cv::Mat m2_ = (cv::Mat_<float>(3, 1) << 0.0f, 0.0f, -altitude);
-    m2_.copyTo(t_);
-    cv::hconcat(R_, t_, T_);
-  }
-
   const cv::Mat& R() const { return R_; }
 
   const cv::Mat& t() const { return t_; }
@@ -106,23 +99,16 @@ public:
        << "t: " << pose.t_ << "\n";
     return os;
   }
+
+private:
+
+  cv::Mat R_, t_, T_;
 };
 
 struct Intrinsic {
-private:
-
-  cv::Mat camera_matrix;
-  cv::Mat distortion_coefficients;
-
 public:
 
-  explicit Intrinsic() = default;
-
-  explicit Intrinsic(Intrinsic&& intrinsic) :
-      camera_matrix(std::move(intrinsic.camera_matrix)), distortion_coefficients(intrinsic.distortion_coefficients) {}
-
-  explicit Intrinsic(const cv::Mat& camera_matrix, const cv::Mat& distortion_coefficients) :
-      camera_matrix(camera_matrix), distortion_coefficients(distortion_coefficients) {}
+  Intrinsic() = default;
 
   explicit Intrinsic(const float& w, const float& h, const float& focal, const float& sensor_width = 13.2f) :
       distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
@@ -137,12 +123,6 @@ public:
     m_.copyTo(camera_matrix);
   }
 
-  Intrinsic& operator=(Intrinsic&& val) {
-    camera_matrix           = std::move(val.camera_matrix);
-    distortion_coefficients = std::move(val.distortion_coefficients);
-    return *this;
-  }
-
   const cv::Mat& K() const { return camera_matrix; }
 
   const cv::Mat& D() const { return distortion_coefficients; }
@@ -152,6 +132,11 @@ public:
        << "Distortion Coefficients: " << intrinsic.distortion_coefficients << "\n";
     return os;
   }
+
+private:
+
+  cv::Mat camera_matrix;
+  cv::Mat distortion_coefficients;
 };
 
 class PoseFactory {

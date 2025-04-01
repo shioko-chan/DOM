@@ -10,13 +10,72 @@
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "log.hpp"
 #include "lru.hpp"
 #include "rotate_rectify.hpp"
 
 namespace fs = std::filesystem;
 
 namespace Ortho {
+
+using MatRefLockPair = TRefLockPair<cv::Mat>;
+
 class Image {
+public:
+
+  Image() = default;
+
+  explicit Image(const fs::path& img_read_path, const fs::path& temporary_save_path) : path(img_read_path) {
+    cache.put(std::move(Image_(img_read_path)));
+    rotate_path      = temporary_save_path / (path.stem().string() + "_rotate" + path.extension().string());
+    rotate_mask_path = temporary_save_path / (path.stem().string() + "_rotate_mask" + path.extension().string());
+  }
+
+  void rotate_rectify(const Pose& pose, const Intrinsic& intrinsic) {
+    auto [img_, lock]         = img();
+    auto&& [rotate_img, mask] = Ortho::rotate_rectify(img_.size(), pose, intrinsic, img_);
+    lock.unlock();
+    if(rotate_img.empty()) {
+      ERROR("Error: {} could not be rotate-rectified", path.string());
+      return;
+    }
+    cache.put(std::move(Image_(rotate_path, std::move(rotate_img))));
+    cache.put(std::move(Image_(rotate_mask_path, std::move(mask))));
+  }
+
+  const fs::path& get_img_path() const { return path; }
+
+  fs::path get_img_name() const { return path.filename(); }
+
+  fs::path get_img_stem() const { return path.stem(); }
+
+  fs::path get_img_extension() const { return path.extension(); }
+
+  MatRefLockPair img() {
+    auto [img_, lock] = cache.get(path).value();
+    return {img_.get(), std::move(lock)};
+  }
+
+  MatRefLockPair rotate() {
+    auto [img_, lock] = cache.get(rotate_path).value();
+    return {img_.get(), std::move(lock)};
+  }
+
+  MatRefLockPair rotate_mask() {
+    auto [img_, lock] = cache.get(rotate_mask_path).value();
+    return {img_.get(), std::move(lock)};
+  }
+
+  Exiv2::ExifData& exif_data() {
+    load_exif_xmp();
+    return exif_;
+  }
+
+  Exiv2::XmpData& xmp_data() {
+    load_exif_xmp();
+    return xmp_;
+  }
+
 private:
 
   struct Image_ : public CacheElem<fs::path> {
@@ -51,6 +110,7 @@ private:
         throw std::runtime_error("Error: " + path.string() + " does not exist");
       }
       img_ = cv::imread(path.string());
+      decimate_keep_aspect_ratio(&img_, {1024, 1024});
       if(img_.empty()) {
         throw std::runtime_error("Error: " + path.string() + " could not be read");
       }
@@ -85,7 +145,7 @@ private:
 
   static inline std::mutex mtx;
 
-  fs::path        path, ortho_path;
+  fs::path        path, rotate_path, rotate_mask_path;
   Exiv2::ExifData exif_;
   Exiv2::XmpData  xmp_;
 
@@ -97,59 +157,17 @@ private:
 
     auto image_info = Exiv2::ImageFactory::open(path.string());
     if(!image_info) {
-      std::cerr << "Error: " << path.string() << " could not be opened by Exiv2\n";
+      ERROR("Error: {} could not be opened by Exiv2", path.string());
       return;
     }
     try {
       image_info->readMetadata();
     } catch(std::exception& e) {
-      std::cerr << "Error: readMetadata " << e.what() << "\n";
+      ERROR("An error occur while reading Metadata: {}", e.what());
       return;
     }
     exif_ = image_info->exifData();
     xmp_  = image_info->xmpData();
-  }
-
-public:
-
-  using MatRefLockPair = TRefLockPair<cv::Mat>;
-
-  explicit Image() = default;
-
-  explicit Image(const fs::path& img_read_path, const fs::path& temporary_save_path) : path(img_read_path) {
-    cache.put(std::move(Image_(img_read_path)));
-    ortho_path = temporary_save_path / (path.stem().string() + "_ortho" + path.extension().string());
-  }
-
-  void rotate_rectify(const Pose& pose, const Intrinsic& intrinsic) {
-    auto [img_, lock] = img();
-    cv::Mat ortho_img = Ortho::rotate_rectify(img_.size(), pose, intrinsic, img_);
-    lock.unlock();
-    if(ortho_img.empty()) {
-      std::cerr << "Error: " << path.string() << " could not be rotate-rectified\n";
-      return;
-    }
-    cache.put(std::move(Image_(ortho_path, std::move(ortho_img))));
-  }
-
-  MatRefLockPair img() {
-    auto [img_, lock] = cache.get(path).value();
-    return std::make_pair(std::ref(img_.get()), std::move(lock));
-  }
-
-  MatRefLockPair ortho() {
-    auto [img_, lock] = cache.get(ortho_path).value();
-    return std::make_pair(std::ref(img_.get()), std::move(lock));
-  }
-
-  const Exiv2::ExifData& exif_data() {
-    load_exif_xmp();
-    return exif_;
-  }
-
-  const Exiv2::XmpData& xmp_data() {
-    load_exif_xmp();
-    return xmp_;
   }
 };
 } // namespace Ortho

@@ -1,6 +1,7 @@
 #ifndef ORTHO_LRU_HPP
 #define ORTHO_LRU_HPP
 
+#include <concepts>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -124,7 +125,7 @@ public:
         value.in_mem = true;
       }
       lru_list.splice(lru_list.begin(), lru_list, it->second);
-      return std::make_pair(std::ref(value), std::move(lock));
+      return {{value, std::move(lock)}};
     }
     return std::nullopt;
   }
