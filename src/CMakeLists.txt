@@ -29,7 +29,7 @@ target_link_directories(orthophoto PUBLIC
 
 target_compile_definitions(orthophoto PRIVATE SENSOR_WIDTH_DATABASE="${CMAKE_BINARY_DIR}/data/static/sensor_width_camera_database.txt")
 target_compile_definitions(orthophoto PRIVATE SUPERPOINT_WEIGHT="${CMAKE_BINARY_DIR}/data/static/superpoint.onnx")
-target_compile_definitions(orthophoto PRIVATE LIGHTGLUE_WEIGHT="${CMAKE_BINARY_DIR}/data/static/superpoint_lightglue_fused_fp16.onnx")
+target_compile_definitions(orthophoto PRIVATE LIGHTGLUE_WEIGHT="${CMAKE_BINARY_DIR}/data/static/superpoint_lightglue_fused.onnx")
 target_compile_definitions(orthophoto PRIVATE ${LOG_LEVEL})
 
 target_link_libraries(orthophoto PUBLIC

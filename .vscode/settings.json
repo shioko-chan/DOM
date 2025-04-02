@@ -78,6 +78,7 @@
     },
     "cSpell.words": [
         "cudnn",
+        "DCMAKE",
         "exiv",
         "Exiv",
         "hconcat",
@@ -85,6 +86,7 @@
         "imread",
         "imshow",
         "imwrite",
+        "keyrings",
         "kpts",
         "LIGHTGLUE",
         "LOGLEVEL",

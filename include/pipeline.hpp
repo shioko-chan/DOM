@@ -20,8 +20,7 @@
 #include "matchpair.hpp"
 #include "progress.hpp"
 
-namespace fs    = std::filesystem;
-namespace views = std::views;
+namespace fs = std::filesystem;
 
 namespace Ortho {
 
@@ -41,18 +40,19 @@ private:
   static auto generate_start_end(unsigned int total, unsigned int divisor) {
     int  base      = total / divisor;
     int  remainder = total % divisor;
-    auto sequence = views::iota(0u, divisor) | views::transform([=](int i) { return i < remainder ? base + 1 : base; });
+    auto sequence =
+        std::views::iota(0u, divisor) | std::views::transform([=](int i) { return i < remainder ? base + 1 : base; });
     std::vector<int> cumulative{0};
     std::partial_sum(sequence.begin(), sequence.end(), std::back_inserter(cumulative));
-    return views::iota(0u, divisor)
-           | views::transform([cumulative](int i) { return std::make_pair(cumulative[i], cumulative[i + 1]); });
+    return std::views::iota(0u, divisor)
+           | std::views::transform([cumulative](int i) { return std::make_pair(cumulative[i], cumulative[i + 1]); });
   }
 
   auto run(std::function<void(int)>&& process) {
     std::vector<std::thread> threads;
     progress.rerun();
     auto v = generate_start_end(img_paths.size(), std::thread::hardware_concurrency())
-             | views::transform([this, &process](auto&& start_end) {
+             | std::views::transform([this, &process](auto&& start_end) {
                  auto&& [start, end] = start_end;
                  return std::thread([this, start, end, &process]() {
                    for(int i = start; i < end; i++, progress.update()) {
@@ -123,7 +123,8 @@ public:
   }
 
   void find_neighbors(const int k = 10) {
-    auto knn = KNN(k, imgs_data | views::transform([](auto&& data) { return data.pose.coord; }) | views::common);
+    auto knn =
+        KNN(k, imgs_data | std::views::transform([](auto&& data) { return data.pose.coord; }) | std::views::common);
 
     std::vector<std::vector<MatchPair>> matches(imgs_data.size());
     run([this, &knn, &matches](int i) {
@@ -137,7 +138,7 @@ public:
       }
     });
 
-    auto v = matches | views::join | views::common;
+    auto v = matches | std::views::join | std::views::common;
 
     std::set<MatchPair> match_set(v.begin(), v.end());
     match_pairs.assign(match_set.begin(), match_set.end());

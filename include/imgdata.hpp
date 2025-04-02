@@ -13,7 +13,6 @@
 #include <ranges>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -24,14 +23,7 @@
 #include "image.hpp"
 #include "pose_intrinsic.hpp"
 
-using std::ostream;
-using std::pair;
-using std::unordered_map;
-using std::unordered_set;
-
-namespace fs     = std::filesystem;
-namespace ranges = std::ranges;
-namespace views  = std::views;
+namespace fs = std::filesystem;
 
 namespace Ortho {
 
@@ -42,7 +34,7 @@ struct ImgData {
 
   void rotate_rectify() { img.rotate_rectify(pose, intrinsic); }
 
-  friend ostream& operator<<(ostream& os, const ImgData& data) {
+  friend std::ostream& operator<<(std::ostream& os, const ImgData& data) {
     os << "Camera Matrix: " << data.intrinsic << "\n"
        << "Pose: " << data.pose << "\n";
     return os;
@@ -54,7 +46,7 @@ using ImgsData = std::vector<ImgData>;
 class ImgDataFactory {
 private:
 
-  static inline const unordered_set<std::string> extensions =
+  static inline const std::unordered_set<std::string> extensions =
       {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
 
 public:

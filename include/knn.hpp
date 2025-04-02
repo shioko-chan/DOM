@@ -15,8 +15,8 @@ namespace Ortho {
 class KNN {
 public:
 
-  using Point  = cv::Point2f;
-  using Points = std::vector<Point>;
+  using Point  = Ortho::Point<float>;
+  using Points = Ortho::Points<float>;
 
   template <typename U>
     requires std::same_as<std::decay_t<U>, Points>

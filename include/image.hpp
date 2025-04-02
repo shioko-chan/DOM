@@ -13,8 +13,7 @@
 #include "log.hpp"
 #include "lru.hpp"
 #include "rotate_rectify.hpp"
-
-namespace fs = std::filesystem;
+#include "utility.hpp"
 
 namespace Ortho {
 
@@ -51,17 +50,17 @@ public:
 
   fs::path get_img_extension() const { return path.extension(); }
 
-  MatRefLockPair img() {
+  MatRefLockPair img() const {
     auto [img_, lock] = cache.get(path).value();
     return {img_.get(), std::move(lock)};
   }
 
-  MatRefLockPair rotate() {
+  MatRefLockPair rotate() const {
     auto [img_, lock] = cache.get(rotate_path).value();
     return {img_.get(), std::move(lock)};
   }
 
-  MatRefLockPair rotate_mask() {
+  MatRefLockPair rotate_mask() const {
     auto [img_, lock] = cache.get(rotate_mask_path).value();
     return {img_.get(), std::move(lock)};
   }
