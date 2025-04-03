@@ -24,10 +24,9 @@ namespace Ortho {
 class Extractor {
 private:
 
-  static constexpr float superpoint_threshold       = 0.05f;
-  static constexpr int   superpoint_keypoint_maxcnt = 1024;
+  static inline cv::Size resolution{1024, 1024};
 
-  InferEnv superpoint;
+  InferEnv env;
   fs::path temporary_save_path;
 
   struct KeypointsAndDescriptors : public CacheElem<fs::path> {
@@ -102,12 +101,26 @@ private:
 
   static inline LRU<KeypointsAndDescriptors> cache{4ul * (1ul << 30)};
 
+protected:
+
+  Extractor(const fs::path& temporary_save_path, const std::string& name, const std::string& model_path) :
+      temporary_save_path(temporary_save_path), env(std::format("[{}]", name), model_path) {}
+
+  inline void reshape(cv::Mat* img) { decimate_keep_aspect_ratio(img, resolution); }
+
+  virtual void preprocess(cv::Mat* img) const = 0;
+
+  virtual inline int64_t get_channels() const = 0;
+
+  virtual inline float get_threshold() const = 0;
+
+  virtual inline int64_t get_keypoint_maxcnt() const = 0;
+
 public:
 
-  Extractor(fs::path temporary_save_path) :
-      temporary_save_path(temporary_save_path), superpoint("[superpoint]", SUPERPOINT_WEIGHT) {}
+  virtual inline int64_t get_descriptor_width() const = 0;
 
-  auto infer_keypoints_and_descriptors(ImgData& img_data) {
+  std::pair<std::vector<float>, std::vector<float>> infer_keypoints_and_descriptors(ImgData& img_data) {
     fs::path path = temporary_save_path / (img_data.img.get_img_stem().string() + ".desc");
 
     auto elem = cache.get(path);
@@ -115,54 +128,54 @@ public:
       auto&& [kp_desc, lock] = elem.value();
       std::vector<float> keypoints(kp_desc.keypoints), descriptors(kp_desc.descriptors);
       lock.unlock();
-      return std::make_pair(keypoints, descriptors);
+      return {keypoints, descriptors};
     }
 
-    std::vector<float> keypoints, descriptors;
-
-    auto [img, lock_img] = img_data.img.rotate();
-    cv::Mat img_reshaped = img.clone();
-    decimate_keep_aspect_ratio(&img_reshaped, {1024, 1024});
+    auto [img, lock_img]  = img_data.img.rotate();
+    cv::Mat img_processed = img.clone();
     lock_img.unlock();
-
-    cv::Mat img_processed;
-    cv::cvtColor(img_reshaped, img_processed, cv::COLOR_BGR2GRAY);
-    img_processed.convertTo(img_processed, CV_32FC1, 1.0f / 255.0f);
-    img_reshaped.release();
+    reshape(&img_processed);
+    preprocess(&img_processed);
 
     auto [mask, lock_mask] = img_data.img.rotate_mask();
     cv::Mat mask_processed = mask.clone();
-    decimate_keep_aspect_ratio(&mask_processed, {1024, 1024});
     lock_mask.unlock();
+    reshape(&mask_processed);
 
     std::vector<float> img_vec(img_processed.begin<float>(), img_processed.end<float>());
-    const int64_t      h = img_processed.rows, w = img_processed.cols;
-
+    const int64_t      h = mask_processed.rows, w = mask_processed.cols;
     img_processed.release();
 
-    superpoint.set_input("image", img_vec, {1, 1, h, w});
+    env.set_input("image", img_vec, {1, get_channels(), h, w});
 
-    auto res = superpoint.infer();
+    if(img_vec.empty()) {
+      throw std::runtime_error("Error: Image is empty");
+    }
+    auto res = env.infer();
+    if(img_vec.empty()) {
+      throw std::runtime_error("Error: Image is empty");
+    }
     img_vec.clear();
 
-    const int      cnt    = res[superpoint.get_output_index("keypoints")].GetTensorTypeAndShapeInfo().GetShape()[1];
-    const int64_t* kps    = res[superpoint.get_output_index("keypoints")].GetTensorData<int64_t>();
-    const float *  scores = res[superpoint.get_output_index("scores")].GetTensorData<float>(),
-                *descs    = res[superpoint.get_output_index("descriptors")].GetTensorData<float>();
+    const int      cnt    = res[env.get_output_index("keypoints")].GetTensorTypeAndShapeInfo().GetShape()[1];
+    const int64_t* kps    = res[env.get_output_index("keypoints")].GetTensorData<int64_t>();
+    const float *  scores = res[env.get_output_index("scores")].GetTensorData<float>(),
+                *descs    = res[env.get_output_index("descriptors")].GetTensorData<float>();
 
     DEBUG("Image {} has {} keypoints detected!", img_data.img.get_img_name().string(), cnt);
-    auto v = std::views::iota(0, cnt) | std::views::filter([&scores, &mask_processed, &kps](const auto& idx) {
-               return scores[idx] >= superpoint_threshold
+
+    auto v = std::views::iota(0, cnt) | std::views::filter([this, &scores, &mask_processed, &kps](const auto& idx) {
+               return scores[idx] >= get_threshold()
                       && mask_processed.at<unsigned char>(kps[idx * 2 + 1], kps[idx * 2]) != 0;
              });
     std::vector<size_t> indices(v.begin(), v.end());
-    if(indices.size() > superpoint_keypoint_maxcnt) {
+    if(indices.size() > get_keypoint_maxcnt()) {
       std::nth_element(
           indices.begin(),
-          indices.begin() + superpoint_keypoint_maxcnt,
+          indices.begin() + get_keypoint_maxcnt(),
           indices.end(),
           [&scores](const size_t& lhs, const size_t& rhs) { return scores[lhs] > scores[rhs]; });
-      indices.resize(superpoint_keypoint_maxcnt);
+      indices.resize(get_keypoint_maxcnt());
     }
     const float wf2 = w / 2.0f, hf2 = h / 2.0f;
 
@@ -170,9 +183,10 @@ public:
                 return std::array{(kps[idx * 2] - wf2) / wf2, (kps[idx * 2 + 1] - hf2) / hf2};
               })
               | std::views::join | std::views::common;
-    auto v2 = indices | std::views::transform([&descs](const size_t& idx) {
-                return std::views::iota(0, 256)
-                       | std::views::transform([idx, &descs](const size_t& j) { return descs[idx * 256 + j]; });
+    auto v2 = indices | std::views::transform([this, &descs](const size_t& idx) {
+                return std::views::iota(0, get_descriptor_width())
+                       | std::views::transform(
+                           [this, idx, &descs](const size_t& j) { return descs[idx * get_descriptor_width() + j]; });
               })
               | std::views::join | std::views::common;
 
@@ -185,5 +199,62 @@ public:
     return std::make_pair(filtered_keypoints, filtered_descriptors);
   }
 };
+
+class SuperPointExtractor : public Extractor {
+private:
+
+  static constexpr float superpoint_threshold       = 0.05f;
+  static constexpr int   superpoint_keypoint_maxcnt = 1024;
+
+  void preprocess(cv::Mat* img) const override {
+    cv::cvtColor(*img, *img, cv::COLOR_BGR2GRAY);
+    img->convertTo(*img, CV_32FC1, 1.0f / 255.0f);
+  }
+
+  inline int64_t get_channels() const override { return 1; }
+
+  inline float get_threshold() const override { return superpoint_threshold; }
+
+  inline int64_t get_keypoint_maxcnt() const override { return superpoint_keypoint_maxcnt; }
+
+public:
+
+  inline int64_t get_descriptor_width() const override { return 256; }
+
+  SuperPointExtractor(const fs::path& temporary_save_path) :
+      Extractor(temporary_save_path, "superpoint", SUPERPOINT_WEIGHT) {}
+};
+
+class DiskExtractor : public Extractor {
+private:
+
+  static constexpr float disk_threshold       = 0.05f;
+  static constexpr int   disk_keypoint_maxcnt = 1024;
+
+  void preprocess(cv::Mat* img) const override {
+    if(!img->isContinuous()) {
+      *img = img->clone();
+    }
+    std::vector<cv::Mat> channels;
+    cv::split(*img, channels);
+    img->create(3, channels[0].rows * channels[0].cols, CV_32FC1);
+    channels[2].reshape(1, 1).convertTo(img->row(0), CV_32FC1, 1.0f / 255.0f);
+    channels[1].reshape(1, 1).convertTo(img->row(1), CV_32FC1, 1.0f / 255.0f);
+    channels[0].reshape(1, 1).convertTo(img->row(2), CV_32FC1, 1.0f / 255.0f);
+  }
+
+  inline int64_t get_channels() const override { return 3; }
+
+  inline float get_threshold() const override { return disk_threshold; }
+
+  inline int64_t get_keypoint_maxcnt() const override { return disk_keypoint_maxcnt; }
+
+public:
+
+  inline int64_t get_descriptor_width() const override { return 128; }
+
+  DiskExtractor(const fs::path& temporary_save_path) : Extractor(temporary_save_path, "disk", DISK_WEIGHT) {}
+};
+
 } // namespace Ortho
 #endif

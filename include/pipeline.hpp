@@ -146,7 +146,7 @@ public:
 
   void match() {
     find_neighbors(10);
-    Matcher matcher(temporary_save_dir);
+    Matcher matcher = matcher_factory(temporary_save_dir, FeatureType::SUPERPOINT);
     matcher.match(match_pairs, imgs_data, progress);
   }
 

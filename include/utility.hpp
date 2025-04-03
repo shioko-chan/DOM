@@ -79,7 +79,7 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024
   if(scale < 1.0f) {
     const int w = std::min(static_cast<int>(std::round(img_->cols * scale)), resolution.width);
     const int h = std::min(static_cast<int>(std::round(img_->rows * scale)), resolution.height);
-    cv::resize(*img_, *img_, cv::Size(w, h), 0.0, 0.0, cv::INTER_LINEAR);
+    cv::resize(*img_, *img_, cv::Size(w, h), 0.0, 0.0, cv::INTER_NEAREST);
   }
 }
 

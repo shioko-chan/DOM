@@ -5,6 +5,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <ranges>
 #include <string>
 #include <unordered_map>
@@ -24,16 +25,18 @@
 
 namespace Ortho {
 
+enum FeatureType { SUPERPOINT, DISK };
+
 class Matcher {
 private:
 
-  static constexpr float   lightglue_threshold  = 0.2f;
-  static constexpr int     inlier_cnt_threshold = 150;
-  InferEnv                 lightglue;
-  fs::path                 temporary_save_path;
-  Extractor                extractor;
-  std::vector<cv::Point2f> keypoints_lhs, keypoints_rhs;
-  std::vector<float>       kpts0, kpts1, desc0, desc1;
+  static constexpr float     lightglue_threshold  = 0.2f;
+  static constexpr int       inlier_cnt_threshold = 25;
+  InferEnv                   lightglue;
+  fs::path                   temporary_save_path;
+  std::unique_ptr<Extractor> extractor;
+  std::vector<cv::Point2f>   keypoints_lhs, keypoints_rhs;
+  std::vector<float>         kpts0, kpts1, desc0, desc1;
 
   std::pair<int, int> get_img_size(const ImgData& img_data) {
     auto [img, lock] = img_data.img.rotate();
@@ -53,7 +56,7 @@ private:
       std::vector<float>&       desc_,
       const std::string&        kpts_name,
       const std::string&        desc_name) {
-    auto [kpts, desc] = extractor.infer_keypoints_and_descriptors(img_data);
+    auto [kpts, desc] = extractor->infer_keypoints_and_descriptors(img_data);
     const int64_t len = kpts.size() / 2;
     auto [w, h]       = get_img_size(img_data);
     auto v            = kpts | std::views::chunk(2) | to_pixel(w, h);
@@ -61,14 +64,14 @@ private:
     kpts_ = std::move(kpts);
     desc_ = std::move(desc);
     lightglue.set_input(kpts_name, kpts_, {1, len, 2});
-    lightglue.set_input(desc_name, desc_, {1, len, 256});
+    lightglue.set_input(desc_name, desc_, {1, len, extractor->get_descriptor_width()});
   }
 
   void set_lhs_img(ImgData& img_data) { set_img(img_data, keypoints_lhs, kpts0, desc0, "kpts0", "desc0"); }
 
   void set_rhs_img(ImgData& img_data) { set_img(img_data, keypoints_rhs, kpts1, desc1, "kpts1", "desc1"); }
 
-  auto filter_matches_by_score(const int64_t* matches, const float* scores, const int cnt) {
+  auto filter_matches_by_score_precise(const int64_t* matches, const float* scores, const int cnt) {
     std::unordered_map<int, std::pair<int, float>> match_score0, match_score1;
     for(int i = 0; i < cnt; ++i) {
       if(scores[i] >= lightglue_threshold) {
@@ -87,12 +90,14 @@ private:
     auto v = match_score1
              | std::views::transform([](const auto& pair) { return std::make_pair(pair.second.first, pair.first); });
     return std::vector<std::pair<int, int>>(v.begin(), v.end());
+  }
 
-    // auto v = std::views::iota(0, cnt) | std::views::filter([&scores](const auto& idx) { return scores[idx] >=
-    // lightglue_threshold; })|
-    //          std::views::transform([&matches](const auto& idx) { return std::make_pair(matches[idx * 2], matches[idx
-    //          * 2 + 1]); });
-    // return std::vector<std::pair<int, int>>(v.begin(), v.end());
+  auto filter_matches_by_score(const int64_t* matches, const float* scores, const int cnt) {
+    auto v = std::views::iota(0, cnt)
+             | std::views::filter([&scores](const auto& idx) { return scores[idx] >= lightglue_threshold; })
+             | std::views::transform(
+                 [&matches](const auto& idx) { return std::make_pair(matches[idx * 2], matches[idx * 2 + 1]); });
+    return std::vector<std::pair<int, int>>(v.begin(), v.end());
   }
 
   auto infer_and_filter_by_score() {
@@ -107,9 +112,8 @@ private:
 
 public:
 
-  Matcher(fs::path temporary_save_path) :
-      temporary_save_path(temporary_save_path), lightglue("[lightglue]", LIGHTGLUE_WEIGHT),
-      extractor(temporary_save_path) {}
+  Matcher(const fs::path& temporary_save_path, const std::string& weight, Extractor* extractor) :
+      temporary_save_path(temporary_save_path), lightglue("[lightglue]", weight), extractor(extractor) {}
 
   void match(MatchPairs& pairs, ImgsData& imgs_data, Progress& progress) {
     progress.reset(pairs.size());
@@ -144,13 +148,25 @@ public:
           continue;
         }
 
-        cv::Mat img1, img2;
+        cv::Mat img1;
         auto [img1_, lock_img1] = lhs_img.img.rotate();
-        auto [img2_, lock_img2] = rhs_img.img.rotate();
         img1_.copyTo(img1);
-        img2_.copyTo(img2);
         lock_img1.unlock();
+
+        cv::Mat img2;
+        auto [img2_, lock_img2] = rhs_img.img.rotate();
+        img2_.copyTo(img2);
         lock_img2.unlock();
+
+        cv::Mat img1_mask;
+        auto [img1_mask_, lock_img1_mask] = lhs_img.img.rotate_mask();
+        img1_mask_.copyTo(img1_mask);
+        lock_img1_mask.unlock();
+
+        cv::Mat img2_mask;
+        auto [img2_mask_, lock_img2_mask] = rhs_img.img.rotate_mask();
+        img2_mask_.copyTo(img2_mask);
+        lock_img2_mask.unlock();
 
         std::vector<cv::Point2f> points0, points1;
         points0.reserve(matches.size());
@@ -161,7 +177,7 @@ public:
         }
 
         cv::Mat ransac_filter;
-        cv::Mat M = cv::estimateAffinePartial2D(points1, points0, ransac_filter, cv::RANSAC, 3.0);
+        cv::Mat M = cv::estimateAffinePartial2D(points1, points0, ransac_filter, cv::LMEDS, 0.5, 200000UL, 0.99, 100UL);
 
         std::vector<cv::DMatch> inlier_matches;
         for(size_t i = 0; i < points0.size(); i++) {
@@ -187,44 +203,62 @@ public:
 
         {
           std::vector<cv::Point2f> corners =
-              {cv::Point2f(0, 0), cv::Point2f(img2.cols, 0), cv::Point2f(img2.cols, img2.rows), cv::Point2f(0, img2.rows)};
+              {cv::Point2f(0, 0),
+               cv::Point2f(img2.cols - 1, 0),
+               cv::Point2f(img2.cols - 1, img2.rows - 1),
+               cv::Point2f(0, img2.rows - 1)};
           std::vector<cv::Point2f> corners1 =
-              {cv::Point2f(0, 0), cv::Point2f(img1.cols, 0), cv::Point2f(img1.cols, img1.rows), cv::Point2f(0, img1.rows)};
+              {cv::Point2f(0, 0),
+               cv::Point2f(img1.cols - 1, 0),
+               cv::Point2f(img1.cols - 1, img1.rows - 1),
+               cv::Point2f(0, img1.rows - 1)};
+
           cv::transform(corners, corners, M);
           corners.insert(corners.end(), corners1.begin(), corners1.end());
-          float min_x = Ortho::min_x(corners);
-          float min_y = Ortho::min_y(corners);
-          std::for_each(corners.begin(), corners.end(), [min_x, min_y](cv::Point2f& p) {
-            p.x -= min_x;
-            p.y -= min_y;
+          auto v = corners
+                   | std::views::transform([](const cv::Point2f& p) { return cv::Point(abs_ceil(p.x), abs_ceil(p.y)); });
+          std::vector<cv::Point> corners_int(v.begin(), v.end());
+          cv::Rect               rect = cv::boundingRect(corners_int);
+          std::for_each(corners.begin(), corners.end(), [&rect](cv::Point2f& p) {
+            p.x -= rect.x;
+            p.y -= rect.y;
           });
-          int width  = std::ceil(Ortho::max_x(corners));
-          int height = std::ceil(Ortho::max_y(corners));
 
-          cv::Mat result(height, width, img1.type(), cv::Scalar(0, 0, 0));
-          img1.copyTo(result(cv::Rect(corners[4].x, corners[4].y, img1.cols, img1.rows)));
+          cv::Mat result1(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
+          img1.copyTo(result1(cv::Rect(corners[4].x, corners[4].y, img1.cols, img1.rows)));
 
-          cv::Mat result1(height, width, img1.type(), cv::Scalar(0, 0, 0));
+          cv::Mat                  result2(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
+          std::vector<cv::Point2f> from =
+              {cv::Point2f(0, 0),
+               cv::Point2f(img2.cols - 1, 0),
+               cv::Point2f(img2.cols - 1, img2.rows - 1),
+               cv::Point2f(0, img2.rows - 1)};
+          std::vector<cv::Point2f> to(corners.begin(), corners.begin() + 4);
+          cv::Mat                  M = cv::estimateAffinePartial2D(from, to);
 
-          cv::warpAffine(img2, result1, M, result.size(), cv::INTER_LINEAR, cv::BORDER_TRANSPARENT);
-          cv::Mat mask = (result1 == 0);
-          cv::Mat res;
-          result.copyTo(res, mask);
-          cv::Mat mask1 = (result == 0);
-          result1.copyTo(res, mask1);
+          cv::warpAffine(img2, result2, M, result1.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+
           cv::Mat avg;
-          cv::addWeighted(result, 0.5, result1, 0.5, 0, avg);
-          cv::Mat mask2;
-          cv::bitwise_or(mask, mask1, mask2);
-          avg.copyTo(res, ~mask2);
+          cv::addWeighted(result1, 0.5, result2, 0.5, 0, avg);
+
+          cv::Mat mask1(rect.height, rect.width, img1_mask.type(), cv::Scalar(0));
+          img1_mask.copyTo(mask1(cv::Rect(corners[4].x, corners[4].y, img1_mask.cols, img1_mask.rows)));
+
+          cv::Mat mask2(rect.height, rect.width, img1_mask.type(), cv::Scalar(0));
+          cv::warpAffine(img2_mask, mask2, M, result1.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
+
+          cv::Mat res;
+          result1.copyTo(res, mask1);
+          result2.copyTo(res, mask2);
+          avg.copyTo(res, mask1 & mask2);
+
           if(!fs::exists(temporary_save_path / "foo")) {
             fs::create_directories(temporary_save_path / "foo");
           }
-
           cv::imwrite(
               temporary_save_path / "foo"
                   / (lhs_img.img.get_img_stem().string() + "_" + rhs_img.img.get_img_stem().string() + "_avg.jpg"),
-              avg);
+              res);
         }
 
         auto v0 = points0 | std::views::transform([](const cv::Point2f& p) { return cv::KeyPoint(p.x, p.y, 1); });
@@ -248,5 +282,16 @@ public:
     }
   }
 };
+
+Matcher matcher_factory(const fs::path& temporary_save_path, enum FeatureType feature_type) {
+  switch(feature_type) {
+    case FeatureType::SUPERPOINT:
+      return Matcher(temporary_save_path, SUPERPOINT_LIGHTGLUE_WEIGHT, new SuperPointExtractor(temporary_save_path));
+    case FeatureType::DISK:
+      return Matcher(temporary_save_path, DISK_LIGHTGLUE_WEIGHT, new DiskExtractor(temporary_save_path));
+    default:
+      throw std::invalid_argument("Invalid feature type");
+  }
+}
 } // namespace Ortho
 #endif

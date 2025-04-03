@@ -14,13 +14,13 @@ using MatAndMask = std::pair<cv::Mat, cv::Mat>;
 
 MatAndMask rotate_rectify(const cv::Size img_size, const Pose& pose, const Intrinsic& intrinsic, const cv::Mat& img) {
   auto [w, h] = img_size;
-  if(w < 9 || h < 9) {
+  if(w < 5 || h < 5) {
     throw std::runtime_error("Image size is too small");
   }
   std::vector<cv::Point2f> src =
       {cv::Point2f(w - 1, 0), cv::Point2f(0, 0), cv::Point2f(0, h - 1), cv::Point2f(w - 1, h - 1)};
-  cv::Mat mask = cv::Mat::ones(h - 8, w - 8, CV_8UC1) * 255;
-  cv::copyMakeBorder(mask, mask, 4, 4, 4, 4, cv::BORDER_CONSTANT, cv::Scalar(0));
+  cv::Mat mask = cv::Mat::ones(h - 4, w - 4, CV_8UC1) * 255;
+  cv::copyMakeBorder(mask, mask, 2, 2, 2, 2, cv::BORDER_CONSTANT, cv::Scalar(0));
   auto pipeline = [&pose, &intrinsic](const std::vector<cv::Point2f>& src, const cv::Mat& img) {
     auto v0 = src | std::views::transform([&pose, &intrinsic](auto&& point) {
                 cv::Mat point_ = (cv::Mat_<float>(3, 1) << point.x, point.y, 1);

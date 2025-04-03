@@ -22,6 +22,7 @@ using MatRefLockPair = TRefLockPair<cv::Mat>;
 class Image {
 public:
 
+  static inline cv::Size resolution{4096, 4096};
   Image() = default;
 
   explicit Image(const fs::path& img_read_path, const fs::path& temporary_save_path) : path(img_read_path) {
@@ -109,7 +110,7 @@ private:
         throw std::runtime_error("Error: " + path.string() + " does not exist");
       }
       img_ = cv::imread(path.string());
-      decimate_keep_aspect_ratio(&img_, {1024, 1024});
+      decimate_keep_aspect_ratio(&img_, resolution);
       if(img_.empty()) {
         throw std::runtime_error("Error: " + path.string() + " could not be read");
       }

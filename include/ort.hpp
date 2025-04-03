@@ -27,7 +27,10 @@ public:
 
   InferEnv() = delete;
 
-  InferEnv(const char* name, const char* model_path, const OrtLoggingLevel log_level = ORT_LOGGING_LEVEL_ERROR) {
+  InferEnv(
+      const std::string&    name,
+      const std::string&    model_path,
+      const OrtLoggingLevel log_level = ORT_LOGGING_LEVEL_ERROR) {
     Ort::SessionOptions session_options;
 
     OrtCUDAProviderOptions provider_options;
@@ -39,9 +42,9 @@ public:
     session_options.AppendExecutionProvider_CUDA(provider_options);
     session_options.SetExecutionMode(ExecutionMode::ORT_PARALLEL);
     session_options.SetLogSeverityLevel(log_level);
-    session_options.SetLogId(name);
+    session_options.SetLogId(name.c_str());
 
-    session.reset(new Ort::Session(ort_env(), model_path, session_options));
+    session.reset(new Ort::Session(ort_env(), model_path.c_str(), session_options));
 
     Ort::AllocatorWithDefaultOptions allocator;
     for(int i = 0; i < session->GetInputCount(); ++i) {

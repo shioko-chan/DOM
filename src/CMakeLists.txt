@@ -26,10 +26,13 @@ target_link_directories(orthophoto PUBLIC
   ${onnxruntime_LIB_DIR}
   ${exiv2_LIB_DIR}
 )
-
-target_compile_definitions(orthophoto PRIVATE SENSOR_WIDTH_DATABASE="${CMAKE_BINARY_DIR}/data/static/sensor_width_camera_database.txt")
-target_compile_definitions(orthophoto PRIVATE SUPERPOINT_WEIGHT="${CMAKE_BINARY_DIR}/data/static/superpoint.onnx")
-target_compile_definitions(orthophoto PRIVATE LIGHTGLUE_WEIGHT="${CMAKE_BINARY_DIR}/data/static/superpoint_lightglue_fused.onnx")
+set(STATIC_FILE_PREFIX ${CMAKE_BINARY_DIR}/data/static)
+set(MODEL_FILE_PREFIX ${STATIC_FILE_PREFIX}/models)
+target_compile_definitions(orthophoto PRIVATE SENSOR_WIDTH_DATABASE="${STATIC_FILE_PREFIX}/sensor_width_camera_database.txt")
+target_compile_definitions(orthophoto PRIVATE SUPERPOINT_WEIGHT="${MODEL_FILE_PREFIX}/superpoint.onnx")
+target_compile_definitions(orthophoto PRIVATE SUPERPOINT_LIGHTGLUE_WEIGHT="${MODEL_FILE_PREFIX}/superpoint_lightglue_fused.onnx")
+target_compile_definitions(orthophoto PRIVATE DISK_WEIGHT="${MODEL_FILE_PREFIX}/disk.onnx")
+target_compile_definitions(orthophoto PRIVATE DISK_LIGHTGLUE_WEIGHT="${MODEL_FILE_PREFIX}/disk_lightglue_fused.onnx")
 target_compile_definitions(orthophoto PRIVATE ${LOG_LEVEL})
 
 target_link_libraries(orthophoto PUBLIC
