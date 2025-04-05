@@ -68,12 +68,13 @@ public:
   template <typename T>
   void set_input(const std::string& name, std::vector<T>& input, const std::vector<int64_t>& shape) {
     size_t idx  = std::find(input_names.begin(), input_names.end(), name) - input_names.begin();
-    inputs[idx] = std::move(Ort::Value::CreateTensor<T>(
-        Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeCPUInput),
-        input.data(),
-        input.size(),
-        shape.data(),
-        shape.size()));
+    inputs[idx] = std::move(
+        Ort::Value::CreateTensor<T>(
+            Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeCPUInput),
+            input.data(),
+            input.size(),
+            shape.data(),
+            shape.size()));
   }
 
   std::vector<Ort::Value> infer() {

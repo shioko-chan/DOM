@@ -17,12 +17,12 @@ using TRefLockPair = std::pair<const T&, Lock>;
 
 template <typename T>
 concept Hashable = requires(T a) {
-  { std::hash<T>{}(a) } -> std::convertible_to<std::size_t>;
+  { std::hash<T>{}(a) } -> std::convertible_to<size_t>;
 };
 
 template <typename K>
   requires Hashable<K>
-struct CacheElem {
+struct ManagementUnit {
 public:
 
   using key_type = K;
@@ -30,18 +30,18 @@ public:
   bool                        in_mem;
   std::unique_ptr<std::mutex> mtx;
 
-  CacheElem() : mtx(std::make_unique<std::mutex>()), in_mem(false) {};
+  ManagementUnit() : mtx(std::make_unique<std::mutex>()), in_mem(false) {};
 
-  CacheElem(const bool in_mem) : mtx(std::make_unique<std::mutex>()), in_mem(in_mem) {}
+  ManagementUnit(const bool in_mem) : mtx(std::make_unique<std::mutex>()), in_mem(in_mem) {}
 
   virtual void                   swap_in()       = 0;
   virtual void                   swap_out()      = 0;
   virtual inline const key_type& get_key() const = 0;
-  virtual inline std::size_t     size() const    = 0;
+  virtual inline size_t          size() const    = 0;
 };
 
 template <typename T>
-  requires std::derived_from<T, CacheElem<typename T::key_type>>
+  requires std::derived_from<T, ManagementUnit<typename T::key_type>>
 struct LRU {
 private:
 
@@ -50,10 +50,10 @@ private:
   using UMapValue = typename ListT::iterator;
   using UMapT     = std::unordered_map<Key, UMapValue>;
 
-  std::mutex  mtx;
-  std::size_t capacity, occupied = 0;
-  ListT       lru_list;
-  UMapT       k_v;
+  std::mutex mtx;
+  size_t     capacity, occupied = 0;
+  ListT      lru_list;
+  UMapT      k_v;
 
   void ensure_space(const size_t size) {
     auto iter = lru_list.rbegin();
@@ -87,7 +87,7 @@ public:
       k_v.erase(it);
     }
 
-    std::size_t need_size = value.size();
+    size_t need_size = value.size();
     ensure_space(need_size);
     if(occupied + need_size > capacity) {
       throw std::runtime_error("LRU cache is full");
@@ -116,7 +116,7 @@ public:
       }
       if(!value.in_mem) {
         value.swap_in();
-        std::size_t need_size = value.size();
+        size_t need_size = value.size();
         ensure_space(need_size);
         if(occupied + need_size > capacity) {
           throw std::runtime_error("LRU cache is full");

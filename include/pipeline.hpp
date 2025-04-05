@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <exiv2/exiv2.hpp>
+#include <opencv2/opencv.hpp>
 
 #include "imgdata.hpp"
 #include "knn.hpp"
@@ -35,7 +36,6 @@ private:
   std::vector<fs::path> img_paths;
   fs::path              output_dir, temporary_save_dir;
   ImgsData              imgs_data;
-  MatchPairs            match_pairs;
 
   static auto generate_start_end(unsigned int total, unsigned int divisor) {
     int  base      = total / divisor;
@@ -61,7 +61,6 @@ private:
                  });
                });
     threads.assign(v.begin(), v.end());
-
     for(auto&& thread : threads) {
       if(thread.joinable()) {
         thread.join();
@@ -69,24 +68,24 @@ private:
     }
   }
 
-  void find_and_set_reference_coord() {
-    std::vector<float> latitude, longitude, altitude;
-
-    for(auto&& data : imgs_data) {
-      latitude.push_back(data.pose.latitude.degrees());
-      longitude.push_back(data.pose.longitude.degrees());
-      altitude.push_back(data.pose.altitude);
-    }
-
-    auto latitude_ref  = std::accumulate(latitude.begin(), latitude.end(), 0.0f) / latitude.size();
-    auto longitude_ref = std::accumulate(longitude.begin(), longitude.end(), 0.0f) / longitude.size();
-    auto altitude_ref  = std::accumulate(
-        altitude.begin(), altitude.end(), std::numeric_limits<float>::min(), [](const float& max, const float& x) {
-          return std::max(max, x);
-        });
-    for(auto&& data : imgs_data) {
-      data.pose.set_reference(latitude_ref, longitude_ref, altitude_ref);
-    }
+  MatchPairs find_neighbors(const int k = 20) {
+    auto knn =
+        KNN(k,
+            imgs_data.get() | std::views::transform([](auto&& data) { return data.get_coord(); }) | std::views::common);
+    std::vector<std::vector<MatchPair>> matches(imgs_data.size());
+    run([this, &knn, &matches](int i) {
+      auto neighbors = knn.find_nearest_neighbour(i);
+      for(auto&& neighbour : neighbors) {
+        if(i < neighbour) {
+          matches[i].emplace_back(i, neighbour);
+        } else {
+          matches[i].emplace_back(neighbour, i);
+        }
+      }
+    });
+    auto                v = matches | std::views::join | std::views::common;
+    std::set<MatchPair> match_set(v.begin(), v.end());
+    return std::vector<MatchPair>(match_set.begin(), match_set.end());
   }
 
 public:
@@ -112,42 +111,22 @@ public:
         return;
       }
       imgs_data[i] = std::move(res.value());
-
-      imgs_data[i].img;
     });
-    find_and_set_reference_coord();
+    imgs_data.find_and_set_reference_coord();
   }
 
-  void rotate_rectify() {
-    run([this](int i) { imgs_data[i].rotate_rectify(); });
-  }
-
-  void find_neighbors(const int k = 10) {
-    auto knn =
-        KNN(k, imgs_data | std::views::transform([](auto&& data) { return data.pose.coord; }) | std::views::common);
-
-    std::vector<std::vector<MatchPair>> matches(imgs_data.size());
-    run([this, &knn, &matches](int i) {
-      auto neighbors = knn.find_nearest_neighbour(i);
-      for(auto&& neighbour : neighbors) {
-        if(i < neighbour) {
-          matches[i].emplace_back(i, neighbour);
-        } else {
-          matches[i].emplace_back(neighbour, i);
-        }
-      }
-    });
-
-    auto v = matches | std::views::join | std::views::common;
-
-    std::set<MatchPair> match_set(v.begin(), v.end());
-    match_pairs.assign(match_set.begin(), match_set.end());
-  }
-
-  void match() {
-    find_neighbors(10);
-    Matcher matcher = matcher_factory(temporary_save_dir, FeatureType::SUPERPOINT);
-    matcher.match(match_pairs, imgs_data, progress);
+  void match(int neighbor_proposal = 20, float iou_threshold = 0.5) {
+    auto match_pairs = find_neighbors(neighbor_proposal);
+    auto v           = match_pairs | std::views::transform([this](auto&& pair) {
+               auto& img0 = imgs_data[pair.first];
+               auto& img1 = imgs_data[pair.second];
+               return std::make_pair(pair, Ortho::iou(img0.get_spans(), img1.get_spans()));
+             })
+             | std::views::filter([iou_threshold](auto&& pair) { return pair.second >= iou_threshold; })
+             | std::views::transform([](auto&& pair) { return pair.first; });
+    Matcher    matcher = matcher_factory<SuperPointExtractor>(temporary_save_dir);
+    MatchPairs filtered_match_pairs(v.begin(), v.end());
+    matcher.match(filtered_match_pairs, imgs_data, progress);
   }
 
   void stitch() {}

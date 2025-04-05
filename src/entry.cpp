@@ -31,10 +31,7 @@ int main(int argc, char* const argv[]) {
   auto process = MultiThreadProcess(input_dir, output_dir, output_dir / "tmp");
   MESSAGE("[1/3] Getting image information");
   process.get_image_info();
-  MESSAGE("[2/3] Rotate rectifying images");
-  process.rotate_rectify();
-  MESSAGE("[3/3] Matching neighbor images");
-  // process.find_neighbors();
+  MESSAGE("[2/3] Matching neighbor images");
   process.match();
 
   pipeline_terminate();

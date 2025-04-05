@@ -19,14 +19,12 @@ public:
 
   MatchPair(int first, int second) : first(first), second(second), valid(true) {}
 
-  friend bool operator==(const MatchPair& lhs, const MatchPair& rhs) {
-    return lhs.first == rhs.first && lhs.second == rhs.second;
-  }
+  bool operator==(const MatchPair& rhs) const { return first == rhs.first && second == rhs.second; }
 
-  friend bool operator!=(const MatchPair& lhs, const MatchPair& rhs) { return !(lhs == rhs); }
+  bool operator!=(const MatchPair& rhs) const { return !(*this == rhs); }
 
-  friend bool operator<(const MatchPair& lhs, const MatchPair& rhs) {
-    return lhs.first < rhs.first || (lhs.first == rhs.first && lhs.second < rhs.second);
+  bool operator<(const MatchPair& rhs) const {
+    return first < rhs.first || (first == rhs.first && second < rhs.second);
   }
 
   friend std::ostream& operator<<(std::ostream& os, const MatchPair& pair) {

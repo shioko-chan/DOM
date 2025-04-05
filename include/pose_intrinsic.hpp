@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <optional>
 #include <ranges>
@@ -11,21 +12,52 @@
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "angle.hpp"
+#include "image.hpp"
 #include "static.h"
-
-using std::unordered_map;
+#include "utility.hpp"
 
 namespace fs    = std::filesystem;
 namespace views = std::views;
 
 namespace Ortho {
+
+struct Angle {
+public:
+
+  static constexpr float PI = 3.1415926535897932384626433832795;
+
+  explicit Angle() {}
+
+  explicit Angle(const float& degrees) : value(to_radians(degrees)) {}
+
+  inline float radians() const { return value; }
+
+  inline float degrees() const { return to_degrees(value); }
+
+  inline void set_degrees(const float& degrees) { value = to_radians(degrees); }
+
+  inline void set_radians(const float& radians) { value = radians; }
+
+  friend std::ostream& operator<<(std::ostream& os, const Angle& prop) {
+    os << prop.value << "(" << prop.radians() << "rad, " << prop.degrees() << "deg)";
+    return os;
+  }
+
+private:
+
+  inline static float to_degrees(float radians) { return radians * 180.0f / PI; }
+
+  inline static float to_radians(float degrees) { return degrees * PI / 180.0f; }
+
+  float value = 0.0f;
+};
+
 struct Pose {
 public:
 
-  Angle       yaw, pitch, roll, latitude, longitude;
-  float       altitude, altitude_ref;
-  cv::Point2f coord;
+  Angle        yaw, pitch, roll, latitude, longitude;
+  float        altitude, altitude_ref;
+  Point<float> coord;
 
   Pose() = default;
 
@@ -40,11 +72,7 @@ public:
     cv::Mat R_z = Rz(yaw.radians());
     cv::Mat R_y = Ry(pitch.radians());
     cv::Mat R_x = Rx(roll.radians());
-    cv::Mat m1_ = R_z * R_y * R_x * Ry(Angle::PI / 2);
-    m1_.copyTo(R_);
-    cv::Mat m2_ = (cv::Mat_<float>(3, 1) << 0.0f, 0.0f, -altitude);
-    m2_.copyTo(t_);
-    cv::hconcat(R_, t_, T_);
+    R_          = R_z * R_y * R_x * Ry(Angle::PI / 2);
   }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
@@ -52,7 +80,7 @@ public:
     const auto  latitude_r = Angle(latitude_ref_degree), longitude_r = Angle(longitude_ref_degree);
     const float x = 6371000 * (longitude.radians() - longitude_r.radians()) * std::cos(latitude_r.radians()),
                 y = 6371000 * (latitude.radians() - latitude_r.radians());
-    coord         = cv::Point2f(x, y);
+    coord         = Point<float>(x, y);
   }
 
   static cv::Mat Rx(float radians) {
@@ -84,25 +112,20 @@ public:
 
   const cv::Mat& R() const { return R_; }
 
-  const cv::Mat& t() const { return t_; }
-
-  const cv::Mat& T() const { return T_; }
-
-  friend ostream& operator<<(ostream& os, const Pose& pose) {
+  friend std::ostream& operator<<(std::ostream& os, const Pose& pose) {
     os << "Yaw: " << pose.yaw << "\n"
        << "Pitch: " << pose.pitch << "\n"
        << "Roll: " << pose.roll << "\n"
        << "Latitude: " << pose.latitude << "\n"
        << "Longitude: " << pose.longitude << "\n"
        << "Altitude: " << pose.altitude << "\n"
-       << "R: " << pose.R_ << "\n"
-       << "t: " << pose.t_ << "\n";
+       << "R: " << pose.R_ << "\n";
     return os;
   }
 
 private:
 
-  cv::Mat R_, t_, T_;
+  cv::Mat R_;
 };
 
 struct Intrinsic {
@@ -110,7 +133,7 @@ public:
 
   Intrinsic() = default;
 
-  explicit Intrinsic(const float& w, const float& h, const float& focal, const float& sensor_width = 13.2f) :
+  explicit Intrinsic(const float w, const float h, const float focal, const float sensor_width = 13.2f) :
       distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
     float pix_f = std::max(w, h) * focal / sensor_width;
     // clang-format off
@@ -127,7 +150,7 @@ public:
 
   const cv::Mat& D() const { return distortion_coefficients; }
 
-  friend ostream& operator<<(ostream& os, const Intrinsic& intrinsic) {
+  friend std::ostream& operator<<(std::ostream& os, const Intrinsic& intrinsic) {
     os << "Camera Matrix: " << intrinsic.camera_matrix << "\n"
        << "Distortion Coefficients: " << intrinsic.distortion_coefficients << "\n";
     return os;
@@ -152,9 +175,9 @@ private:
 
 public:
 
-  static std::optional<std::string> validate_xmp(const Exiv2::XmpData& data) {
+  static std::optional<std::string> validate_exif_xmp(const Exiv2::ExifData& exif_data, const Exiv2::XmpData& xmp_data) {
     for(const auto& key : XmpKey::keys) {
-      if(data.findKey(Exiv2::XmpKey(key)) == data.end()) {
+      if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
         std::stringstream ss;
         ss << "Error: Key " << key << " not found\n";
         return ss.str();
@@ -177,10 +200,10 @@ public:
 class IntrinsicFactory {
 private:
 
-  static unordered_map<std::string, float> build_sensor_width_database() {
+  static std::unordered_map<std::string, float> build_sensor_width_database() {
     fs::path sensor_width_database_path(SENSOR_WIDTH_DATABASE);
 
-    unordered_map<std::string, float> sensor_width_database;
+    std::unordered_map<std::string, float> sensor_width_database;
     if(!fs::exists(sensor_width_database_path)) {
       throw std::runtime_error("Error: Sensor width database not found");
     }
@@ -201,22 +224,20 @@ private:
     return sensor_width_database;
   }
 
-  static inline const unordered_map<std::string, float> sensor_width_database = build_sensor_width_database();
+  static inline const std::unordered_map<std::string, float> sensor_width_database = build_sensor_width_database();
 
   struct ExifKey {
     static inline const std::string              make         = "Exif.Image.Make";
     static inline const std::string              model        = "Exif.Image.Model";
     static inline const std::string              focal_length = "Exif.Photo.FocalLength";
-    static inline const std::string              width        = "Exif.Image.ImageWidth";
-    static inline const std::string              height       = "Exif.Image.ImageLength";
-    static inline const std::vector<std::string> keys         = {make, model, focal_length, width, height};
+    static inline const std::vector<std::string> keys         = {make, model, focal_length};
   };
 
 public:
 
-  static std::optional<std::string> validate_exif(const Exiv2::ExifData& data) {
+  static std::optional<std::string> validate_exif_xmp(const Exiv2::ExifData& exif_data, const Exiv2::XmpData& xmp_data) {
     for(const auto& key : ExifKey::keys) {
-      if(data.findKey(Exiv2::ExifKey(key)) == data.end()) {
+      if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
         std::stringstream ss;
         ss << "Error: Key " << key << " not found\n";
         return ss.str();
@@ -225,9 +246,8 @@ public:
     return std::nullopt;
   }
 
-  static Intrinsic build(Exiv2::ExifData& exif) {
-    const float &w = exif[ExifKey::width].toFloat(), &h = exif[ExifKey::height].toFloat(),
-                &focal = exif[ExifKey::focal_length].toFloat();
+  static Intrinsic build(Exiv2::ExifData& exif, const float w, const float h) {
+    const float       focal = exif[ExifKey::focal_length].toFloat();
     std::stringstream sensor_name;
     sensor_name << exif[ExifKey::make].toString() << " " << exif[ExifKey::model].toString();
     std::string sensor = sensor_name.str();
@@ -240,4 +260,51 @@ public:
   }
 };
 } // namespace Ortho
+
+namespace std {
+
+template <>
+struct formatter<cv::Mat> : formatter<string> {
+  template <typename FormatContext>
+  auto format(const cv::Mat& mat, FormatContext& ctx) {
+    std::stringstream ss;
+    ss << mat;
+    return format_to(ctx.out(), "{}", ss.str());
+  }
+};
+
+template <>
+struct formatter<Ortho::Angle> : formatter<string> {
+  template <typename FormatContext>
+  auto format(const Ortho::Angle& angle, FormatContext& ctx) {
+    return format_to(ctx.out(), "({} rad, {} degree)", angle.radians(), angle.degrees());
+  }
+};
+
+template <>
+struct formatter<Ortho::Pose> : formatter<string> {
+  template <typename FormatContext>
+  auto format(const Ortho::Pose& angle, FormatContext& ctx) {
+    return format_to(
+        ctx.out(),
+        "Yaw: {}, Pitch: {}, Roll: {}, Latitude: {}, Longitude: {}, Altitude: {}\nR: {}",
+        angle.yaw,
+        angle.pitch,
+        angle.roll,
+        angle.latitude,
+        angle.longitude,
+        angle.altitude,
+        angle.R());
+  }
+};
+
+template <>
+struct formatter<Ortho::Intrinsic> : formatter<string> {
+  template <typename FormatContext>
+  auto format(const Ortho::Intrinsic& intrinsic, FormatContext& ctx) {
+    return format_to(ctx.out(), "Camera Matrix: {}\n Distortion Coefficients: {}", intrinsic.K(), intrinsic.D());
+  }
+};
+
+} // namespace std
 #endif

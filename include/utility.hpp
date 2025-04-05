@@ -14,41 +14,33 @@ template <typename T>
 using Point = cv::Point_<T>;
 
 template <typename T>
-using Points = std::vector<cv::Point_<T>>;
+using Points = std::vector<Point<T>>;
 
 template <typename T>
 T min_x(const Points<T>& points) {
-  return std::min_element(
-             points.begin(), points.end(), [](const cv::Point_<T>& a, const cv::Point_<T>& b) { return a.x < b.x; })
-      ->x;
+  return std::min_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.x < b.x; })->x;
 }
 
 template <typename T>
 T min_y(const Points<T>& points) {
-  return std::min_element(
-             points.begin(), points.end(), [](const cv::Point_<T>& a, const cv::Point_<T>& b) { return a.y < b.y; })
-      ->y;
+  return std::min_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.y < b.y; })->y;
 }
 
 template <typename T>
 T max_x(const Points<T>& points) {
-  return std::max_element(
-             points.begin(), points.end(), [](const cv::Point_<T>& a, const cv::Point_<T>& b) { return a.x < b.x; })
-      ->x;
+  return std::max_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.x < b.x; })->x;
 }
 
 template <typename T>
 T max_y(const Points<T>& points) {
-  return std::max_element(
-             points.begin(), points.end(), [](const cv::Point_<T>& a, const cv::Point_<T>& b) { return a.y < b.y; })
-      ->y;
+  return std::max_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.y < b.y; })->y;
 }
 
 template <typename T>
 float avg_x(const Points<T>& points) {
   return 1.0f
          * std::accumulate(
-             points.begin(), points.end(), 0, [](const T& sum, const cv::Point_<T>& point) { return sum + point.x; })
+             points.begin(), points.end(), 0, [](const T& sum, const Point<T>& point) { return sum + point.x; })
          / points.size();
 }
 
@@ -56,13 +48,13 @@ template <typename T>
 float avg_y(const Points<T>& points) {
   return 1.0f
          * std::accumulate(
-             points.begin(), points.end(), 0, [](const T& sum, const cv::Point_<T>& point) { return sum + point.y; })
+             points.begin(), points.end(), 0, [](const T& sum, const Point<T>& point) { return sum + point.y; })
          / points.size();
 }
 
 template <typename T>
-cv::Point2f avg(const Points<T>& points) {
-  return cv::Point2f(avg_x(points), avg_y(points));
+Point<float> avg(const Points<T>& points) {
+  return Point<float>(avg_x(points), avg_y(points));
 }
 
 float abs_ceil(float x) {
@@ -83,5 +75,22 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024
   }
 }
 
+float iou(const Points<float>& points0, const Points<float>& points1) {
+  if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
+    throw std::runtime_error("Image has non-convex span");
+  }
+  const float area0 = cv::contourArea(points0), area1 = cv::contourArea(points1);
+  const float area_intersect = cv::intersectConvexConvex(points0, points1, cv::noArray());
+  return area_intersect / (area0 + area1 - area_intersect);
+}
+
+Points<float> intersection(const Points<float>& points0, const Points<float>& points1) {
+  if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
+    throw std::runtime_error("Image has non-convex span");
+  }
+  Points<float> intersection;
+  cv::intersectConvexConvex(points0, points1, intersection);
+  return intersection;
+}
 } // namespace Ortho
 #endif

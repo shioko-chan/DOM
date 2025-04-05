@@ -28,20 +28,16 @@ public:
 
   std::vector<int> find_nearest_neighbour(const int index) const {
     const auto& point = dataset[index];
-
-    auto v =
+    auto        v =
         std::views::zip_transform(
             [&point](const int index, const Point& p) { return std::make_pair(euclidean_distance(point, p), index); },
             std::views::iota(0),
             dataset)
         | std::views::filter([index](auto&& pair) { return pair.second != index; }) | std::views::common;
-
     std::vector<std::pair<float, int>> distances(v.begin(), v.end());
-    std::sort(distances.begin(), distances.end());
-
+    std::nth_element(distances.begin(), distances.begin() + k_ - 1, distances.end());
     auto w = distances | std::views::take(k_) | std::views::transform([](const auto& pair) { return pair.second; })
              | std::views::common;
-
     return std::vector<int>(w.begin(), w.end());
   }
 

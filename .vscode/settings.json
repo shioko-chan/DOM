@@ -89,11 +89,13 @@
         "keyrings",
         "kpts",
         "LIGHTGLUE",
+        "LMEDS",
         "LOGLEVEL",
         "mscores",
         "onnx",
         "ONNXRUNTIME",
         "orthophoto",
+        "pnts",
         "RANSAC",
         "SUPERPOINT"
     ]
