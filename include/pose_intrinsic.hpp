@@ -71,10 +71,7 @@ public:
       const float& longitude_,
       const float& altitude_) :
       yaw(yaw_), pitch(pitch_), roll(roll_), latitude(latitude_), longitude(longitude_), altitude(altitude_) {
-    cv::Mat R_z = Rz(yaw.radians());
-    cv::Mat R_y = Ry(pitch.radians());
-    cv::Mat R_x = Rx(roll.radians());
-    R_          = R_z * R_y * R_x * Ry(Angle::PI / 2);
+    R_ = Rz(yaw.radians()) * Ry(pitch.radians()) * Rx(roll.radians()) * Ry(Angle::PI / 2);
   }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
