@@ -1,6 +1,7 @@
 #ifndef ORTHO_ONNXRUNTIME_HPP
 #define ORTHO_ONNXRUNTIME_HPP
 
+#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -8,8 +9,9 @@
 
 #include <onnxruntime_cxx_api.h>
 
-namespace Ortho {
+#include "log.hpp"
 
+namespace Ortho {
 static Ort::Env& ort_env() {
   static Ort::Env env(ORT_LOGGING_LEVEL_ERROR, "ONNXRUNTIME");
   return env;
@@ -31,8 +33,11 @@ public:
       const std::string&    name,
       const std::string&    model_path,
       const OrtLoggingLevel log_level = ORT_LOGGING_LEVEL_ERROR) {
-    Ort::SessionOptions session_options;
-
+    fs::path model_path_(model_path);
+    if(!fs::exists(model_path_)) {
+      throw std::runtime_error("Error: " + model_path_.string() + " does not exist");
+    }
+    Ort::SessionOptions    session_options;
     OrtCUDAProviderOptions provider_options;
     provider_options.device_id                 = 0;
     provider_options.arena_extend_strategy     = 0; // kNextPowerOfTwo

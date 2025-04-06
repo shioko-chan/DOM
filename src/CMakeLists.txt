@@ -26,7 +26,7 @@ target_link_directories(orthophoto PUBLIC
   ${onnxruntime_LIB_DIR}
   ${exiv2_LIB_DIR}
 )
-set(MODEL_FILE_PREFIX${CMAKE_BINARY_DIR}/data/models)
+set(MODEL_FILE_PREFIX ${CMAKE_BINARY_DIR}/data/models)
 target_compile_definitions(orthophoto PRIVATE SUPERPOINT_WEIGHT="${MODEL_FILE_PREFIX}/superpoint.onnx")
 target_compile_definitions(orthophoto PRIVATE SUPERPOINT_LIGHTGLUE_WEIGHT="${MODEL_FILE_PREFIX}/superpoint_lightglue_fused.onnx")
 target_compile_definitions(orthophoto PRIVATE DISK_WEIGHT="${MODEL_FILE_PREFIX}/disk.onnx")

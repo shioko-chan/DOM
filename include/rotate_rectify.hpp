@@ -21,9 +21,10 @@ struct RectifyResult {
 template <std::ranges::range Range>
 inline auto backproject(const Range& img_points, const Pose& pose, const Intrinsic& intrinsic) {
   return img_points | std::views::transform([&pose, &intrinsic](auto&& point) {
-           cv::Mat     point_      = (cv::Mat_<float>(3, 1) << point.x, point.y, 1);
-           cv::Mat     K_inv       = intrinsic.K().inv();
-           cv::Mat     ray         = pose.R() * K_inv * point_;
+           cv::Mat point_ = (cv::Mat_<float>(3, 1) << point.x, point.y, 1);
+           cv::Mat K_inv  = intrinsic.K().inv();
+           cv::Mat ray    = pose.R() * K_inv * point_;
+           //  ray /= cv::norm(ray);
            float       denominator = ray.at<float>(2, 0);
            const float eps         = 0.1f;
            if(std::abs(denominator) < eps) {
