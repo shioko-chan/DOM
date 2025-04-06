@@ -71,10 +71,7 @@ public:
       const float& longitude_,
       const float& altitude_) :
       yaw(yaw_), pitch(pitch_), roll(roll_), latitude(latitude_), longitude(longitude_), altitude(altitude_) {
-    cv::Mat R_z = Rz(yaw.radians());
-    cv::Mat R_y = Ry(pitch.radians());
-    cv::Mat R_x = Rx(roll.radians());
-    R_          = R_z * R_y * R_x * Ry(Angle::PI / 2);
+    R_ = Rz(yaw.radians()) * Ry(pitch.radians()) * Rx(roll.radians()) * Ry(Angle::PI / 2);
   }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
@@ -173,8 +170,6 @@ private:
   cv::Mat distortion_coefficients;
 };
 
-std::mutex mutex_;
-
 class PoseFactory {
 private:
 
@@ -208,18 +203,6 @@ public:
     const float& latitude  = xmp[XmpKey::latitude].toFloat();
     const float& longitude = xmp[XmpKey::longitude].toFloat();
     const float& altitude  = xmp[XmpKey::relative_altitude].toFloat();
-
-    static float                ref_altitude = 0.0f;
-    std::lock_guard<std::mutex> lock(mutex_);
-    if(ref_altitude < 1e-6f) {
-      ref_altitude = xmp[XmpKey::absolute_altitude].toFloat() - altitude;
-    }
-    if(ref_altitude - (xmp[XmpKey::absolute_altitude].toFloat() - altitude) > 0.1f) {
-      ERROR(
-          "Error: Altitude difference is too large, {} vs {}",
-          ref_altitude,
-          xmp[XmpKey::absolute_altitude].toFloat() - altitude);
-    }
     return Pose(yaw, pitch, roll, latitude, longitude, altitude);
   }
 };
