@@ -1,4 +1,4 @@
 build*
 res/
 core
-static/models
+models

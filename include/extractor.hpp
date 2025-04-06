@@ -15,8 +15,8 @@
 
 #include "imgdata.hpp"
 #include "log.hpp"
+#include "models.h"
 #include "ort.hpp"
-#include "static.h"
 #include "utility.hpp"
 
 namespace fs = std::filesystem;

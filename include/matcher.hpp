@@ -18,9 +18,9 @@
 #include "imgdata.hpp"
 #include "log.hpp"
 #include "matchpair.hpp"
+#include "models.h"
 #include "ort.hpp"
 #include "progress.hpp"
-#include "static.h"
 #include "utility.hpp"
 
 namespace Ortho {

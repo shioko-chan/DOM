@@ -13,7 +13,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "image.hpp"
-#include "static.h"
+#include "models.h"
 #include "utility.hpp"
 
 namespace fs    = std::filesystem;
@@ -147,12 +147,8 @@ public:
 
   Intrinsic() = default;
 
-  explicit Intrinsic(
-      const float w,
-      const float h,
-      const float focal,
-      const float focal_35mm    = 28.0f,
-      const float sensor_width_ = 13.2f) : distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
+  explicit Intrinsic(const float w, const float h, const float focal, const float focal_35mm = 28.0f) :
+      distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
     float factor        = focal / focal_35mm;
     float sensor_width  = factor * 36.0f;
     float sensor_height = factor * 24.0f;
@@ -221,38 +217,10 @@ public:
 class IntrinsicFactory {
 private:
 
-  static std::unordered_map<std::string, float> build_sensor_width_database() {
-    fs::path sensor_width_database_path(SENSOR_WIDTH_DATABASE);
-
-    std::unordered_map<std::string, float> sensor_width_database;
-    if(!fs::exists(sensor_width_database_path)) {
-      throw std::runtime_error("Error: Sensor width database not found");
-    }
-    std::ifstream ifs(sensor_width_database_path);
-    if(!ifs.is_open()) {
-      throw std::runtime_error("Error: Failed to open sensor width database");
-    }
-    std::string line;
-    while(std::getline(ifs, line)) {
-      auto v = line | views::split(';')
-               | views::transform([](auto token_range) { return std::string(token_range.begin(), token_range.end()); });
-      std::vector<std::string> tokens(v.begin(), v.end());
-      if(tokens.size() != 2) {
-        continue;
-      }
-      sensor_width_database.emplace(tokens[0], std::stod(tokens[1]));
-    }
-    return sensor_width_database;
-  }
-
-  static inline const std::unordered_map<std::string, float> sensor_width_database = build_sensor_width_database();
-
   struct ExifKey {
-    static inline const std::string              make              = "Exif.Image.Make";
-    static inline const std::string              model             = "Exif.Image.Model";
     static inline const std::string              focal_length      = "Exif.Photo.FocalLength";
     static inline const std::string              focal_length_35mm = "Exif.Photo.FocalLengthIn35mmFilm";
-    static inline const std::vector<std::string> keys              = {make, model, focal_length, focal_length_35mm};
+    static inline const std::vector<std::string> keys              = {focal_length, focal_length_35mm};
   };
 
 public:
@@ -269,17 +237,9 @@ public:
   }
 
   static Intrinsic build(Exiv2::ExifData& exif, const float w, const float h) {
-    const float       focal      = exif[ExifKey::focal_length].toFloat();
-    const float       focal_35mm = exif[ExifKey::focal_length_35mm].toFloat();
-    std::stringstream sensor_name;
-    sensor_name << exif[ExifKey::make].toString() << " " << exif[ExifKey::model].toString();
-    std::string sensor = sensor_name.str();
-    if(sensor_width_database.count(sensor) == 0) {
-      std::cerr << "Error: Sensor width not found in the database. Sensor name is " << sensor
-                << "please add it to sensor_width_camera_database.txt at static directory\n";
-      return Intrinsic(w, h, focal, focal_35mm);
-    }
-    return Intrinsic(w, h, focal, focal_35mm, sensor_width_database.at(sensor));
+    const float focal      = exif[ExifKey::focal_length].toFloat();
+    const float focal_35mm = exif[ExifKey::focal_length_35mm].toFloat();
+    return Intrinsic(w, h, focal, focal_35mm);
   }
 };
 } // namespace Ortho

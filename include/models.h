@@ -1,7 +1,5 @@
-#ifndef ORTHO_STATIC_RESOURCE_H
-#define ORTHO_STATIC_RESOURCE_H
-
-#include "log.hpp"
+#ifndef ORTHO_MODELS_PATH_H
+#define ORTHO_MODELS_PATH_H
 
 #ifndef SUPERPOINT_WEIGHT
   #define SUPERPOINT_WEIGHT "superpoint.onnx"
@@ -17,10 +15,6 @@
 
 #ifndef DISK_LIGHTGLUE_WEIGHT
   #define DISK_LIGHTGLUE_WEIGHT "disk_lightglue_fused.onnx"
-#endif
-
-#ifndef SENSOR_WIDTH_DATABASE
-  #define SENSOR_WIDTH_DATABASE "sensor_width_database.txt"
 #endif
 
 #endif
