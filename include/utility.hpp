@@ -59,7 +59,7 @@ float iou(const Points<float>& points0, const Points<float>& points1) {
     throw std::runtime_error("Image has non-convex span");
   }
   const float area0 = cv::contourArea(points0), area1 = cv::contourArea(points1);
-  const float area_intersect = cv::intersectConvexConvex(points0, points1, cv::noArray());
+  const float area_intersect = cv::intersectConvexConvex(points0, points1, cv::noArray(), true);
   return area_intersect / (area0 + area1 - area_intersect);
 }
 
@@ -68,7 +68,7 @@ Points<float> intersection(const Points<float>& points0, const Points<float>& po
     throw std::runtime_error("Image has non-convex span");
   }
   Points<float> intersection;
-  cv::intersectConvexConvex(points0, points1, intersection);
+  cv::intersectConvexConvex(points0, points1, intersection, true);
   return intersection;
 }
 
