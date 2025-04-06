@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <unordered_map>
@@ -13,6 +14,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "image.hpp"
+#include "log.hpp"
 #include "models.h"
 #include "utility.hpp"
 
@@ -74,14 +76,6 @@ public:
     cv::Mat R_x = Rx(roll.radians());
     R_          = R_z * R_y * R_x * Ry(Angle::PI / 2);
   }
-
-  // void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
-  //   altitude_ref           = altitude_ref_;
-  //   const auto  latitude_r = Angle(latitude_ref_degree), longitude_r = Angle(longitude_ref_degree);
-  //   const float x = 6371000 * (longitude.radians() - longitude_r.radians()) * std::cos(latitude_r.radians()),
-  //               y = 6371000 * (latitude.radians() - latitude_r.radians());
-  //   coord         = Point<float>(x, y);
-  // }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
     altitude_ref          = altitude_ref_;
@@ -179,6 +173,8 @@ private:
   cv::Mat distortion_coefficients;
 };
 
+std::mutex mutex_;
+
 class PoseFactory {
 private:
 
@@ -186,21 +182,23 @@ private:
     static inline const std::string yaw = "Xmp.drone-dji.GimbalYawDegree", pitch = "Xmp.drone-dji.GimbalPitchDegree",
                                     roll = "Xmp.drone-dji.GimbalRollDegree", latitude = "Xmp.drone-dji.GpsLatitude",
                                     longitude         = "Xmp.drone-dji.GpsLongitude",
-                                    altitude          = "Xmp.drone-dji.RelativeAltitude";
-    static inline const std::vector<std::string> keys = {yaw, pitch, roll, latitude, longitude, altitude};
+                                    relative_altitude = "Xmp.drone-dji.RelativeAltitude",
+                                    absolute_altitude = "Xmp.drone-dji.AbsoluteAltitude";
+    static inline const std::vector<std::string> keys =
+        {yaw, pitch, roll, latitude, longitude, relative_altitude, absolute_altitude};
   };
 
 public:
 
-  static std::optional<std::string> validate_exif_xmp(const Exiv2::ExifData& exif_data, const Exiv2::XmpData& xmp_data) {
+  static bool validate(Image& img) {
+    const Exiv2::XmpData& xmp_data = img.xmp_data();
     for(const auto& key : XmpKey::keys) {
       if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
-        std::stringstream ss;
-        ss << "Error: Key " << key << " not found\n";
-        return ss.str();
+        ERROR("{}: Key {} not found in XMP data", img.get_img_name().string(), key);
+        return false;
       }
     }
-    return std::nullopt;
+    return true;
   }
 
   static Pose build(Exiv2::XmpData& xmp) {
@@ -209,7 +207,19 @@ public:
     const float& roll      = xmp[XmpKey::roll].toFloat();
     const float& latitude  = xmp[XmpKey::latitude].toFloat();
     const float& longitude = xmp[XmpKey::longitude].toFloat();
-    const float& altitude  = xmp[XmpKey::altitude].toFloat();
+    const float& altitude  = xmp[XmpKey::relative_altitude].toFloat();
+
+    static float                ref_altitude = 0.0f;
+    std::lock_guard<std::mutex> lock(mutex_);
+    if(ref_altitude < 1e-6f) {
+      ref_altitude = xmp[XmpKey::absolute_altitude].toFloat() - altitude;
+    }
+    if(ref_altitude - (xmp[XmpKey::absolute_altitude].toFloat() - altitude) > 0.1f) {
+      ERROR(
+          "Error: Altitude difference is too large, {} vs {}",
+          ref_altitude,
+          xmp[XmpKey::absolute_altitude].toFloat() - altitude);
+    }
     return Pose(yaw, pitch, roll, latitude, longitude, altitude);
   }
 };
@@ -225,15 +235,15 @@ private:
 
 public:
 
-  static std::optional<std::string> validate_exif_xmp(const Exiv2::ExifData& exif_data, const Exiv2::XmpData& xmp_data) {
+  static bool validate(Image& img) {
+    const auto& exif_data = img.exif_data();
     for(const auto& key : ExifKey::keys) {
       if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
-        std::stringstream ss;
-        ss << "Error: Key " << key << " not found\n";
-        return ss.str();
+        ERROR("{}: Key {} not found in Exif data", img.get_img_name().string(), key);
+        return true;
       }
     }
-    return std::nullopt;
+    return true;
   }
 
   static Intrinsic build(Exiv2::ExifData& exif, const float w, const float h) {

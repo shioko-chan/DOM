@@ -12,7 +12,6 @@
 
 #include "log.hpp"
 #include "lru.hpp"
-#include "rotate_rectify.hpp"
 #include "utility.hpp"
 
 namespace Ortho {

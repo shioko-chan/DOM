@@ -1,5 +1,5 @@
-#ifndef IMGDATA_HPP
-#define IMGDATA_HPP
+#ifndef ORTHO_IMGDATA_HPP
+#define ORTHO_IMGDATA_HPP
 
 #include <algorithm>
 #include <cmath>
@@ -148,8 +148,6 @@ public:
 
   size_t size() const { return imgs_data.size(); }
 
-  void resize(size_t size) { imgs_data.resize(size); }
-
   void find_and_set_reference_coord() {
     std::vector<float> latitude, longitude, altitude;
     const size_t       size         = imgs_data.size();
@@ -186,15 +184,11 @@ public:
       ERROR("Error: {} is not a valid image file", path.string());
       return std::nullopt;
     }
-    Image  img(path, temp_save_path);
-    auto&& res = IntrinsicFactory::validate_exif_xmp(img.exif_data(), img.xmp_data());
-    if(res.has_value()) {
-      std::cerr << res.value();
+    Image img(path, temp_save_path);
+    if(!IntrinsicFactory::validate(img)) {
       return std::nullopt;
     }
-    res = PoseFactory::validate_exif_xmp(img.exif_data(), img.xmp_data());
-    if(res.has_value()) {
-      std::cerr << res.value();
+    if(!PoseFactory::validate(img)) {
       return std::nullopt;
     }
     auto [img_, lock] = img.img().value();

@@ -21,17 +21,15 @@ struct RectifyResult {
 template <std::ranges::range Range>
 inline auto backproject(const Range& img_points, const Pose& pose, const Intrinsic& intrinsic) {
   return img_points | std::views::transform([&pose, &intrinsic](auto&& point) {
-           cv::Mat point_ = (cv::Mat_<float>(3, 1) << point.x, point.y, 1);
-           cv::Mat K_inv  = intrinsic.K().inv();
-           cv::Mat ray    = pose.R() * K_inv * point_;
-           //  ray /= cv::norm(ray);
+           cv::Mat ray = pose.R() * intrinsic.K().inv() * point;
+           cv::normalize(ray, ray);
            float       denominator = ray.at<float>(2, 0);
            const float eps         = 0.1f;
            if(std::abs(denominator) < eps) {
              denominator = (denominator < 0 ? -eps : eps);
            }
            float   gamma = pose.altitude / denominator;
-           cv::Mat xyz_w = gamma * ray + (cv::Mat_<float>(3, 1) << 0, 0, -pose.altitude);
+           cv::Mat xyz_w = gamma * ray;
            return Point<float>(xyz_w.at<float>(0, 0), xyz_w.at<float>(1, 0));
          });
 }
@@ -39,9 +37,9 @@ inline auto backproject(const Range& img_points, const Pose& pose, const Intrins
 template <std::ranges::range Range>
 inline auto project(const Range& world_points, const Pose& pose, const Intrinsic& intrinsic) {
   return world_points | std::views::transform([&pose, &intrinsic](auto&& point) {
-           cv::Mat p_cam = (cv::Mat_<float>(3, 1) << point.x / pose.altitude_ref, point.y / pose.altitude_ref, 1);
-           cv::Mat p_img = intrinsic.K() * p_cam;
-           return Point<float>(p_img.at<float>(0, 0), p_img.at<float>(1, 0));
+           cv::Mat xy_i =
+               intrinsic.K() * (cv::Mat_<float>(3, 1) << point.x / pose.altitude_ref, point.y / pose.altitude_ref, 1);
+           return Point<float>(xy_i.at<float>(0, 0), xy_i.at<float>(1, 0));
          });
 }
 

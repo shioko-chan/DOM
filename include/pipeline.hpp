@@ -101,20 +101,17 @@ public:
         std::back_inserter(img_paths),
         [](const auto& entry) { return entry.path(); });
     progress.reset(img_paths.size());
-    imgs_data.resize(img_paths.size());
   }
 
   void get_image_info() {
-    run([this](int i) {
-      fs::path& img_path = img_paths[i];
-
+    for(auto&& img_path : img_paths) {
       auto res = ImgDataFactory::build(img_path, temporary_save_dir);
       if(!res.has_value()) {
         ERROR("Error: {} could not be processed", img_path.string());
-        return;
+        continue;
       }
-      imgs_data[i] = std::move(res.value());
-    });
+      imgs_data.get().push_back(std::move(res.value()));
+    }
     imgs_data.find_and_set_reference_coord();
   }
 

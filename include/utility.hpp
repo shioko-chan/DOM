@@ -91,28 +91,28 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024
 } // namespace Ortho
 
 namespace cv {
-// template <typename T>
-// Mat operator*(const Mat& lhs, const Point_<T>& rhs) {
-//   if(lhs.cols != 2 && lhs.cols != 3) {
-//     throw std::runtime_error("Matrix must have 2 or 3 columns");
-//   }
-//   if(lhs.cols == 2) {
-//     return lhs * (Mat_<T>(2, 1) << rhs.x, rhs.y);
-//   } else {
-//     return lhs * (Mat_<T>(3, 1) << rhs.x, rhs.y, 1);
-//   }
-// }
+template <typename T>
+Mat operator*(const Mat& lhs, const Point_<T>& rhs) {
+  if(lhs.cols != 2 && lhs.cols != 3) {
+    throw std::runtime_error("Matrix must have 2 or 3 columns");
+  }
+  if(lhs.cols == 2) {
+    return lhs * (Mat_<T>(2, 1) << rhs.x, rhs.y);
+  } else {
+    return lhs * (Mat_<T>(3, 1) << rhs.x, rhs.y, 1);
+  }
+}
 
-// template <typename T>
-// Mat operator*(const Mat& lhs, const Point3_<T>& rhs) {
-//   if(lhs.cols != 3 && lhs.cols != 4) {
-//     throw std::runtime_error("Matrix must have 3 or 4 columns");
-//   }
-//   if(lhs.cols == 3) {
-//     return lhs * (Mat_<T>(3, 1) << rhs.x, rhs.y, rhs.z);
-//   } else {
-//     return lhs * (Mat_<T>(4, 1) << rhs.x, rhs.y, rhs.z, 1);
-//   }
-// }
+template <typename T>
+Mat operator*(const Mat& lhs, const Point3_<T>& rhs) {
+  if(lhs.cols != 3 && lhs.cols != 4) {
+    throw std::runtime_error("Matrix must have 3 or 4 columns");
+  }
+  if(lhs.cols == 3) {
+    return lhs * (Mat_<T>(3, 1) << rhs.x, rhs.y, rhs.z);
+  } else {
+    return lhs * (Mat_<T>(4, 1) << rhs.x, rhs.y, rhs.z, 1);
+  }
+}
 } // namespace cv
 #endif
