@@ -165,15 +165,11 @@ public:
         lock_img2.unlock();
         auto              lhs_pnts = lhs_img.get_spans();
         auto              rhs_pnts = rhs_img.get_spans();
-        std::stringstream ss1;
-        ss1 << "lhs_pnts: " << lhs_pnts << "rhs_pnts: " << rhs_pnts;
+        auto              inter    = intersection(lhs_pnts, rhs_pnts);
+        std::stringstream ss, ss1;
+        ss1 << "lhs_pnts: " << lhs_pnts << "rhs_pnts: " << rhs_pnts << "inter: " << inter;
         INFO("{}", ss1.str());
-        auto              inter = intersection(lhs_pnts, rhs_pnts);
-        std::stringstream ss2;
-        ss2 << "inter: " << inter;
-        INFO("{}", ss2.str());
-        std::stringstream ss;
-        ss << "lhs_ world2img: " << lhs_img.world2img(lhs_pnts) << "rhs_ world2img: " << rhs_img.world2img(rhs_pnts);
+        ss << "lhs_ world2img: " << lhs_img.world2img(inter) << "rhs_ world2img: " << rhs_img.world2img(inter);
         INFO("{}", ss.str());
         std::vector<std::vector<cv::Point>> lhs_img_pnts(1), rhs_img_pnts(1);
         for(auto&& p : lhs_img.world2img(inter)) {
@@ -182,10 +178,6 @@ public:
         for(auto&& p : rhs_img.world2img(inter)) {
           rhs_img_pnts[0].emplace_back(cv::Point{cv::Point(p.x, p.y)});
         }
-        std::stringstream ss11;
-        ss11 << "lhs_ world2img: " << lhs_img_pnts.size() << " " << lhs_img_pnts[0];
-        ss11 << "rhs_ world2img: " << rhs_img_pnts.size() << " " << rhs_img_pnts[0];
-        INFO("{}", ss11.str());
         cv::drawContours(img1, lhs_img_pnts, -1, cv::Scalar(0, 255, 0), 2);
         cv::drawContours(img2, rhs_img_pnts, -1, cv::Scalar(0, 255, 0), 2);
         // cv::imshow("lhs_img", img1);

@@ -147,17 +147,24 @@ public:
 
   Intrinsic() = default;
 
-  explicit Intrinsic(const float w, const float h, const float focal, const float sensor_width = 13.2f) :
-      distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
-    float pix_f = std::max(w, h) * focal / sensor_width;
+  explicit Intrinsic(
+      const float w,
+      const float h,
+      const float focal,
+      const float focal_35mm    = 28.0f,
+      const float sensor_width_ = 13.2f) : distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
+    float factor        = focal / focal_35mm;
+    float sensor_width  = factor * 36.0f;
+    float sensor_height = factor * 24.0f;
+    float fx            = w * focal / sensor_width;
+    float fy            = h * focal / sensor_height;
     // clang-format off
-        cv::Mat m_ = (cv::Mat_<float>(3, 3) << 
-          pix_f,      0,  w / 2,
-              0,  pix_f,  h / 2,
-              0,      0,      1
-        );
+    camera_matrix = (cv::Mat_<float>(3, 3) << 
+        fx,  0,  w / 2,
+        0,   fy, h / 2,
+        0,   0,  1
+    );
     // clang-format on
-    m_.copyTo(camera_matrix);
   }
 
   const cv::Mat& K() const { return camera_matrix; }
@@ -241,10 +248,11 @@ private:
   static inline const std::unordered_map<std::string, float> sensor_width_database = build_sensor_width_database();
 
   struct ExifKey {
-    static inline const std::string              make         = "Exif.Image.Make";
-    static inline const std::string              model        = "Exif.Image.Model";
-    static inline const std::string              focal_length = "Exif.Photo.FocalLength";
-    static inline const std::vector<std::string> keys         = {make, model, focal_length};
+    static inline const std::string              make              = "Exif.Image.Make";
+    static inline const std::string              model             = "Exif.Image.Model";
+    static inline const std::string              focal_length      = "Exif.Photo.FocalLength";
+    static inline const std::string              focal_length_35mm = "Exif.Photo.FocalLengthIn35mmFilm";
+    static inline const std::vector<std::string> keys              = {make, model, focal_length, focal_length_35mm};
   };
 
 public:
@@ -261,22 +269,22 @@ public:
   }
 
   static Intrinsic build(Exiv2::ExifData& exif, const float w, const float h) {
-    const float       focal = exif[ExifKey::focal_length].toFloat();
+    const float       focal      = exif[ExifKey::focal_length].toFloat();
+    const float       focal_35mm = exif[ExifKey::focal_length_35mm].toFloat();
     std::stringstream sensor_name;
     sensor_name << exif[ExifKey::make].toString() << " " << exif[ExifKey::model].toString();
     std::string sensor = sensor_name.str();
     if(sensor_width_database.count(sensor) == 0) {
       std::cerr << "Error: Sensor width not found in the database. Sensor name is " << sensor
                 << "please add it to sensor_width_camera_database.txt at static directory\n";
-      return Intrinsic(w, h, focal);
+      return Intrinsic(w, h, focal, focal_35mm);
     }
-    return Intrinsic(w, h, focal, sensor_width_database.at(sensor));
+    return Intrinsic(w, h, focal, focal_35mm, sensor_width_database.at(sensor));
   }
 };
 } // namespace Ortho
 
 namespace std {
-
 template <>
 struct formatter<cv::Mat> : formatter<string> {
   template <typename FormatContext>
