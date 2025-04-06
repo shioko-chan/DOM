@@ -100,14 +100,6 @@ public:
 
   fs::path get_img_extension() const { return img.get_img_extension(); }
 
-  Points<float> img2world(const Points<float>& points) {
-    if(img2world_) {
-      return img2world_(points);
-    }
-    rotate_rectify();
-    return img2world_(points);
-  }
-
   Points<float> world2img(const Points<float>& points) {
     if(world2img_) {
       return world2img_(points);
@@ -125,13 +117,11 @@ public:
 private:
 
   void rotate_rectify() {
-    auto [img__, lock] = img.img().value();
-    auto&& img_        = img__.get();
-    auto&& [rotate_img, mask, ground_points, img2world, world2img] =
-        Ortho::rotate_rectify(img_.size(), pose, intrinsic, img_);
+    auto [img__, lock]                                  = img.img().value();
+    auto&& img_                                         = img__.get();
+    auto&& [rotate_img, mask, ground_points, world2img] = Ortho::rotate_rectify(img_.size(), pose, intrinsic, img_);
     lock.unlock();
     this->ground_points = std::move(ground_points);
-    this->img2world_    = std::move(img2world);
     this->world2img_    = std::move(world2img);
     this->img.set_rotate_rectified(rotate_img);
     this->img.set_rotate_rectified_mask(mask);
@@ -141,7 +131,7 @@ private:
   Intrinsic      intrinsic;
   Image          img;
   Points<float>  ground_points;
-  PointsPipeline img2world_, world2img_;
+  PointsPipeline world2img_;
 };
 
 struct ImgsData {
