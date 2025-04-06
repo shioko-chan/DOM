@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <ranges>
 
 #include <opencv2/opencv.hpp>
 
@@ -16,45 +17,59 @@ using Point = cv::Point_<T>;
 template <typename T>
 using Points = std::vector<Point<T>>;
 
-template <typename T>
-T min_x(const Points<T>& points) {
-  return std::min_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.x < b.x; })->x;
+template <std::ranges::range Range>
+auto min_x(const Range& points) {
+  return std::ranges::min(points, {}, &std::ranges::range_value_t<Range>::x).x;
 }
 
-template <typename T>
-T min_y(const Points<T>& points) {
-  return std::min_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.y < b.y; })->y;
+template <std::ranges::range Range>
+auto min_y(const Range& points) {
+  return std::ranges::min(points, {}, &std::ranges::range_value_t<Range>::y).y;
 }
 
-template <typename T>
-T max_x(const Points<T>& points) {
-  return std::max_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.x < b.x; })->x;
+template <std::ranges::range Range>
+auto max_x(const Range& points) {
+  return std::ranges::max(points, {}, &std::ranges::range_value_t<Range>::x).x;
 }
 
-template <typename T>
-T max_y(const Points<T>& points) {
-  return std::max_element(points.begin(), points.end(), [](const Point<T>& a, const Point<T>& b) { return a.y < b.y; })->y;
+template <std::ranges::range Range>
+auto max_y(const Range& points) {
+  return std::ranges::max(points, {}, &std::ranges::range_value_t<Range>::y).y;
 }
 
-template <typename T>
-float avg_x(const Points<T>& points) {
-  return 1.0f
-         * std::accumulate(
-             points.begin(), points.end(), 0, [](const T& sum, const Point<T>& point) { return sum + point.x; })
-         / points.size();
+template <std::ranges::range Range>
+float avg_x(const Range& points) {
+  auto v = points | std::views::transform(&std::ranges::range_value_t<Range>::x);
+  return 1.0f * std::accumulate(v.begin(), v.end(), 0.0f) / std::ranges::distance(points);
 }
 
-template <typename T>
-float avg_y(const Points<T>& points) {
-  return 1.0f
-         * std::accumulate(
-             points.begin(), points.end(), 0, [](const T& sum, const Point<T>& point) { return sum + point.y; })
-         / points.size();
+template <std::ranges::range Range>
+float avg_y(const Range& points) {
+  auto v = points | std::views::transform(&std::ranges::range_value_t<Range>::y);
+  return 1.0f * std::accumulate(v.begin(), v.end(), 0.0f) / std::ranges::distance(points);
 }
 
-template <typename T>
-Point<float> avg(const Points<T>& points) {
+template <std::ranges::range Range>
+Point<float> avg(const Range& points) {
   return Point<float>(avg_x(points), avg_y(points));
+}
+
+float iou(const Points<float>& points0, const Points<float>& points1) {
+  if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
+    throw std::runtime_error("Image has non-convex span");
+  }
+  const float area0 = cv::contourArea(points0), area1 = cv::contourArea(points1);
+  const float area_intersect = cv::intersectConvexConvex(points0, points1, cv::noArray());
+  return area_intersect / (area0 + area1 - area_intersect);
+}
+
+Points<float> intersection(const Points<float>& points0, const Points<float>& points1) {
+  if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
+    throw std::runtime_error("Image has non-convex span");
+  }
+  Points<float> intersection;
+  cv::intersectConvexConvex(points0, points1, intersection);
+  return intersection;
 }
 
 float abs_ceil(float x) {
@@ -75,22 +90,5 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024
   }
 }
 
-float iou(const Points<float>& points0, const Points<float>& points1) {
-  if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
-    throw std::runtime_error("Image has non-convex span");
-  }
-  const float area0 = cv::contourArea(points0), area1 = cv::contourArea(points1);
-  const float area_intersect = cv::intersectConvexConvex(points0, points1, cv::noArray());
-  return area_intersect / (area0 + area1 - area_intersect);
-}
-
-Points<float> intersection(const Points<float>& points0, const Points<float>& points1) {
-  if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
-    throw std::runtime_error("Image has non-convex span");
-  }
-  Points<float> intersection;
-  cv::intersectConvexConvex(points0, points1, intersection);
-  return intersection;
-}
 } // namespace Ortho
 #endif

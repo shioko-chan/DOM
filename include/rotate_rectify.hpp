@@ -19,7 +19,7 @@ struct RectifyResult {
 };
 
 template <std::ranges::range Range>
-inline auto backproject(Range&& image_points, const Pose& pose, const Intrinsic& intrinsic) {
+inline auto backproject(const Range& image_points, const Pose& pose, const Intrinsic& intrinsic) {
   return image_points | std::views::transform([&pose, &intrinsic](auto&& point) {
            cv::Mat point_      = (cv::Mat_<float>(3, 1) << point.x, point.y, 1);
            cv::Mat K_inv       = intrinsic.K().inv();
@@ -34,7 +34,7 @@ inline auto backproject(Range&& image_points, const Pose& pose, const Intrinsic&
 }
 
 template <std::ranges::range Range>
-inline auto project(Range&& world_points, const Pose& pose, const Intrinsic& intrinsic) {
+inline auto project(const Range& world_points, const Pose& pose, const Intrinsic& intrinsic) {
   // const float ww = max_x(world_points) - min_x(world_points), wh = max_y(world_points) - min_y(world_points);
   // const float fx = pose.altitude_ref * intrinsic.K().at<float>(0, 2) * 2 / ww,
   //             fy = pose.altitude_ref * intrinsic.K().at<float>(1, 2) * 2 / wh;
