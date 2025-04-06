@@ -25,17 +25,20 @@ namespace fs = std::filesystem;
 
 namespace Ortho {
 
-void pipeline_initialize() { Exiv2::XmpParser::initialize(); }
+struct Exiv2XmpParserInitializer {
+  Exiv2XmpParserInitializer() { Exiv2::XmpParser::initialize(); }
 
-void pipeline_terminate() { Exiv2::XmpParser::terminate(); }
+  ~Exiv2XmpParserInitializer() { Exiv2::XmpParser::terminate(); }
+};
 
 struct MultiThreadProcess {
 private:
 
-  Progress              progress;
-  std::vector<fs::path> img_paths;
-  fs::path              output_dir, temporary_save_dir;
-  ImgsData              imgs_data;
+  Progress                  progress;
+  std::vector<fs::path>     img_paths;
+  fs::path                  output_dir, temporary_save_dir;
+  ImgsData                  imgs_data;
+  Exiv2XmpParserInitializer exiv2_xmp_parser_initializer;
 
   static auto generate_start_end(unsigned int total, unsigned int divisor) {
     int  base      = total / divisor;

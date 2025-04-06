@@ -26,14 +26,11 @@ int main(int argc, char* const argv[]) {
     fs::create_directory(output_dir);
   }
 
-  pipeline_initialize();
-
   auto process = MultiThreadProcess(input_dir, output_dir, output_dir / "tmp");
   MESSAGE("[1/3] Getting image information");
   process.get_image_info();
   MESSAGE("[2/3] Matching neighbor images");
   process.match();
 
-  pipeline_terminate();
   return 0;
 }

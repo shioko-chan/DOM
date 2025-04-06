@@ -21,10 +21,14 @@ struct RectifyResult {
 template <std::ranges::range Range>
 inline auto backproject(Range&& image_points, const Pose& pose, const Intrinsic& intrinsic) {
   return image_points | std::views::transform([&pose, &intrinsic](auto&& point) {
-           cv::Mat point_ = (cv::Mat_<float>(3, 1) << point.x, point.y, 1);
-           cv::Mat K_inv  = intrinsic.K().inv();
-           float   gamma  = pose.altitude / cv::Mat(pose.R().row(2) * K_inv * point_).at<float>(0, 0);
-           cv::Mat xyz_w  = gamma * pose.R() * K_inv * point_ + (cv::Mat_<float>(3, 1) << 0, 0, -pose.altitude);
+           cv::Mat point_      = (cv::Mat_<float>(3, 1) << point.x, point.y, 1);
+           cv::Mat K_inv       = intrinsic.K().inv();
+           float   denominator = cv::Mat(pose.R().row(2) * K_inv * point_).at<float>(0, 0);
+           if(std::abs(denominator) < 1e-6) {
+             return Point<float>(0, 0);
+           }
+           float   gamma = pose.altitude / denominator;
+           cv::Mat xyz_w = gamma * pose.R() * K_inv * point_ + (cv::Mat_<float>(3, 1) << 0, 0, -pose.altitude);
            return Point<float>(xyz_w.at<float>(0, 0), xyz_w.at<float>(1, 0));
          });
 }
@@ -82,7 +86,8 @@ RectifyResult rotate_rectify(const cv::Size img_size, const Pose& pose, const In
       }),
       .world2img   = PointsPipeline([rect, avg_point, &pose, &intrinsic](const Points<float>& world_points) {
         auto v0 = world_points | std::views::transform([&pose, &avg_point](auto&& point) {
-                    return Point<float>(point.x - pose.coord.x - avg_point.x, point.y - pose.coord.y - avg_point.y);
+                    // return Point<float>(point.x - pose.coord.x - avg_point.x, point.y - pose.coord.y - avg_point.y);
+                    return Point<float>(point.x - pose.coord.x, point.y - pose.coord.y);
                   });
         auto v1 = project(v0, pose, intrinsic) | std::views::transform([&rect](auto&& point) {
                     return Point<float>(point.x - rect.x, point.y - rect.y);
