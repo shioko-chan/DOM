@@ -5,10 +5,8 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <mutex>
 #include <optional>
 #include <ranges>
-#include <unordered_map>
 
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
@@ -189,7 +187,7 @@ public:
     const Exiv2::XmpData& xmp_data = img.xmp_data();
     for(const auto& key : XmpKey::keys) {
       if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
-        ERROR("{}: Key {} not found in XMP data", img.get_img_name().string(), key);
+        WARN("{}: Key {} not found in XMP data", img.get_img_name().string(), key);
         return false;
       }
     }
@@ -222,8 +220,8 @@ public:
     const auto& exif_data = img.exif_data();
     for(const auto& key : ExifKey::keys) {
       if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
-        ERROR("{}: Key {} not found in Exif data", img.get_img_name().string(), key);
-        return true;
+        WARN("{}: Key {} not found in Exif data", img.get_img_name().string(), key);
+        return false;
       }
     }
     return true;

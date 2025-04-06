@@ -5,13 +5,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
-#include <memory>
-#include <mutex>
 #include <optional>
 #include <ranges>
-#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -149,16 +145,19 @@ public:
   size_t size() const { return imgs_data.size(); }
 
   void find_and_set_reference_coord() {
-    std::vector<float> latitude, longitude, altitude;
-    const size_t       size         = imgs_data.size();
-    float              latitude_ref = 0.0f, longitude_ref = 0.0f, altitude_ref = std::numeric_limits<float>::min();
+    std::vector<float> latitudes, longitudes, altitudes;
     for(auto&& data : imgs_data) {
-      latitude_ref += data.get_latitude().degrees();
-      longitude_ref += data.get_longitude().degrees();
-      altitude_ref = std::max(altitude_ref, data.get_altitude());
+      latitudes.push_back(data.get_latitude().degrees());
+      longitudes.push_back(data.get_longitude().degrees());
+      altitudes.push_back(data.get_altitude());
     }
-    latitude_ref /= size;
-    longitude_ref /= size;
+    size_t n = latitudes.size() / 2;
+    std::nth_element(latitudes.begin(), latitudes.begin() + n, latitudes.end());
+    std::nth_element(longitudes.begin(), longitudes.begin() + n, longitudes.end());
+    std::nth_element(altitudes.begin(), altitudes.begin() + n, altitudes.end());
+    float latitude_ref  = latitudes[n];
+    float longitude_ref = longitudes[n];
+    float altitude_ref  = altitudes[n];
     for(auto&& data : imgs_data) {
       data.set_reference(latitude_ref, longitude_ref, altitude_ref);
     }
@@ -197,7 +196,6 @@ public:
     Intrinsic intrinsic = IntrinsicFactory::build(img.exif_data(), w, h);
     Pose      pose      = PoseFactory::build(img.xmp_data());
     return ImgData{std::move(pose), std::move(intrinsic), std::move(img)};
-    // return {{pose, intrinsic, img}};
   }
 };
 } // namespace Ortho

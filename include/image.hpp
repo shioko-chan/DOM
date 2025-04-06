@@ -5,7 +5,6 @@
 #include <iostream>
 #include <mutex>
 #include <optional>
-#include <thread>
 
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
