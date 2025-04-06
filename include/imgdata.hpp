@@ -74,6 +74,19 @@ public:
     return ground_points;
   }
 
+  Points<float> world2img(const Points<float>& points) {
+    if(world2img_) {
+      return world2img_(points);
+    }
+    rotate_rectify();
+    return world2img_(points);
+  }
+
+  void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
+    pose.set_reference(latitude_ref_degree, longitude_ref_degree, altitude_ref_);
+    reference_set = true;
+  }
+
   const Angle& get_latitude() const { return pose.latitude; }
 
   const Angle& get_longitude() const { return pose.longitude; }
@@ -88,10 +101,6 @@ public:
 
   const cv::Mat& get_distortion_coefficients() const { return intrinsic.D(); }
 
-  void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
-    pose.set_reference(latitude_ref_degree, longitude_ref_degree, altitude_ref_);
-  }
-
   const fs::path& get_img_path() const { return img.get_img_path(); }
 
   fs::path get_img_name() const { return img.get_img_name(); }
@@ -99,14 +108,6 @@ public:
   fs::path get_img_stem() const { return img.get_img_stem(); }
 
   fs::path get_img_extension() const { return img.get_img_extension(); }
-
-  Points<float> world2img(const Points<float>& points) {
-    if(world2img_) {
-      return world2img_(points);
-    }
-    rotate_rectify();
-    return world2img_(points);
-  }
 
   friend std::ostream& operator<<(std::ostream& os, const ImgData& data) {
     os << "Camera Matrix: " << data.intrinsic << "\n"
@@ -117,6 +118,9 @@ public:
 private:
 
   void rotate_rectify() {
+    if(!reference_set) {
+      throw std::runtime_error("Error: Reference coordinate not set");
+    }
     auto [img__, lock]                                  = img.img().value();
     auto&& img_                                         = img__.get();
     auto&& [rotate_img, mask, ground_points, world2img] = Ortho::rotate_rectify(img_.size(), pose, intrinsic, img_);
@@ -132,6 +136,7 @@ private:
   Image          img;
   Points<float>  ground_points;
   PointsPipeline world2img_;
+  bool           reference_set = false;
 };
 
 struct ImgsData {
