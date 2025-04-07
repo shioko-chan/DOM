@@ -69,7 +69,7 @@ public:
       const float& longitude_,
       const float& altitude_) :
       yaw(yaw_), pitch(pitch_), roll(roll_), latitude(latitude_), longitude(longitude_), altitude(altitude_) {
-    R_ = Rz(yaw.radians()) * Ry(pitch.radians()) * Rx(roll.radians()) * Ry(Angle::PI / 2);
+    R_ = Rz(yaw.radians()) * Ry(pitch.radians()) * Rx(roll.radians()) * Ry(-Angle::PI / 2);
   }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
