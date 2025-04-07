@@ -64,6 +64,8 @@ float iou(const Points<float>& points0, const Points<float>& points1) {
 
 Points<float> intersection(const Points<float>& points0, const Points<float>& points1) {
   if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
+    std::cerr << "points0: " << points0 << std::endl;
+    std::cerr << "points1: " << points1 << std::endl;
     throw std::runtime_error("Image has non-convex span");
   }
   Points<float> intersection;

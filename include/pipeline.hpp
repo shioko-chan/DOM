@@ -120,6 +120,19 @@ public:
     auto v           = match_pairs | std::views::transform([this](auto&& pair) {
                auto& img0 = imgs_data[pair.first];
                auto& img1 = imgs_data[pair.second];
+               if(!cv::isContourConvex(img0.get_spans()) || !cv::isContourConvex(img1.get_spans())) {
+                 INFO("Image {} and {} has non-convex span", img0.get_img_name().string(), img1.get_img_name().string());
+                 INFO(
+                     "Image1 yaw: {}, pitch: {}, roll: {}",
+                     img0.get_yaw().degrees(),
+                     img0.get_pitch().degrees(),
+                     img0.get_roll().degrees());
+                 INFO(
+                     "Image2 yaw: {}, pitch: {}, roll: {}",
+                     img1.get_yaw().degrees(),
+                     img1.get_pitch().degrees(),
+                     img1.get_roll().degrees());
+               }
                return std::make_pair(pair, Ortho::iou(img0.get_spans(), img1.get_spans()));
              })
              | std::views::filter([iou_threshold](auto&& pair) { return pair.second >= iou_threshold; })

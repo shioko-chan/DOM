@@ -89,6 +89,12 @@ public:
 
   float get_altitude() const { return pose.altitude; }
 
+  const Angle& get_yaw() const { return pose.yaw; }
+
+  const Angle& get_pitch() const { return pose.pitch; }
+
+  const Angle& get_roll() const { return pose.roll; }
+
   const cv::Mat& get_rotation_matrix() const { return pose.R(); }
 
   const Point<float>& get_coord() const { return pose.coord; }

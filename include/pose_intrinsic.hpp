@@ -69,7 +69,7 @@ public:
       const float& longitude_,
       const float& altitude_) :
       yaw(yaw_), pitch(pitch_), roll(roll_), latitude(latitude_), longitude(longitude_), altitude(altitude_) {
-    R_ = Rz(yaw.radians()) * Ry(pitch.radians()) * Rx(roll.radians()) * Ry(-Angle::PI / 2);
+    R_ = Rz(-yaw.radians()) * Ry(-pitch.radians()) * Rx(-roll.radians()) * Ry(-Angle::PI / 2);
   }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
@@ -90,27 +90,27 @@ public:
   static cv::Mat Rx(float radians) {
     // clang-format off
         return (cv::Mat_<float>(3, 3) << 
-          1, 0                ,  0                ,
-          0, std::cos(radians), -std::sin(radians),
-          0, std::sin(radians),  std::cos(radians));
+          1, 0                , 0                ,
+          0, std::cos(radians), std::sin(radians),
+          0,-std::sin(radians), std::cos(radians));
     // clang-format on
   }
 
   static cv::Mat Ry(float radians) {
     // clang-format off
         return (cv::Mat_<float>(3, 3) << 
-         std::cos(radians), 0, std::sin(radians),
+         std::cos(radians), 0,-std::sin(radians),
          0                , 1, 0                ,
-        -std::sin(radians), 0, std::cos(radians));
+         std::sin(radians), 0, std::cos(radians));
     // clang-format on
   }
 
   static cv::Mat Rz(float radians) {
     // clang-format off
         return (cv::Mat_<float>(3, 3) << 
-        std::cos(radians), -std::sin(radians), 0,
-        std::sin(radians),  std::cos(radians), 0,
-        0                ,  0                , 1);
+        std::cos(radians), std::sin(radians), 0,
+       -std::sin(radians), std::cos(radians), 0,
+        0                , 0                , 1);
     // clang-format on
   }
 
