@@ -76,14 +76,15 @@ public:
     altitude_ref          = altitude_ref_;
     const auto latitude_r = Angle(latitude_ref_degree), longitude_r = Angle(longitude_ref_degree);
     // WGS84
-    const double a = 6378137.0;
-    const double f = 1 / 298.257223563;
-    const double b = a * (1 - f);
-    double       M = a * (1 - f) / std::pow(1 - f * std::pow(std::sin(latitude_r.radians()), 2), 1.5);
-    double       N = a / std::sqrt(1 - f * std::pow(std::sin(latitude_r.radians()), 2));
-    const float  x = N * (longitude.radians() - longitude_r.radians()) * std::cos(latitude_r.radians());
-    const float  y = M * (latitude.radians() - latitude_r.radians());
-    coord          = Point<float>(x, y);
+    const double a          = 6378137.0;
+    const double f          = 1 / 298.257223563;
+    const double e_sq       = 2 * f - f * f;
+    const double sin_phi_sq = std::pow(std::sin(latitude_r.radians()), 2);
+    const double M          = a * (1 - e_sq) / std::pow(1 - e_sq * sin_phi_sq, 1.5);
+    const double N          = a / std::sqrt(1 - e_sq * sin_phi_sq);
+    const float  x          = N * (longitude.radians() - longitude_r.radians()) * std::cos(latitude_r.radians());
+    const float  y          = M * (latitude.radians() - latitude_r.radians());
+    coord                   = Point<float>(x, y);
   }
 
   static cv::Mat Rx(float radians) {
