@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -169,11 +170,18 @@ public:
     }
   }
 
+  template <typename T>
+  void push_back(T&& data) {
+    std::lock_guard<std::mutex> lock(mutex);
+    imgs_data.push_back(std::forward<T>(data));
+  }
+
   std::vector<ImgData>& get() { return imgs_data; }
 
 private:
 
   std::vector<ImgData> imgs_data;
+  std::mutex           mutex;
 };
 
 class ImgDataFactory {

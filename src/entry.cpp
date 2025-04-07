@@ -30,7 +30,8 @@ int main(int argc, char* const argv[]) {
   MESSAGE("[1/3] Getting image information");
   process.get_image_info();
   MESSAGE("[2/3] Matching neighbor images");
-  process.match();
-
+  // process.match();
+  MESSAGE("[3/3] Generating panorama");
+  process.panorama();
   return 0;
 }

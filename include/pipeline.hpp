@@ -104,14 +104,15 @@ public:
   }
 
   void get_image_info() {
-    for(auto&& img_path : img_paths) {
-      auto res = ImgDataFactory::build(img_path, temporary_save_dir);
+    run([this](int i) {
+      auto&& img_path = img_paths[i];
+      auto   res      = ImgDataFactory::build(img_path, temporary_save_dir);
       if(!res.has_value()) {
         ERROR("Error: {} could not be processed", img_path.string());
-        continue;
+        return;
       }
-      imgs_data.get().push_back(std::move(res.value()));
-    }
+      imgs_data.push_back(std::move(res.value()));
+    });
     imgs_data.find_and_set_reference_coord();
   }
 
@@ -143,6 +144,8 @@ public:
   }
 
   void stitch() {}
+
+  void panorama() {}
 };
 
 } // namespace Ortho

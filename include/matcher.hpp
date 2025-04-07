@@ -275,9 +275,7 @@ public:
         auto v0 = points0 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
         auto v1 = points1 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
         std::vector<cv::KeyPoint> kpts0(v0.begin(), v0.end()), kpts1(v1.begin(), v1.end());
-        // cv::drawKeypoints(img1, kpts0, img1, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-        // cv::drawKeypoints(img2, kpts1, img2, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-        cv::Mat resultImg;
+        cv::Mat                   resultImg;
         cv::drawMatches(img1, kpts0, img2, kpts1, inlier_matches, resultImg);
         cv::imwrite(
             temporary_save_path / "foo"

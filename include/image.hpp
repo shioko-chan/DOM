@@ -18,7 +18,7 @@ namespace Ortho {
 struct Image_ : public ManagementUnit<fs::path> {
 private:
 
-  static inline cv::Size resolution{4096, 4096};
+  static inline cv::Size resolution{1024, 1024};
 
   cv::Mat  img_;
   key_type path;
