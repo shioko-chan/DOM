@@ -74,7 +74,8 @@
         "any": "cpp",
         "cfenv": "cpp",
         "cinttypes": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "log": "cpp"
     },
     "cSpell.words": [
         "cudnn",

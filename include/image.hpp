@@ -10,74 +10,42 @@
 #include <opencv2/opencv.hpp>
 
 #include "log.hpp"
-#include "lru.hpp"
+#include "mem.hpp"
 #include "utility.hpp"
 
 namespace Ortho {
 
-struct Image_ : public ManagementUnit<fs::path> {
-private:
-
-  static inline cv::Size resolution{1024, 1024};
-
-  cv::Mat  img_;
-  key_type path;
-
-  inline void check_create_parent_directory() {
-    if(!fs::exists(path.parent_path())) {
-      if(!fs::create_directories(path.parent_path())) {
-        throw std::runtime_error("Error: " + path.parent_path().string() + " could not be created");
-      }
-    }
-  }
-
+class ImageMem : public ManageAble {
 public:
 
-  Image_(const key_type& path) : ManagementUnit(false), path(path) { check_create_parent_directory(); }
+  template <typename T>
+    requires std::same_as<std::decay_t<T>, cv::Mat>
+  ImageMem(T&& img) : img(std::forward<T>(img)) {}
 
-  Image_(const key_type& path, cv::Mat&& img) : ManagementUnit(true), path(path), img_(std::move(img)) {
-    check_create_parent_directory();
-  }
-
-  const cv::Mat& get() const { return img_; }
-
-  void swap_in() override {
-    if(!img_.empty()) {
-      throw std::runtime_error("Error: Image is already in memory");
-    }
-    if(!fs::exists(path)) {
-      throw std::runtime_error("Error: " + path.string() + " does not exist");
-    }
-    img_ = cv::imread(path.string());
-    decimate_keep_aspect_ratio(&img_, resolution);
-    if(img_.empty()) {
-      throw std::runtime_error("Error: " + path.string() + " could not be read");
-    }
-  }
-
-  void swap_out() override {
-    if(img_.empty()) {
-      throw std::runtime_error("Error: Image is not in memory");
-    }
-    check_create_parent_directory();
-    if(fs::exists(path)) {
-      img_.release();
-      return;
-    }
-    if(!cv::imwrite(path.string(), img_)) {
-      throw std::runtime_error("Error: " + path.string() + " could not be written");
-    }
-    img_.release();
-  }
-
-  const inline key_type& get_key() const override { return path; }
-
-  inline size_t size() const override {
-    if(img_.empty()) {
+  size_t size() const noexcept override {
+    if(img.empty()) {
       return 0;
     }
-    return img_.cols * img_.rows * img_.channels() * img_.elemSize1();
+    return img.cols * img.rows * img.channels() * img.elemSize1();
   }
+
+  cv::Mat& get() { return img; }
+
+private:
+
+  cv::Mat img;
+};
+
+struct ImgRefGuard {
+  ImgRefGuard(RefGuard&& refguard) : refguard(std::move(refguard)) {}
+
+  cv::Mat& get() { return refguard.get<ImageMem>().get(); }
+
+  void unlock() { refguard.unlock(); }
+
+private:
+
+  RefGuard refguard;
 };
 
 class Image {
@@ -85,61 +53,143 @@ public:
 
   Image() = default;
 
-  explicit Image(const fs::path& img_read_path, const fs::path& temporary_save_path) : path(img_read_path) {
-    cache.put(std::move(Image_(img_read_path)));
-    rotate_path      = temporary_save_path / (path.stem().string() + "_rotate" + path.extension().string());
-    rotate_mask_path = temporary_save_path / (path.stem().string() + "_rotate_mask" + path.extension().string());
+  Image(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) : path(img_read_path), initialized(true) {
+    if(!fs::exists(path)) {
+      ERROR("Path {} does not exist.", path.string());
+      return;
+    }
+    mem.register_node(
+        path.string(),
+        nullptr,
+        SwapInFunc([this, mode] {
+          cv::Mat img = read(path, mode);
+          decimate_keep_aspect_ratio(&img, resolution);
+          return new ImageMem(std::move(img));
+        }),
+        SwapOutFunc([](ManageAblePtr ptr) {}));
   }
 
-  const fs::path& get_img_path() const { return path; }
+  Image(fs::path temporary_save_path, cv::Mat&& img) : path(temporary_save_path), initialized(true) {
+    fs::path parent_path = path.parent_path();
+    if(!fs::exists(parent_path) && !fs::create_directories(parent_path)) {
+      ERROR("Error: {} could not be created", parent_path.string());
+      return;
+    }
+    mem.register_node(
+        path.string(),
+        std::make_unique<ImageMem>(std::move(img)),
+        SwapInFunc([this] { return new ImageMem(std::move(read(path, cv::IMREAD_UNCHANGED))); }),
+        SwapOutFunc([this](ManageAblePtr ptr) {
+          if(ptr) {
+            cv::imwrite(path.string(), dynamic_cast<ImageMem*>(ptr.get())->get());
+          }
+        }));
+  }
 
-  fs::path get_img_name() const { return path.filename(); }
+  void delay_initialize(fs::path temporary_save_path, cv::Mat&& img) {
+    if(initialized) {
+      return;
+    }
+    path        = temporary_save_path;
+    initialized = true;
+    mem.register_node(
+        path.string(),
+        std::make_unique<ImageMem>(std::move(img)),
+        SwapInFunc([this] { return new ImageMem(std::move(read(path, cv::IMREAD_UNCHANGED))); }),
+        SwapOutFunc([this](ManageAblePtr ptr) {
+          if(ptr) {
+            cv::imwrite(path.string(), dynamic_cast<ImageMem*>(ptr.get())->get());
+          }
+        }));
+  }
 
-  fs::path get_img_stem() const { return path.stem(); }
+  ImgRefGuard get() const {
+    check_init();
+    return mem.get_node(path.string()).value();
+  }
 
-  fs::path get_img_extension() const { return path.extension(); }
+  const fs::path& get_img_path() const {
+    check_init();
+    return path;
+  }
 
-  std::optional<TRefLockPair<Image_>> img() const { return cache.get(path); }
+  fs::path get_img_name() const {
+    check_init();
+    return path.filename();
+  }
 
-  std::optional<TRefLockPair<Image_>> rotate_rectified() const { return cache.get(rotate_path); }
+  fs::path get_img_stem() const {
+    check_init();
+    return path.stem();
+  }
 
-  std::optional<TRefLockPair<Image_>> rotate_rectified_mask() const { return cache.get(rotate_mask_path); }
+  fs::path get_img_extension() const {
+    check_init();
+    return path.extension();
+  }
+
+  bool is_initialized() const { return initialized; }
+
+private:
+
+  void check_init() const {
+    if(!initialized) {
+      throw std::runtime_error("Error: Image not initialized");
+    }
+  }
+
+  static cv::Mat read(const fs::path& path, cv::ImreadModes mode) {
+    cv::Mat img = cv::imread(path.string(), mode);
+    if(img.empty()) {
+      throw std::runtime_error("Error: " + path.string() + " could not be read");
+    }
+    return img;
+  }
+
+  static inline cv::Size resolution{1024, 1024};
+
+  fs::path path;
+
+  bool initialized{false};
+};
+
+class ExifXmp {
+public:
+
+  ExifXmp() = default;
+
+  ExifXmp(const fs::path& img_read_path) : path(img_read_path) {}
 
   Exiv2::ExifData& exif_data() {
-    load_exif_xmp();
+    check_and_load_exif_xmp();
     return exif_;
   }
 
   Exiv2::XmpData& xmp_data() {
-    load_exif_xmp();
+    check_and_load_exif_xmp();
     return xmp_;
   }
 
-  void set_rotate_rectified(cv::Mat& img) { cache.put(std::move(Image_(rotate_path, std::move(img)))); }
-
-  void set_rotate_rectified_mask(cv::Mat& mask) { cache.put(std::move(Image_(rotate_mask_path, std::move(mask)))); }
+  const fs::path& get_img_path() const { return path; }
 
 private:
 
-  static inline LRU<Image_> cache{8ul * (1ul << 30)};
-
-  static inline std::mutex mtx;
-
-  fs::path        path, rotate_path, rotate_mask_path;
+  fs::path        path;
   Exiv2::ExifData exif_;
   Exiv2::XmpData  xmp_;
 
-  void load_exif_xmp() {
+  static inline std::mutex xmp_lock;
+
+  void check_and_load_exif_xmp() {
     if(!exif_.empty() && !xmp_.empty()) {
       return;
     }
-    std::lock_guard<std::mutex> lock(mtx);
-
     auto image_info = Exiv2::ImageFactory::open(path.string());
     if(!image_info) {
       ERROR("Error: {} could not be opened by Exiv2", path.string());
       return;
     }
+    std::lock_guard<std::mutex> lock(xmp_lock);
     try {
       image_info->readMetadata();
     } catch(std::exception& e) {

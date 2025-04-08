@@ -71,6 +71,7 @@ public:
   }
 
   template <typename T>
+    requires std::is_arithmetic_v<T>
   void set_input(const std::string& name, std::vector<T>& input, const std::vector<int64_t>& shape) {
     size_t idx  = std::find(input_names.begin(), input_names.end(), name) - input_names.begin();
     inputs[idx] = std::move(

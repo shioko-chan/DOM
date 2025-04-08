@@ -184,11 +184,11 @@ private:
 
 public:
 
-  static bool validate(Image& img) {
-    const Exiv2::XmpData& xmp_data = img.xmp_data();
+  static bool validate(ExifXmp& img_exif_xmp) {
+    const Exiv2::XmpData& xmp_data = img_exif_xmp.xmp_data();
     for(const auto& key : XmpKey::keys) {
       if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
-        WARN("{}: Key {} not found in XMP data", img.get_img_name().string(), key);
+        WARN("{}: Key {} not found in XMP data", img_exif_xmp.get_img_path().string(), key);
         return false;
       }
     }
@@ -217,11 +217,11 @@ private:
 
 public:
 
-  static bool validate(Image& img) {
-    const auto& exif_data = img.exif_data();
+  static bool validate(ExifXmp& img_exif_xmp) {
+    const auto& exif_data = img_exif_xmp.exif_data();
     for(const auto& key : ExifKey::keys) {
       if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
-        WARN("{}: Key {} not found in Exif data", img.get_img_name().string(), key);
+        WARN("{}: Key {} not found in Exif data", img_exif_xmp.get_img_path().string(), key);
         return false;
       }
     }

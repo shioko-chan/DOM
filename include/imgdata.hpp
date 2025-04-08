@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <concepts>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -26,56 +27,42 @@ namespace fs = std::filesystem;
 
 namespace Ortho {
 
-using MatRefLockPair = TRefLockPair<cv::Mat>;
-
 struct ImgData {
 public:
 
   ImgData() = default;
 
-  ImgData(Pose&& pose, Intrinsic&& intrinsic, Image&& img) :
-      pose(std::move(pose)), intrinsic(std::move(intrinsic)), img(std::move(img)) {}
+  ImgData(Pose&& pose, Intrinsic&& intrinsic, Image&& img, ExifXmp&& exif_xmp, fs::path temp_save_path) :
+      pose(std::move(pose)), intrinsic(std::move(intrinsic)), img(std::move(img)), exif_xmp(std::move(exif_xmp)),
+      temp_save_path(temp_save_path) {}
 
-  MatRefLockPair get_original_img() const {
-    auto [img_, lock] = img.img().value();
-    return {img_.get(), std::move(lock)};
+  ImgRefGuard get_original_img() const { return img.get(); }
+
+  ImgRefGuard get_rotate_rectified() {
+    if(!img_rotated.is_initialized()) {
+      rotate_rectify();
+    }
+    return img_rotated.get();
   }
 
-  MatRefLockPair get_rotate_rectified() {
-    auto res = img.rotate_rectified();
-    if(res.has_value()) {
-      auto&& [img_, lock] = res.value();
-      return {img_.get(), std::move(lock)};
+  ImgRefGuard get_rotate_rectified_mask() {
+    if(!img_rotated_mask.is_initialized()) {
+      rotate_rectify();
     }
-    rotate_rectify();
-    auto [img_, lock] = img.rotate_rectified().value();
-    return {img_.get(), std::move(lock)};
-  }
-
-  MatRefLockPair get_rotate_rectified_mask() {
-    auto res = img.rotate_rectified_mask();
-    if(res.has_value()) {
-      auto&& [img_, lock] = res.value();
-      return {img_.get(), std::move(lock)};
-    }
-    rotate_rectify();
-    auto [img_, lock] = img.rotate_rectified_mask().value();
-    return {img_.get(), std::move(lock)};
+    return img_rotated_mask.get();
   }
 
   const Points<float>& get_spans() {
-    if(!ground_points.empty()) {
-      return ground_points;
+    if(ground_points.empty()) {
+      rotate_rectify();
     }
-    rotate_rectify();
     return ground_points;
   }
 
   Points<float> world2img(const Points<float>& points) {
-    if(world2img_) {
-      return world2img_(points);
+    if(!world2img_) {
+      rotate_rectify();
     }
-    rotate_rectify();
     return world2img_(points);
   }
 
@@ -124,19 +111,24 @@ private:
     if(!reference_set) {
       throw std::runtime_error("Error: Reference coordinate not set");
     }
-    auto [img__, lock]                                  = img.img().value();
-    auto&& img_                                         = img__.get();
-    auto&& [rotate_img, mask, ground_points, world2img] = Ortho::rotate_rectify(img_.size(), pose, intrinsic, img_);
-    lock.unlock();
+    auto img_guard = img.get();
+    auto&& [rotate_img, mask, ground_points, world2img] =
+        Ortho::rotate_rectify(img_guard.get().size(), pose, intrinsic, img_guard.get());
     this->ground_points = std::move(ground_points);
     this->world2img_    = std::move(world2img);
-    this->img.set_rotate_rectified(rotate_img);
-    this->img.set_rotate_rectified_mask(mask);
+    this->img_rotated.delay_initialize(
+        temp_save_path / (img.get_img_stem().string() + "_rotated" + img.get_img_extension().string()),
+        std::move(rotate_img));
+    this->img_rotated_mask.delay_initialize(
+        temp_save_path / (img.get_img_stem().string() + "_rotated_mask" + img.get_img_extension().string()),
+        std::move(mask));
   }
 
+  fs::path       temp_save_path;
   Pose           pose;
   Intrinsic      intrinsic;
-  Image          img;
+  Image          img, img_rotated, img_rotated_mask;
+  ExifXmp        exif_xmp;
   Points<float>  ground_points;
   PointsPipeline world2img_;
   bool           reference_set = false;
@@ -147,12 +139,53 @@ public:
 
   ImgsData() = default;
 
+  ImgsData(std::initializer_list<ImgData> init) : imgs_data(init) {}
+
+  template <std::input_iterator I>
+  ImgsData(I first, I last) : imgs_data(first, last) {}
+
   ImgData& operator[](size_t i) { return imgs_data[i]; }
+
+  const ImgData& operator[](size_t i) const { return imgs_data[i]; }
+
+  std::vector<ImgData>& get() { return imgs_data; }
+
+  const std::vector<ImgData>& get() const { return imgs_data; }
 
   size_t size() const { return imgs_data.size(); }
 
+  bool empty() const { return imgs_data.empty(); }
+
+  void resize(size_t size) {
+    std::lock_guard<std::mutex> lock(mutex);
+    imgs_data.resize(size);
+  }
+
+  void clear() {
+    std::lock_guard<std::mutex> lock(mutex);
+    imgs_data.clear();
+  }
+
+  void reserve(size_t size) {
+    std::lock_guard<std::mutex> lock(mutex);
+    imgs_data.reserve(size);
+  }
+
+  template <typename T>
+    requires std::same_as<std::decay_t<T>, ImgData>
+  void push_back(T&& data) {
+    std::lock_guard<std::mutex> lock(mutex);
+    imgs_data.push_back(std::forward<T>(data));
+  }
+
+  void pop_back() {
+    std::lock_guard<std::mutex> lock(mutex);
+    imgs_data.pop_back();
+  }
+
   void find_and_set_reference_coord() {
-    std::vector<float> latitudes, longitudes, altitudes;
+    std::lock_guard<std::mutex> lock(mutex);
+    std::vector<float>          latitudes, longitudes, altitudes;
     for(auto&& data : imgs_data) {
       latitudes.push_back(data.get_latitude().degrees());
       longitudes.push_back(data.get_longitude().degrees());
@@ -169,14 +202,6 @@ public:
       data.set_reference(latitude_ref, longitude_ref, altitude_ref);
     }
   }
-
-  template <typename T>
-  void push_back(T&& data) {
-    std::lock_guard<std::mutex> lock(mutex);
-    imgs_data.push_back(std::forward<T>(data));
-  }
-
-  std::vector<ImgData>& get() { return imgs_data; }
 
 private:
 
@@ -197,19 +222,19 @@ public:
       ERROR("Error: {} is not a valid image file", path.string());
       return std::nullopt;
     }
-    Image img(path, temp_save_path);
-    if(!IntrinsicFactory::validate(img)) {
+    ExifXmp exif_xmp(path);
+    if(!IntrinsicFactory::validate(exif_xmp)) {
       return std::nullopt;
     }
-    if(!PoseFactory::validate(img)) {
+    if(!PoseFactory::validate(exif_xmp)) {
       return std::nullopt;
     }
-    auto [img_, lock] = img.img().value();
-    auto [w, h]       = img_.get().size();
-    lock.unlock();
-    Intrinsic intrinsic = IntrinsicFactory::build(img.exif_data(), w, h);
-    Pose      pose      = PoseFactory::build(img.xmp_data());
-    return ImgData{std::move(pose), std::move(intrinsic), std::move(img)};
+    auto img            = Image(path);
+    auto imgref         = img.get();
+    auto [w, h]         = imgref.get().size();
+    Intrinsic intrinsic = IntrinsicFactory::build(exif_xmp.exif_data(), w, h);
+    Pose      pose      = PoseFactory::build(exif_xmp.xmp_data());
+    return ImgData{std::move(pose), std::move(intrinsic), std::move(img), std::move(exif_xmp), temp_save_path};
   }
 };
 } // namespace Ortho

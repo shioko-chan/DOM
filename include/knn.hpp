@@ -22,8 +22,7 @@ public:
     requires std::same_as<std::decay_t<U>, Points>
   KNN(int k, U&& data) : k_(k), dataset(std::forward<U>(data)) {}
 
-  template <typename V>
-    requires std::ranges::view<V>
+  template <std::ranges::view V>
   KNN(int k, V v) : k_(k), dataset(v.begin(), v.end()) {}
 
   std::vector<int> find_nearest_neighbour(const int index) const {

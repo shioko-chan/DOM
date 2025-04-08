@@ -11,7 +11,8 @@
 namespace Ortho {
 
 const float resolution = 0.1f; // meters per pixel
-using PointsPipeline   = std::function<Points<float>(const Points<float>&)>;
+
+using PointsPipeline = std::function<Points<float>(const Points<float>&)>;
 
 struct RectifyResult {
   cv::Mat        img, mask;
@@ -49,10 +50,11 @@ RectifyResult rotate_rectify(const cv::Size img_size, const Pose& pose, const In
   const int     width      = static_cast<int>(abs_ceil(Ortho::max_x(img_points)));
   const int     height     = static_cast<int>(abs_ceil(Ortho::max_y(img_points)));
   Points<float> dst(img_points.begin(), img_points.end());
-  const cv::Mat M = cv::getPerspectiveTransform(src, dst);
+  Points<float> src3(src.begin(), src.end() - 1), dst3(dst.begin(), dst.end() - 1);
+  const cv::Mat M = cv::getAffineTransform(src3, dst3);
   cv::Mat       img_res, mask_res;
-  cv::warpPerspective(img, img_res, M, cv::Size(width, height), cv::INTER_CUBIC);
-  cv::warpPerspective(mask, mask_res, M, cv::Size(width, height), cv::INTER_CUBIC);
+  cv::warpAffine(img, img_res, M, cv::Size(width, height), cv::INTER_CUBIC);
+  cv::warpAffine(mask, mask_res, M, cv::Size(width, height), cv::INTER_NEAREST);
   auto abs_world_points = world_points | std::views::transform([&pose](auto&& point) {
                             return Point<float>(point.x + pose.coord.x, point.y + pose.coord.y);
                           });

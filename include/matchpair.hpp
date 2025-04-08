@@ -17,7 +17,7 @@ public:
 
   MatchPair() = default;
 
-  MatchPair(int first, int second) : first(first), second(second), valid(true) {}
+  MatchPair(int first, int second) : first(first), second(second) {}
 
   bool operator==(const MatchPair& rhs) const { return first == rhs.first && second == rhs.second; }
 

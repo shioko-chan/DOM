@@ -11,9 +11,11 @@ namespace fs = std::filesystem;
 
 namespace Ortho {
 template <typename T>
+  requires std::is_arithmetic_v<T>
 using Point = cv::Point_<T>;
 
 template <typename T>
+  requires std::is_arithmetic_v<T>
 using Points = std::vector<Point<T>>;
 
 template <std::ranges::range Range>
@@ -94,6 +96,7 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024
 
 namespace cv {
 template <typename T>
+  requires std::is_arithmetic_v<T>
 Mat operator*(const Mat& lhs, const Point_<T>& rhs) {
   if(lhs.cols != 2 && lhs.cols != 3) {
     throw std::runtime_error("Matrix must have 2 or 3 columns");
@@ -106,6 +109,7 @@ Mat operator*(const Mat& lhs, const Point_<T>& rhs) {
 }
 
 template <typename T>
+  requires std::is_arithmetic_v<T>
 Mat operator*(const Mat& lhs, const Point3_<T>& rhs) {
   if(lhs.cols != 3 && lhs.cols != 4) {
     throw std::runtime_error("Matrix must have 3 or 4 columns");

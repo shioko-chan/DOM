@@ -15,6 +15,7 @@
 
 #include "imgdata.hpp"
 #include "log.hpp"
+#include "mem.hpp"
 #include "models.h"
 #include "ort.hpp"
 #include "utility.hpp"
@@ -25,11 +26,7 @@ namespace Ortho {
 
 template <size_t N>
 struct Feature {
-public:
-
   static constexpr size_t descriptor_size = N;
-
-  static constexpr size_t size = sizeof(float) * 2 + sizeof(int) * 2 + sizeof(float) * descriptor_size;
 
   float                              x, y;
   int                                pix_x, pix_y;
@@ -56,13 +53,101 @@ public:
 
 template <typename F>
   requires std::same_as<F, Feature<F::descriptor_size>>
+struct Features {
+public:
+
+  Features() = default;
+
+  Features(std::initializer_list<F> init) : features(init) {}
+
+  template <std::input_iterator I>
+  Features(I first, I last) : features(first, last) {}
+
+  F& operator[](size_t i) noexcept { return features[i]; }
+
+  const F& operator[](size_t i) const noexcept { return features[i]; }
+
+  std::vector<F>& get() noexcept { return features; }
+
+  const std::vector<F>& get() const noexcept { return features; }
+
+  size_t size() const noexcept { return features.size(); }
+
+  bool empty() const noexcept { return features.empty(); }
+
+  void resize(size_t size) noexcept { features.resize(size); }
+
+  void clear() noexcept { features.clear(); }
+
+  void reserve(size_t size) noexcept { features.reserve(size); }
+
+  auto begin() noexcept { return features.begin(); }
+
+  auto end() noexcept { return features.end(); }
+
+  auto begin() const noexcept { return features.begin(); }
+
+  auto end() const noexcept { return features.end(); }
+
+  auto cbegin() const noexcept { return features.cbegin(); }
+
+  auto cend() const noexcept { return features.cend(); }
+
+  auto rbegin() noexcept { return features.rbegin(); }
+
+  auto rend() noexcept { return features.rend(); }
+
+  auto rbegin() const noexcept { return features.rbegin(); }
+
+  auto rend() const noexcept { return features.rend(); }
+
+  auto crbegin() const noexcept { return features.crbegin(); }
+
+  auto crend() const noexcept { return features.crend(); }
+
+  template <typename T>
+    requires std::same_as<std::decay_t<T>, F>
+  void push_back(T&& feature) noexcept {
+    features.push_back(std::forward<T>(feature));
+  }
+
+  void pop_back() noexcept { features.pop_back(); }
+
+  friend std::ofstream& operator<<(std::ofstream& ofs, const Features& features) noexcept {
+    size_t len = features.get().size();
+    ofs << len;
+    for(auto&& f : features) {
+      ofs << f;
+    }
+    return ofs;
+  }
+
+  friend std::ifstream& operator>>(std::ifstream& ifs, Features& features) noexcept {
+    size_t len;
+    ifs >> len;
+    features.resize(len);
+    for(auto&& f : features) {
+      ifs >> f;
+    }
+    return ifs;
+  }
+
+private:
+
+  std::vector<F> features;
+};
+
+template <typename F>
+  requires std::same_as<F, Feature<F::descriptor_size>>
 class Extractor {
 public:
 
   using Feature  = F;
-  using Features = std::vector<Feature>;
+  using Features = Ortho::Features<F>;
 
   static constexpr size_t descriptor_size = Feature::descriptor_size;
+
+  virtual ~Extractor() = default;
 
 private:
 
@@ -71,68 +156,22 @@ private:
   InferEnv env;
   fs::path temporary_save_path;
 
-  struct Features_ : public ManagementUnit<fs::path> {
-  private:
-
-    size_t len;
-
-    key_type path;
-
+  class FeaturesMem : public ManageAble {
   public:
 
-    Features features;
+    template <typename T>
+      requires std::same_as<std::decay_t<T>, Features>
+    FeaturesMem(T&& features) : features(std::forward<T>(features)) {}
 
-    Features_(const key_type& path, const Features& features) : ManagementUnit(true), path(path), features(features) {}
-
-    void swap_in() override {
-      if(!features.empty()) {
-        throw std::runtime_error("Error: Features is already in memory");
-      }
-      if(!fs::exists(path)) {
-        throw std::runtime_error("Error: " + path.string() + " does not exist");
-      }
-      std::ifstream ifs(path.string(), std::ios::binary);
-      if(!ifs.is_open()) {
-        throw std::runtime_error("Error: " + path.string() + " could not be opened");
-      }
-      features.resize(len);
-      for(auto&& f : features) {
-        ifs >> f;
-      }
-      if(ifs.fail()) {
-        throw std::runtime_error("Error: " + path.string() + " could not be read");
-      }
-      ifs.close();
-    }
-
-    void swap_out() override {
+    size_t size() const noexcept override {
       if(features.empty()) {
-        throw std::runtime_error("Error: Features is already on disk");
+        return 0;
       }
-      if(!fs::exists(path)) {
-        throw std::runtime_error("Error: " + path.string() + " does not exist");
-      }
-      std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
-      if(!ofs.is_open()) {
-        throw std::runtime_error("Error: " + path.string() + " could not be opened");
-      }
-      len = features.size();
-      for(auto&& f : features) {
-        ofs << f;
-      }
-      if(ofs.fail()) {
-        throw std::runtime_error("Error: " + path.string() + " could not be written");
-      }
-      ofs.close();
-      Features().swap(features);
+      return features.size() * sizeof(Feature);
     }
 
-    const inline key_type& get_key() const override { return path; }
-
-    inline size_t size() const override { return features.size() * Feature::size; }
+    Features features;
   };
-
-  static inline LRU<Features_> cache{4ul * (1ul << 30)};
 
 protected:
 
@@ -153,25 +192,30 @@ public:
 
   Features get_features(ImgData& img_data) {
     fs::path path = temporary_save_path / (img_data.get_img_stem().string() + ".desc");
-    auto     elem = cache.get(path);
-    if(elem.has_value()) {
-      auto&& [features_, lock] = elem.value();
-      Features features(features_.features);
-      lock.unlock();
+    auto     elem = mem.get_node(path.string());
+    if(elem) {
+      auto&&   elem_guard = elem.value();
+      Features features(elem_guard.get<FeaturesMem>().features);
       return features;
     }
-    auto [img, lock_img]  = img_data.get_rotate_rectified();
-    cv::Mat img_processed = img.clone();
-    lock_img.unlock();
-    reshape(&img_processed);
-    preprocess(&img_processed);
-    auto [mask, lock_mask] = img_data.get_rotate_rectified_mask();
-    cv::Mat mask_processed = mask.clone();
-    lock_mask.unlock();
-    reshape(&mask_processed);
-    std::vector<float> img_vec(img_processed.begin<float>(), img_processed.end<float>());
-    const int64_t      h = mask_processed.rows, w = mask_processed.cols;
-    img_processed.release();
+    cv::Mat            mask_processed;
+    std::vector<float> img_vec;
+    {
+      cv::Mat img_processed;
+      {
+        auto img_guard = img_data.get_rotate_rectified();
+        img_processed  = img_guard.get().clone();
+      }
+      reshape(&img_processed);
+      preprocess(&img_processed);
+      {
+        auto mask_guard = img_data.get_rotate_rectified_mask();
+        mask_processed  = mask_guard.get().clone();
+      }
+      reshape(&mask_processed);
+      img_vec.assign(img_processed.begin<float>(), img_processed.end<float>());
+    }
+    const int64_t h = mask_processed.rows, w = mask_processed.cols;
     env.set_input("image", img_vec, {1, get_channels(), h, w});
     if(img_vec.empty()) {
       throw std::runtime_error("Error: Image is empty");
@@ -215,7 +259,36 @@ public:
         "Image {} has {} keypoints after threshold filter.",
         img_data.get_img_name().string(),
         filtered_features.size() / 2);
-    cache.put(Features_(path, filtered_features));
+    mem.register_node(
+        path.string(),
+        std::make_unique<FeaturesMem>(filtered_features),
+        SwapInFunc([this, path] {
+          std::ifstream ifs(path.string(), std::ios::binary);
+          if(!ifs.is_open()) {
+            throw std::runtime_error("Error: " + path.string() + " could not be opened");
+          }
+          Features features;
+          ifs >> features;
+          ifs.close();
+          if(ifs.fail()) {
+            throw std::runtime_error("Error: " + path.string() + " could not be read");
+          }
+          return new FeaturesMem(std::move(features));
+        }),
+        SwapOutFunc([this, path](ManageAblePtr ptr) {
+          if(ptr) {
+            std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
+            if(!ofs.is_open()) {
+              throw std::runtime_error("Error: " + path.string() + " could not be opened");
+            }
+            auto& features = dynamic_cast<FeaturesMem*>(ptr.get())->features;
+            ofs << features;
+            if(ofs.fail()) {
+              throw std::runtime_error("Error: " + path.string() + " could not be written");
+            }
+            ofs.close();
+          }
+        }));
     return filtered_features;
   }
 };

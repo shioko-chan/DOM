@@ -1,13 +1,6 @@
 #ifndef ORTHO_LOG_HPP
 #define ORTHO_LOG_HPP
 
-#define RESET "\033[0m"
-#define RED "\033[31m"
-#define GREEN "\033[32m"
-#define YELLOW "\033[33m"
-#define BLUE "\033[34m"
-#define BOLD "\033[1m"
-
 #include <concepts>
 #include <format>
 #include <iostream>
@@ -16,11 +9,18 @@
 
 namespace Ortho {
 
-std::mutex cerr_mtx;
+#define RESET "\033[0m"
+#define RED "\033[31m"
+#define GREEN "\033[32m"
+#define YELLOW "\033[33m"
+#define BLUE "\033[34m"
+#define BOLD "\033[1m"
+
+static inline std::mutex stream_mtx;
 
 template <typename... Args>
 void log(std::ostream& ostream, const char* prefix, std::string_view format, Args&&... args) {
-  std::lock_guard<std::mutex> lock(cerr_mtx);
+  std::lock_guard<std::mutex> lock(stream_mtx);
   ostream << prefix << std::vformat(format, std::make_format_args(args...)) << "\n";
 }
 
@@ -48,7 +48,11 @@ void log(std::ostream& ostream, const char* prefix, std::string_view format, Arg
   #define DEBUG(...)
 #endif
 
-#define MESSAGE(...) log(std::cout, GREEN BOLD "[MESSAGE] " RESET, __VA_ARGS__)
+template <typename... Args>
+void MESSAGE(std::string_view format, Args&&... args) {
+  std::lock_guard<std::mutex> lock(stream_mtx);
+  std::cout << GREEN          BOLD << std::vformat(format, std::make_format_args(args...)) << RESET "\n";
+}
 
 } // namespace Ortho
 #endif

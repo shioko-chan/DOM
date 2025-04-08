@@ -34,7 +34,7 @@ private:
   using Features = typename E::Features;
 
   static constexpr float lightglue_threshold  = 0.2f;
-  static constexpr int   inlier_cnt_threshold = 25;
+  static constexpr int   inlier_cnt_threshold = 20;
   InferEnv               lightglue;
   fs::path               temporary_save_path;
   E                      extractor;
@@ -155,43 +155,6 @@ public:
               matches.size());
           continue;
         }
-        cv::Mat img1;
-        auto [img1_, lock_img1] = lhs_img.get_rotate_rectified();
-        img1_.copyTo(img1);
-        lock_img1.unlock();
-        cv::Mat img2;
-        auto [img2_, lock_img2] = rhs_img.get_rotate_rectified();
-        img2_.copyTo(img2);
-        lock_img2.unlock();
-        auto              lhs_pnts = lhs_img.get_spans();
-        auto              rhs_pnts = rhs_img.get_spans();
-        auto              inter    = intersection(lhs_pnts, rhs_pnts);
-        std::stringstream ss, ss1;
-        ss1 << "lhs_pnts: " << lhs_pnts << "rhs_pnts: " << rhs_pnts << "inter: " << inter;
-        INFO("{}", ss1.str());
-        ss << "lhs_ world2img: " << lhs_img.world2img(inter) << "rhs_ world2img: " << rhs_img.world2img(inter);
-        INFO("{}", ss.str());
-        std::vector<std::vector<cv::Point>> lhs_img_pnts(1), rhs_img_pnts(1);
-        for(auto&& p : lhs_img.world2img(inter)) {
-          lhs_img_pnts[0].emplace_back(cv::Point{cv::Point(p.x, p.y)});
-        }
-        for(auto&& p : rhs_img.world2img(inter)) {
-          rhs_img_pnts[0].emplace_back(cv::Point{cv::Point(p.x, p.y)});
-        }
-        cv::drawContours(img1, lhs_img_pnts, -1, cv::Scalar(0, 255, 0), 2);
-        cv::drawContours(img2, rhs_img_pnts, -1, cv::Scalar(0, 255, 0), 2);
-        // cv::imshow("lhs_img", img1);
-        // cv::imshow("rhs_img", img2);
-        // cv::waitKey(0);
-
-        cv::Mat img1_mask;
-        auto [img1_mask_, lock_img1_mask] = lhs_img.get_rotate_rectified_mask();
-        img1_mask_.copyTo(img1_mask);
-        lock_img1_mask.unlock();
-        cv::Mat img2_mask;
-        auto [img2_mask_, lock_img2_mask] = rhs_img.get_rotate_rectified_mask();
-        img2_mask_.copyTo(img2_mask);
-        lock_img2_mask.unlock();
         Points<float> points0, points1;
         points0.reserve(matches.size());
         points1.reserve(matches.size());
@@ -200,89 +163,33 @@ public:
           points1.emplace_back(rhs_features[rhs_idx[rhs]].pix_x, rhs_features[rhs_idx[rhs]].pix_y);
         }
         cv::Mat ransac_filter;
-        cv::Mat M = cv::estimateAffinePartial2D(points1, points0, ransac_filter, cv::RANSAC, 0.5, 200000ul, 0.99, 100ul);
-        std::vector<cv::DMatch> inlier_matches;
-        for(size_t i = 0; i < points0.size(); i++) {
-          if(ransac_filter.at<unsigned char>(i) != 0) {
-            inlier_matches.emplace_back(i, i, 0.0);
-          }
+        cv::Mat M = cv::estimateAffinePartial2D(points0, points1, ransac_filter, cv::RANSAC, 0.5, 200000ul, 0.99, 100ul);
+        if(M.empty()) {
+          WARN(
+              "Image {} and image {}. Estimate affine transform failed.",
+              lhs_img.get_img_name().string(),
+              rhs_img.get_img_name().string());
+          continue;
         }
+        for(size_t i = 0; i < points0.size(); i++) {
+        }
+        const int inlier_cnt = cv::countNonZero(ransac_filter);
         DEBUG(
             "Image {} and image {} have {} matches after RANSAC!",
             lhs_img.get_img_name().string(),
             rhs_img.get_img_name().string(),
-            inlier_matches.size());
-        if(inlier_matches.size() < inlier_cnt_threshold) {
+            inlier_cnt);
+        if(inlier_cnt < inlier_cnt_threshold) {
           WARN(
               "Image {} and image {}. Not enough inlier matches. Threshold is {} matches, while only {} matches are found",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string(),
               inlier_cnt_threshold,
-              inlier_matches.size());
+              inlier_cnt);
           continue;
         }
-        {
-          Points<float> corners =
-              {Point<float>(0, 0),
-               Point<float>(img2.cols - 1, 0),
-               Point<float>(img2.cols - 1, img2.rows - 1),
-               Point<float>(0, img2.rows - 1)};
-          Points<float> corners1 =
-              {Point<float>(0, 0),
-               Point<float>(img1.cols - 1, 0),
-               Point<float>(img1.cols - 1, img1.rows - 1),
-               Point<float>(0, img1.rows - 1)};
-          cv::transform(corners, corners, M);
-          corners.insert(corners.end(), corners1.begin(), corners1.end());
-          auto        v = corners | std::views::transform([](const Point<float>& p) {
-                     return Point<int>(abs_ceil(p.x), abs_ceil(p.y));
-                   });
-          Points<int> corners_int(v.begin(), v.end());
-          cv::Rect    rect = cv::boundingRect(corners_int);
-          std::for_each(corners.begin(), corners.end(), [&rect](Point<float>& p) {
-            p.x -= rect.x;
-            p.y -= rect.y;
-          });
-          cv::Mat result1(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
-          img1.copyTo(result1(cv::Rect(corners[4].x, corners[4].y, img1.cols, img1.rows)));
-          cv::Mat       result2(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
-          Points<float> from =
-              {Point<float>(0, 0),
-               Point<float>(img2.cols - 1, 0),
-               Point<float>(img2.cols - 1, img2.rows - 1),
-               Point<float>(0, img2.rows - 1)};
-          Points<float> to(corners.begin(), corners.begin() + 4);
-          cv::Mat       M = cv::estimateAffinePartial2D(from, to);
-          cv::warpAffine(img2, result2, M, result1.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
-          cv::Mat avg;
-          cv::addWeighted(result1, 0.5, result2, 0.5, 0, avg);
-          cv::Mat mask1(rect.height, rect.width, img1_mask.type(), cv::Scalar(0));
-          img1_mask.copyTo(mask1(cv::Rect(corners[4].x, corners[4].y, img1_mask.cols, img1_mask.rows)));
-          cv::Mat mask2(rect.height, rect.width, img1_mask.type(), cv::Scalar(0));
-          cv::warpAffine(img2_mask, mask2, M, result1.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
-          cv::Mat res;
-          result1.copyTo(res, mask1);
-          result2.copyTo(res, mask2);
-          avg.copyTo(res, mask1 & mask2);
-          if(!fs::exists(temporary_save_path / "foo")) {
-            fs::create_directories(temporary_save_path / "foo");
-          }
-          cv::imwrite(
-              temporary_save_path / "foo"
-                  / (lhs_img.get_img_stem().string() + "_" + rhs_img.get_img_stem().string() + "_avg.jpg"),
-              res);
-        }
-        auto v0 = points0 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
-        auto v1 = points1 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
-        std::vector<cv::KeyPoint> kpts0(v0.begin(), v0.end()), kpts1(v1.begin(), v1.end());
-        cv::Mat                   resultImg;
-        cv::drawMatches(img1, kpts0, img2, kpts1, inlier_matches, resultImg);
-        cv::imwrite(
-            temporary_save_path / "foo"
-                / (lhs_img.get_img_stem().string() + "_" + rhs_img.get_img_stem().string() + "_matches.jpg"),
-            resultImg);
+        pair.M     = std::move(M);
         pair.valid = true;
-        pair.M     = M;
       }
       progress.update(batch_cnt);
     }
@@ -290,6 +197,7 @@ public:
 };
 
 template <typename E>
+  requires std::derived_from<E, Extractor<typename E::Feature>>
 Matcher<E> matcher_factory(const fs::path& temporary_save_path) {
   if constexpr(std::is_same_v<E, DiskExtractor>) {
     return Matcher<E>(temporary_save_path, DISK_LIGHTGLUE_WEIGHT);
