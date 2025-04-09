@@ -33,8 +33,8 @@ private:
   using Feature  = typename E::Feature;
   using Features = typename E::Features;
 
-  static constexpr float lightglue_threshold  = 0.2f;
-  static constexpr int   inlier_cnt_threshold = 20;
+  static constexpr float lightglue_threshold{0.2f};
+  static constexpr int   inlier_cnt_threshold{20};
   InferEnv               lightglue;
   fs::path               temporary_save_path;
   E                      extractor;
@@ -164,6 +164,7 @@ public:
         }
         cv::Mat ransac_filter;
         cv::Mat M = cv::estimateAffinePartial2D(points0, points1, ransac_filter, cv::RANSAC, 0.5, 200000ul, 0.99, 100ul);
+        M.convertTo(M, CV_32FC1);
         if(M.empty()) {
           WARN(
               "Image {} and image {}. Estimate affine transform failed.",

@@ -20,6 +20,7 @@
 #include "matcher.hpp"
 #include "matchpair.hpp"
 #include "progress.hpp"
+#include "stitcher.hpp"
 
 namespace fs = std::filesystem;
 
@@ -31,7 +32,7 @@ struct Exiv2XmpParserInitializer {
   ~Exiv2XmpParserInitializer() { Exiv2::XmpParser::terminate(); }
 };
 
-struct MultiThreadProcess {
+class Pipeline {
 private:
 
   Progress                  progress;
@@ -94,7 +95,7 @@ private:
 
 public:
 
-  MultiThreadProcess(fs::path input_dir, fs::path output_dir, fs::path temporary_save_dir) :
+  Pipeline(fs::path input_dir, fs::path output_dir, fs::path temporary_save_dir) :
       output_dir(output_dir), temporary_save_dir(temporary_save_dir) {
     std::transform(
         fs::directory_iterator(input_dir),
@@ -150,7 +151,18 @@ public:
         std::back_inserter(match_pairs));
   }
 
-  void stitch() {}
+  void stitch() {
+    MESSAGE("Stitching images");
+    Stitcher stitcher(match_pairs, imgs_data, temporary_save_dir);
+    auto     stitched_img = stitcher.stitch();
+    if(stitched_img.empty()) {
+      ERROR("Stitching failed");
+      return;
+    }
+    fs::path stitched_img_path = output_dir / "stitched_image.jpg";
+    cv::imwrite(stitched_img_path.string(), stitched_img);
+    MESSAGE("Stitched image saved to {}", stitched_img_path.string());
+  }
 };
 
 } // namespace Ortho

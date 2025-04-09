@@ -36,6 +36,22 @@ public:
       pose(std::move(pose)), intrinsic(std::move(intrinsic)), img(std::move(img)), exif_xmp(std::move(exif_xmp)),
       temp_save_path(temp_save_path) {}
 
+  Image original_img() { return img; }
+
+  Image rotate_rectified() {
+    if(!img_rotated.is_initialized()) {
+      rotate_rectify();
+    }
+    return img_rotated;
+  }
+
+  Image rotate_rectified_mask() {
+    if(!img_rotated_mask.is_initialized()) {
+      rotate_rectify();
+    }
+    return img_rotated_mask;
+  }
+
   ImgRefGuard get_original_img() const { return img.get(); }
 
   ImgRefGuard get_rotate_rectified() {
@@ -170,6 +186,30 @@ public:
     std::lock_guard<std::mutex> lock(mutex);
     imgs_data.reserve(size);
   }
+
+  auto begin() noexcept { return imgs_data.begin(); }
+
+  auto end() noexcept { return imgs_data.end(); }
+
+  auto begin() const noexcept { return imgs_data.begin(); }
+
+  auto end() const noexcept { return imgs_data.end(); }
+
+  auto cbegin() const noexcept { return imgs_data.cbegin(); }
+
+  auto cend() const noexcept { return imgs_data.cend(); }
+
+  auto rbegin() noexcept { return imgs_data.rbegin(); }
+
+  auto rend() noexcept { return imgs_data.rend(); }
+
+  auto rbegin() const noexcept { return imgs_data.rbegin(); }
+
+  auto rend() const noexcept { return imgs_data.rend(); }
+
+  auto crbegin() const noexcept { return imgs_data.crbegin(); }
+
+  auto crend() const noexcept { return imgs_data.crend(); }
 
   template <typename T>
     requires std::same_as<std::decay_t<T>, ImgData>
