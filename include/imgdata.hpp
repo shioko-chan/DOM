@@ -32,11 +32,9 @@ public:
 
   ImgData() = default;
 
-  ImgData(Pose&& pose, Intrinsic&& intrinsic, Image&& img, ExifXmp&& exif_xmp, fs::path temp_save_path) :
-      pose(std::move(pose)), intrinsic(std::move(intrinsic)), img(std::move(img)), exif_xmp(std::move(exif_xmp)),
+  ImgData(Pose&& pose, Intrinsic&& intrinsic, ExifXmp&& exif_xmp, fs::path img_path, fs::path temp_save_path) :
+      pose(std::move(pose)), intrinsic(std::move(intrinsic)), exif_xmp(std::move(exif_xmp)), img_path(img_path),
       temp_save_path(temp_save_path) {}
-
-  Image original_img() { return img; }
 
   Image rotate_rectified() {
     if(!img_rotated.is_initialized()) {
@@ -51,8 +49,6 @@ public:
     }
     return img_rotated_mask;
   }
-
-  ImgRefGuard get_original_img() const { return img.get(); }
 
   ImgRefGuard get_rotate_rectified() {
     if(!img_rotated.is_initialized()) {
@@ -107,13 +103,13 @@ public:
 
   const cv::Mat& get_distortion_coefficients() const { return intrinsic.D(); }
 
-  const fs::path& get_img_path() const { return img.get_img_path(); }
+  const fs::path& get_img_path() const { return img_path; }
 
-  fs::path get_img_name() const { return img.get_img_name(); }
+  fs::path get_img_name() const { return img_path.filename(); }
 
-  fs::path get_img_stem() const { return img.get_img_stem(); }
+  fs::path get_img_stem() const { return img_path.stem(); }
 
-  fs::path get_img_extension() const { return img.get_img_extension(); }
+  fs::path get_img_extension() const { return img_path.extension(); }
 
   friend std::ostream& operator<<(std::ostream& os, const ImgData& data) {
     os << "Camera Matrix: " << data.intrinsic << "\n"
@@ -121,29 +117,30 @@ public:
     return os;
   }
 
-private:
-
   void rotate_rectify() {
+    check_and_create_path(temp_save_path);
     if(!reference_set) {
       throw std::runtime_error("Error: Reference coordinate not set");
     }
-    auto img_guard = img.get();
-    auto&& [rotate_img, mask, ground_points, world2img] =
-        Ortho::rotate_rectify(img_guard.get().size(), pose, intrinsic, img_guard.get());
-    this->ground_points = std::move(ground_points);
-    this->world2img_    = std::move(world2img);
+    cv::Mat img = cv::imread(img_path.string());
+    if(img.empty()) {
+      throw std::runtime_error(img_path.string() + " could not be read");
+    }
+    auto&& [rotate_img, mask, ground_points, world2img] = Ortho::rotate_rectify(img.size(), pose, intrinsic, img);
+    this->ground_points                                 = std::move(ground_points);
+    this->world2img_                                    = std::move(world2img);
     this->img_rotated.delay_initialize(
-        temp_save_path / (img.get_img_stem().string() + "_rotated" + img.get_img_extension().string()),
-        std::move(rotate_img));
+        temp_save_path / (img_path.stem().string() + "_rotated" + img_path.stem().string()), std::move(rotate_img));
     this->img_rotated_mask.delay_initialize(
-        temp_save_path / (img.get_img_stem().string() + "_rotated_mask" + img.get_img_extension().string()),
-        std::move(mask));
+        temp_save_path / (img_path.stem().string() + "_rotated_mask" + img_path.stem().string()), std::move(mask));
   }
 
-  fs::path       temp_save_path;
+private:
+
+  fs::path       temp_save_path, img_path;
   Pose           pose;
   Intrinsic      intrinsic;
-  Image          img, img_rotated, img_rotated_mask;
+  Image          img_rotated, img_rotated_mask;
   ExifXmp        exif_xmp;
   Points<float>  ground_points;
   PointsPipeline world2img_;
@@ -255,26 +252,44 @@ private:
   static inline const std::unordered_set<std::string> extensions =
       {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
 
+  struct ExifKey {
+    static inline const std::string              width  = "Exif.Photo.PixelXDimension";
+    static inline const std::string              height = "Exif.Photo.PixelYDimension";
+    static inline const std::vector<std::string> keys   = {width, height};
+  };
+
 public:
 
-  static std::optional<ImgData> build(fs::path path, fs::path temp_save_path) {
+  static bool validate(const fs::path& path) {
     if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
       ERROR("Error: {} is not a valid image file", path.string());
-      return std::nullopt;
+      return false;
     }
     ExifXmp exif_xmp(path);
     if(!IntrinsicFactory::validate(exif_xmp)) {
-      return std::nullopt;
+      return false;
     }
     if(!PoseFactory::validate(exif_xmp)) {
-      return std::nullopt;
+      return false;
     }
-    auto img            = Image(path);
-    auto imgref         = img.get();
-    auto [w, h]         = imgref.get().size();
-    Intrinsic intrinsic = IntrinsicFactory::build(exif_xmp.exif_data(), w, h);
-    Pose      pose      = PoseFactory::build(exif_xmp.xmp_data());
-    return ImgData{std::move(pose), std::move(intrinsic), std::move(img), std::move(exif_xmp), temp_save_path};
+    const auto& exif_data = exif_xmp.exif_data();
+    for(const auto& key : ExifKey::keys) {
+      if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
+        WARN("{}: Key {} not found in Exif data", path.string(), key);
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static ImgData build(const fs::path& path, fs::path temp_save_path) {
+    ExifXmp      exif_xmp(path);
+    const auto&  exif_data = exif_xmp.exif_data();
+    unsigned int w         = exif_data.findKey(Exiv2::ExifKey(ExifKey::width))->toUint32(),
+                 h         = exif_data.findKey(Exiv2::ExifKey(ExifKey::height))->toUint32();
+    Intrinsic intrinsic    = IntrinsicFactory::build(exif_xmp.exif_data(), w, h);
+    Pose      pose         = PoseFactory::build(exif_xmp.xmp_data());
+    return ImgData{std::move(pose), std::move(intrinsic), std::move(exif_xmp), path, temp_save_path};
   }
 };
 } // namespace Ortho

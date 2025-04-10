@@ -14,6 +14,7 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "config.hpp"
 #include "extractor.hpp"
 #include "imgdata.hpp"
 #include "log.hpp"
@@ -33,19 +34,17 @@ private:
   using Feature  = typename E::Feature;
   using Features = typename E::Features;
 
-  static constexpr float lightglue_threshold{0.2f};
-  static constexpr int   inlier_cnt_threshold{20};
-  InferEnv               lightglue;
-  fs::path               temporary_save_path;
-  E                      extractor;
-  std::vector<float>     kpts0, kpts1, desc0, desc1;
-  Features               lhs_features, rhs_features;
-  std::vector<size_t>    lhs_idx, rhs_idx;
+  InferEnv            lightglue;
+  fs::path            temporary_save_path;
+  E                   extractor;
+  std::vector<float>  kpts0, kpts1, desc0, desc1;
+  Features            lhs_features, rhs_features;
+  std::vector<size_t> lhs_idx, rhs_idx;
 
   void generate_indexs_with_roi_filter(ImgData& lhs_img, ImgData& rhs_img) {
     auto inter = intersection(lhs_img.get_spans(), rhs_img.get_spans());
     if(inter.empty()) {
-      WARN("Image {} and image {} have no intersection!", lhs_img.get_img_name().string(), rhs_img.get_img_name().string());
+      INFO("Image {} and image {} have no intersection!", lhs_img.get_img_name().string(), rhs_img.get_img_name().string());
       return;
     }
     auto generate_idx = [](const Points<float>& area, const Features& features, std::vector<size_t>* idx_list) {
@@ -96,7 +95,7 @@ private:
   auto filter_matches_by_score_precise(const int64_t* matches, const float* scores, const int cnt) {
     std::unordered_map<int, std::pair<int, float>> match_score0, match_score1;
     for(int i = 0; i < cnt; ++i) {
-      if(scores[i] >= lightglue_threshold) {
+      if(scores[i] >= LIGHTGLUE_THRESHOLD) {
         const int idx0 = matches[i * 2], idx1 = matches[i * 2 + 1];
         if(match_score0.count(idx0) == 0 || match_score0[idx0].second < scores[i]) {
           match_score0[idx0] = std::make_pair(idx1, scores[i]);
@@ -116,7 +115,7 @@ private:
 
   auto filter_matches_by_score(const int64_t* matches, const float* scores, const int cnt) {
     auto v = std::views::iota(0, cnt)
-             | std::views::filter([&scores](const auto& idx) { return scores[idx] >= lightglue_threshold; })
+             | std::views::filter([&scores](const auto& idx) { return scores[idx] >= LIGHTGLUE_THRESHOLD; })
              | std::views::transform(
                  [&matches](const auto& idx) { return std::make_pair(matches[idx * 2], matches[idx * 2 + 1]); });
     return std::vector<std::pair<int, int>>(v.begin(), v.end());
@@ -148,7 +147,7 @@ public:
             matches.size());
 
         if(matches.size() < 4) {
-          WARN(
+          INFO(
               "Image {} and image {}. Not enough matches for RANSAC. At least 4 matches are needed, while only {} matches are found",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string(),
@@ -166,13 +165,11 @@ public:
         cv::Mat M = cv::estimateAffinePartial2D(points0, points1, ransac_filter, cv::RANSAC, 0.5, 200000ul, 0.99, 100ul);
         M.convertTo(M, CV_32FC1);
         if(M.empty()) {
-          WARN(
+          INFO(
               "Image {} and image {}. Estimate affine transform failed.",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string());
           continue;
-        }
-        for(size_t i = 0; i < points0.size(); i++) {
         }
         const int inlier_cnt = cv::countNonZero(ransac_filter);
         DEBUG(
@@ -180,12 +177,12 @@ public:
             lhs_img.get_img_name().string(),
             rhs_img.get_img_name().string(),
             inlier_cnt);
-        if(inlier_cnt < inlier_cnt_threshold) {
-          WARN(
+        if(inlier_cnt < INLIER_CNT_THRESHOLD) {
+          INFO(
               "Image {} and image {}. Not enough inlier matches. Threshold is {} matches, while only {} matches are found",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string(),
-              inlier_cnt_threshold,
+              INLIER_CNT_THRESHOLD,
               inlier_cnt);
           continue;
         }

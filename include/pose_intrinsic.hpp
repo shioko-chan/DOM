@@ -228,7 +228,7 @@ public:
     return true;
   }
 
-  static Intrinsic build(Exiv2::ExifData& exif, const float w, const float h) {
+  static Intrinsic build(Exiv2::ExifData& exif, const unsigned int w, const unsigned int h) {
     const float focal      = exif[ExifKey::focal_length].toFloat();
     const float focal_35mm = exif[ExifKey::focal_length_35mm].toFloat();
     return Intrinsic(w, h, focal, focal_35mm);

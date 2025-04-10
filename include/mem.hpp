@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "config.hpp"
 #include "log.hpp"
 
 namespace Ortho {
@@ -122,7 +123,7 @@ public:
 
   LRU(const size_t capacity = 8ul * (1ul << 30)) : capacity(capacity), available(capacity) {}
 
-  void register_node(const std::string& key, ManageAblePtr ptr, SwapInFunc swap_in, SwapOutFunc swap_out) {
+  void register_node(std::string key, ManageAblePtr ptr, SwapInFunc swap_in, SwapOutFunc swap_out) {
     std::unique_lock<std::mutex> lock(lru_mtx);
     auto                         it = k_v.find(key);
     if(it != k_v.end()) {
@@ -138,7 +139,7 @@ public:
       occupied += ptr->size();
     }
     auto iter = lru_list.emplace(lru_list.begin(), std::move(ptr), std::move(swap_in), std::move(swap_out));
-    k_v.emplace(key, iter);
+    k_v.emplace(std::move(key), iter);
   }
 
   std::optional<RefGuard> get_node(const std::string& key) {
@@ -179,7 +180,7 @@ public:
   }
 };
 
-static inline LRU mem{8ul * (1ul << 30)};
+static inline LRU mem{MEM_LIMIT};
 
 } // namespace Ortho
 

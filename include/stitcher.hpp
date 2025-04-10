@@ -22,62 +22,6 @@
 
 namespace fs = std::filesystem;
 
-// {
-//   Points<float> corners =
-//       {Point<float>(0, 0),
-//        Point<float>(img2.cols - 1, 0),
-//        Point<float>(img2.cols - 1, img2.rows - 1),
-//        Point<float>(0, img2.rows - 1)};
-//   Points<float> corners1 =
-//       {Point<float>(0, 0),
-//        Point<float>(img1.cols - 1, 0),
-//        Point<float>(img1.cols - 1, img1.rows - 1),
-//        Point<float>(0, img1.rows - 1)};
-//   cv::transform(corners, corners, M);
-//   corners.insert(corners.end(), corners1.begin(), corners1.end());
-//   auto v =
-//       corners | std::views::transform([](const Point<float>& p) { return Point<int>(abs_ceil(p.x), abs_ceil(p.y)); });
-//   Points<int> corners_int(v.begin(), v.end());
-//   cv::Rect    rect = cv::boundingRect(corners_int);
-//   std::for_each(corners.begin(), corners.end(), [&rect](Point<float>& p) {
-//     p.x -= rect.x;
-//     p.y -= rect.y;
-//   });
-//   cv::Mat result1(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
-//   img1.copyTo(result1(cv::Rect(corners[4].x, corners[4].y, img1.cols, img1.rows)));
-//   cv::Mat       result2(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
-//   Points<float> from =
-//       {Point<float>(0, 0),
-//        Point<float>(img2.cols - 1, 0),
-//        Point<float>(img2.cols - 1, img2.rows - 1),
-//        Point<float>(0, img2.rows - 1)};
-//   Points<float> to(corners.begin(), corners.begin() + 4);
-//   cv::Mat       M = cv::estimateAffinePartial2D(from, to);
-//   cv::warpAffine(img2, result2, M, result1.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
-//   cv::Mat avg;
-//   cv::addWeighted(result1, 0.5, result2, 0.5, 0, avg);
-//   cv::Mat mask1(rect.height, rect.width, img1_mask.type(), cv::Scalar(0));
-//   img1_mask.copyTo(mask1(cv::Rect(corners[4].x, corners[4].y, img1_mask.cols, img1_mask.rows)));
-//   cv::Mat mask2(rect.height, rect.width, img1_mask.type(), cv::Scalar(0));
-//   cv::warpAffine(img2_mask, mask2, M, result1.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
-//   cv::Mat res;
-//   result1.copyTo(res, mask1);
-//   result2.copyTo(res, mask2);
-//   avg.copyTo(res, mask1 & mask2);
-//   if(!fs::exists(temporary_save_path / "foo")) {
-//     fs::create_directories(temporary_save_path / "foo");
-//   }
-//   cv::imwrite(
-//       temporary_save_path / "foo"
-//           / (lhs_img.get_img_stem().string() + "_" + rhs_img.get_img_stem().string() + "_avg.jpg"),
-//       res);
-// }
-// auto v0 = points0 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
-//         auto v1 = points1 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
-//         std::vector<cv::KeyPoint> kpts0(v0.begin(), v0.end()), kpts1(v1.begin(), v1.end());
-//         cv::Mat                   resultImg;
-//         cv::drawMatches(img1, kpts0, img2, kpts1, inlier_matches, resultImg);
-
 namespace Ortho {
 class Stitcher {
 private:
@@ -135,40 +79,33 @@ private:
     return idx;
   }
 
-  std::pair<Node, std::pair<float, float>> stitch_adjacent_images(int idx0) {
-    std::string extension   = nodes[idx0].img.get_img_extension().string();
-    cv::Mat     center_img  = nodes[idx0].img.get().get();
-    cv::Mat     center_mask = nodes[idx0].mask.get().get();
-    float       delta_x{0.0f}, delta_y{0.0f};
+  std::pair<Node, cv::Rect> stitch_adjacent_images(int idx0) {
+    auto [w, h] = nodes[idx0].mask.get().get().size();
+    Points<int> all_corners{Point<int>(0, 0), Point<int>(w - 1, 0), Point<int>(w - 1, h - 1), Point<int>(0, h - 1)};
     for(const auto& [idx1, edge] : adjacent[idx0]) {
-      cv::Mat                  append_img      = nodes[idx1].img.get().get();
-      cv::Mat                  append_img_mask = nodes[idx1].mask.get().get();
-      cv::Mat                  M               = edge.M;
-      std::vector<cv::Point2f> corners =
-          {cv::Point2f(0, 0),
-           cv::Point2f(append_img.cols - 1, 0),
-           cv::Point2f(append_img.cols - 1, append_img.rows - 1),
-           cv::Point2f(0, append_img.rows - 1)};
-      std::vector<cv::Point> center_corners =
-          {cv::Point(0, 0),
-           cv::Point(center_img.cols - 1, 0),
-           cv::Point(center_img.cols - 1, center_img.rows - 1),
-           cv::Point(0, center_img.rows - 1)};
+      auto [w, h] = nodes[idx1].mask.get().get().size();
+      Points<float> corners{Point<float>(0, 0), Point<float>(w - 1, 0), Point<float>(w - 1, h - 1), Point<float>(0, h - 1)};
+      cv::Mat M;
+      cv::invertAffineTransform(edge.M, M);
       cv::transform(corners, corners, M);
-      std::vector<cv::Point> corners_int;
-      for(const auto& p : corners) {
-        corners_int.push_back(cv::Point(Ortho::abs_ceil(p.x), Ortho::abs_ceil(p.y)));
-      }
-      corners_int.insert(corners_int.end(), center_corners.begin(), center_corners.end());
-      cv::Rect rect = cv::boundingRect(corners_int);
+      std::ranges::move(
+          corners | std::views::transform([](const Point<float>& p) {
+            return Point<int>(Ortho::abs_ceil(p.x), Ortho::abs_ceil(p.y));
+          }),
+          std::back_inserter(all_corners));
+    }
+    cv::Rect rect       = cv::boundingRect(all_corners);
+    cv::Mat  center_img = nodes[idx0].img.get().get(), center_img_mask = nodes[idx0].mask.get().get();
+    cv::Mat  result(rect.height, rect.width, center_img.type(), cv::Scalar(0, 0, 0)),
+        mask_result(rect.height, rect.width, center_img_mask.type(), cv::Scalar(0));
+    center_img.copyTo(result(cv::Rect(-rect.x, -rect.y, w, h)));
+    center_img_mask.copyTo(mask_result(cv::Rect(-rect.x, -rect.y, w, h)));
+    for(const auto& [idx1, edge] : adjacent[idx0]) {
+      cv::Mat append_img = nodes[idx1].img.get().get(), append_img_mask = nodes[idx1].mask.get().get();
+      cv::Mat M;
+      cv::invertAffineTransform(edge.M, M);
       M.at<float>(0, 2) -= rect.x;
       M.at<float>(1, 2) -= rect.y;
-      delta_x -= rect.x;
-      delta_y -= rect.y;
-      cv::Mat result(rect.height, rect.width, center_img.type(), cv::Scalar(0, 0, 0));
-      cv::Mat mask_result(rect.height, rect.width, center_mask.type(), cv::Scalar(0));
-      center_img.copyTo(result(cv::Rect(-rect.x, -rect.y, center_img.cols, center_img.rows)));
-      center_mask.copyTo(mask_result(cv::Rect(-rect.x, -rect.y, center_mask.cols, center_mask.rows)));
       cv::Mat warped, mask_warped;
       cv::warpAffine(append_img, warped, M, result.size(), cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
       cv::warpAffine(append_img_mask, mask_warped, M, result.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
@@ -178,15 +115,14 @@ private:
       mixed.copyTo(result, mask_mixed);
       cv::Mat mask_warped_unique = ~mask_result & mask_warped;
       warped.copyTo(result, mask_warped_unique);
-      center_img  = result;
-      center_mask = mask_result | mask_warped;
+      mask_result = mask_result | mask_warped;
     }
-    std::string uuid = generate_uuid_v4();
+    std::string uuid = generate_uuid_v4(), extension = nodes[idx0].img.get_img_extension().string();
     return std::make_pair(
         Node{
-            Image(temporary_save_path / (uuid + extension), std::move(center_img)),
-            Image(temporary_save_path / (uuid + "_mask" + extension), std::move(center_mask))},
-        std::make_pair(delta_x, delta_y));
+            Image(temporary_save_path / (uuid + extension), std::move(result)),
+            Image(temporary_save_path / (uuid + "_mask" + extension), std::move(mask_result))},
+        rect);
   }
 
 public:
@@ -206,41 +142,47 @@ public:
   }
 
   cv::Mat stitch() {
-    if(adjacent.empty()) {
+    if(nodes.empty()) {
       throw std::runtime_error("No image!");
     }
     std::erase_if(adjacent, [](const auto& pair) { return pair.second.size() == 0; });
     int  priority = 0;
-    auto idx_     = find_max_out_degree(priority);
-    for(; adjacent.size() > 1 && idx_; idx_ = find_max_out_degree(++priority)) {
-      int idx                   = idx_.value();
-      auto [edge, pair]         = stitch_adjacent_images(idx);
-      cv::Mat M_new_idx         = cv::Mat::eye(3, 3, CV_32FC1);
-      M_new_idx.at<float>(0, 2) = -pair.first;
-      M_new_idx.at<float>(1, 2) = -pair.second;
-      nodes.push_back(std::move(edge));
-      for(auto& [j, edge_idx_j] : adjacent[idx]) {
-        if(j == idx) {
+    auto i_       = find_max_out_degree(priority);
+    while(adjacent.size() > 1 && i_) {
+      int i                 = i_.value();
+      auto [stitched, rect] = stitch_adjacent_images(i);
+      fs::path path         = temporary_save_path / std::format("p{}-i{}.jpg", priority, i);
+      cv::imwrite(path.string(), stitched.img.get().get());
+      cv::Mat M_p_i         = cv::Mat::eye(3, 3, CV_32FC1);
+      M_p_i.at<float>(0, 2) = rect.x;
+      M_p_i.at<float>(1, 2) = rect.y;
+      nodes.push_back(std::move(stitched));
+      for(auto& [j, edge_i_j] : adjacent[i]) {
+        if(j == i) {
           continue;
         }
         for(auto& [l, edge_j_l] : adjacent[j]) {
-          if(l == idx || l == j || adjacent[idx].contains(l)) {
+          if(l == i || l == j || adjacent[i].contains(l)) {
             continue;
           }
-          cv::Mat M_idx_j = edge_idx_j.M;
-          cv::vconcat(M_idx_j, cv::Mat{(cv::Mat_<float>(1, 3) << 0, 0, 1)}, M_idx_j);
-          cv::Mat M_new_l    = cv::Mat{edge_j_l.M * M_idx_j * M_new_idx}.rowRange(0, 2);
-          auto&   edge_l_idx = adjacent[l][nodes.size() - 1];
-          cv::invertAffineTransform(M_new_l, edge_l_idx.M);
-          edge_l_idx.priority = edge_j_l.priority + 1;
-          auto& edge_idx_l    = adjacent[nodes.size() - 1][l];
-          edge_idx_l.M        = M_new_l;
-          edge_idx_l.priority = edge_j_l.priority + 1;
+          cv::Mat M_i_j = edge_i_j.M;
+          cv::vconcat(M_i_j, cv::Mat{(cv::Mat_<float>(1, 3) << 0, 0, 1)}, M_i_j);
+          cv::Mat M_p_l    = edge_j_l.M * M_i_j * M_p_i;
+          auto&   edge_l_p = adjacent[l][nodes.size() - 1];
+          cv::invertAffineTransform(M_p_l, edge_l_p.M);
+          edge_l_p.priority = edge_j_l.priority + 1;
+          auto& edge_p_l    = adjacent[nodes.size() - 1][l];
+          edge_p_l.M        = M_p_l;
+          edge_p_l.priority = edge_j_l.priority + 1;
           adjacent[l].erase(j);
         }
         adjacent.erase(j);
       }
-      adjacent.erase(idx);
+      adjacent.erase(i);
+      i_ = find_max_out_degree(priority);
+      if(!i_) {
+        i_ = find_max_out_degree(++priority);
+      }
     }
     cv::Mat stitched_img;
     nodes.back().img.get().get().copyTo(stitched_img);

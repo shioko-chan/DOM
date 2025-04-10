@@ -61,9 +61,8 @@ public:
     mem.register_node(
         path.string(),
         nullptr,
-        SwapInFunc([this, mode] {
-          cv::Mat img = read(path, mode);
-          decimate_keep_aspect_ratio(&img, resolution);
+        SwapInFunc([path_string = this->path.string(), mode] {
+          cv::Mat img = read(path_string, mode);
           return new ImageMem(std::move(img));
         }),
         SwapOutFunc([](ManageAblePtr ptr) {}));
@@ -71,17 +70,16 @@ public:
 
   Image(fs::path temporary_save_path, cv::Mat&& img) : path(temporary_save_path), initialized(true) {
     fs::path parent_path = path.parent_path();
-    if(!fs::exists(parent_path) && !fs::create_directories(parent_path)) {
-      ERROR("Error: {} could not be created", parent_path.string());
-      return;
-    }
+    check_and_create_path(parent_path);
     mem.register_node(
         path.string(),
         std::make_unique<ImageMem>(std::move(img)),
-        SwapInFunc([this] { return new ImageMem(std::move(read(path, cv::IMREAD_UNCHANGED))); }),
-        SwapOutFunc([this](ManageAblePtr ptr) {
+        SwapInFunc([path_string = this->path.string()] {
+          return new ImageMem(std::move(read(path_string, cv::IMREAD_UNCHANGED)));
+        }),
+        SwapOutFunc([path_string = this->path.string()](ManageAblePtr ptr) {
           if(ptr) {
-            cv::imwrite(path.string(), dynamic_cast<ImageMem*>(ptr.get())->get());
+            cv::imwrite(path_string, dynamic_cast<ImageMem*>(ptr.get())->get());
           }
         }));
   }
@@ -95,10 +93,12 @@ public:
     mem.register_node(
         path.string(),
         std::make_unique<ImageMem>(std::move(img)),
-        SwapInFunc([this] { return new ImageMem(std::move(read(path, cv::IMREAD_UNCHANGED))); }),
-        SwapOutFunc([this](ManageAblePtr ptr) {
+        SwapInFunc([path_string = this->path.string()] {
+          return new ImageMem(std::move(read(path_string, cv::IMREAD_UNCHANGED)));
+        }),
+        SwapOutFunc([path_string = this->path.string()](ManageAblePtr ptr) {
           if(ptr) {
-            cv::imwrite(path.string(), dynamic_cast<ImageMem*>(ptr.get())->get());
+            cv::imwrite(path_string, dynamic_cast<ImageMem*>(ptr.get())->get());
           }
         }));
   }
@@ -141,12 +141,10 @@ private:
   static cv::Mat read(const fs::path& path, cv::ImreadModes mode) {
     cv::Mat img = cv::imread(path.string(), mode);
     if(img.empty()) {
-      throw std::runtime_error("Error: " + path.string() + " could not be read");
+      throw std::runtime_error(path.string() + " could not be read");
     }
     return img;
   }
-
-  static inline cv::Size resolution{1024, 1024};
 
   fs::path path;
 
@@ -178,8 +176,6 @@ private:
   Exiv2::ExifData exif_;
   Exiv2::XmpData  xmp_;
 
-  static inline std::mutex xmp_lock;
-
   void check_and_load_exif_xmp() {
     if(!exif_.empty() && !xmp_.empty()) {
       return;
@@ -189,7 +185,6 @@ private:
       ERROR("Error: {} could not be opened by Exiv2", path.string());
       return;
     }
-    std::lock_guard<std::mutex> lock(xmp_lock);
     try {
       image_info->readMetadata();
     } catch(std::exception& e) {

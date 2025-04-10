@@ -5,12 +5,11 @@
 #include <opencv2/opencv.hpp>
 #include <ranges>
 
+#include "config.hpp"
 #include "pose_intrinsic.hpp"
 #include "utility.hpp"
 
 namespace Ortho {
-
-const float resolution = 0.1f; // meters per pixel
 
 using PointsPipeline = std::function<Points<float>(const Points<float>&)>;
 
@@ -41,7 +40,7 @@ RectifyResult rotate_rectify(const cv::Size img_size, const Pose& pose, const In
                         return Point<float>(xyz_w.at<float>(0, 0), -xyz_w.at<float>(1, 0));
                       });
   auto          pixel_points = world_points | std::views::transform([](auto&& point) {
-                        return Point<float>(point.x / resolution, point.y / resolution);
+                        return Point<float>(point.x / SPATIAL_RESOLUTION, point.y / SPATIAL_RESOLUTION);
                       });
   const float   min_x = Ortho::min_x(pixel_points), max_y = Ortho::max_y(pixel_points);
   auto          img_points = pixel_points | std::views::transform([min_x, max_y](auto&& point) {
@@ -64,11 +63,11 @@ RectifyResult rotate_rectify(const cv::Size img_size, const Pose& pose, const In
       .ground_span = Points<float>(abs_world_points.begin(), abs_world_points.end()),
       .world2img =
           PointsPipeline([min_x = min_x, max_y = max_y, &pose, &intrinsic](const Points<float>& abs_world_points) {
-            auto img_points =
-                abs_world_points | std::views::transform([&pose, &min_x, &max_y](auto&& point) {
-                  return Point<float>(
-                      (point.x - pose.coord.x) / resolution - min_x, max_y - (point.y - pose.coord.y) / resolution);
-                });
+            auto img_points = abs_world_points | std::views::transform([&pose, &min_x, &max_y](auto&& point) {
+                                return Point<float>(
+                                    (point.x - pose.coord.x) / SPATIAL_RESOLUTION - min_x,
+                                    max_y - (point.y - pose.coord.y) / SPATIAL_RESOLUTION);
+                              });
             return Points<float>(img_points.begin(), img_points.end());
           })};
 }

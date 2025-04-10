@@ -37,7 +37,7 @@ private:
 
   Progress                  progress;
   std::vector<fs::path>     img_paths;
-  fs::path                  output_dir, temporary_save_dir;
+  fs::path                  output_dir, temporary_save_path;
   ImgsData                  imgs_data;
   Exiv2XmpParserInitializer exiv2_xmp_parser_initializer;
   MatchPairs                match_pairs;
@@ -73,7 +73,7 @@ private:
     }
   }
 
-  MatchPairs find_neighbors(const int k = 20) {
+  MatchPairs find_neighbors(const int k = 8) {
     auto knn =
         KNN(k,
             imgs_data.get() | std::views::transform([](auto&& data) { return data.get_coord(); }) | std::views::common);
@@ -95,8 +95,8 @@ private:
 
 public:
 
-  Pipeline(fs::path input_dir, fs::path output_dir, fs::path temporary_save_dir) :
-      output_dir(output_dir), temporary_save_dir(temporary_save_dir) {
+  Pipeline(fs::path input_dir, fs::path output_dir, fs::path temporary_save_path) :
+      output_dir(output_dir), temporary_save_path(temporary_save_path) {
     std::transform(
         fs::directory_iterator(input_dir),
         fs::directory_iterator(),
@@ -108,17 +108,19 @@ public:
   void get_image_info() {
     run([this](int i) {
       auto&& img_path = img_paths[i];
-      auto   res      = ImgDataFactory::build(img_path, temporary_save_dir);
-      if(!res) {
-        ERROR("Error: {} could not be processed", img_path.string());
+      if(!ImgDataFactory::validate(img_path)) {
         return;
       }
-      imgs_data.push_back(std::move(res.value()));
+      imgs_data.push_back(ImgDataFactory::build(img_path, temporary_save_path));
     });
     imgs_data.find_and_set_reference_coord();
   }
 
-  void match(int neighbor_proposal = 20, float iou_threshold = 0.5) {
+  void rotate_rectify() {
+    run([this](int i) { imgs_data[i].rotate_rectify(); });
+  }
+
+  void match(int neighbor_proposal = 8, float iou_threshold = 0.5f) {
     MESSAGE("Finding image pairs with neighbor proposal {}", neighbor_proposal);
     auto match_pairs_ = find_neighbors(neighbor_proposal);
     MESSAGE("Found {} image pairs", match_pairs_.size());
@@ -144,7 +146,7 @@ public:
     MatchPairs filtered_match_pairs(v.begin(), v.end());
     MESSAGE("Found {} image pairs after filtering", filtered_match_pairs.size());
     MESSAGE("Matching image pairs");
-    Matcher matcher = matcher_factory<SuperPointExtractor>(temporary_save_dir);
+    Matcher matcher = matcher_factory<SuperPointExtractor>(temporary_save_path);
     matcher.match(filtered_match_pairs, imgs_data, progress);
     std::ranges::move(
         filtered_match_pairs | std::views::filter([](auto&& pair) { return pair.valid; }),
@@ -153,7 +155,7 @@ public:
 
   void stitch() {
     MESSAGE("Stitching images");
-    Stitcher stitcher(match_pairs, imgs_data, temporary_save_dir);
+    Stitcher stitcher(match_pairs, imgs_data, temporary_save_path);
     auto     stitched_img = stitcher.stitch();
     if(stitched_img.empty()) {
       ERROR("Stitching failed");

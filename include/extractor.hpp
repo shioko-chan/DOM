@@ -8,11 +8,13 @@
 #include <fstream>
 #include <ranges>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
 
+#include "config.hpp"
 #include "imgdata.hpp"
 #include "log.hpp"
 #include "mem.hpp"
@@ -176,17 +178,19 @@ private:
 protected:
 
   Extractor(const fs::path& temporary_save_path, const std::string& name, const std::string& model_path) :
-      temporary_save_path(temporary_save_path), env(std::format("[{}]", name), model_path) {}
+      temporary_save_path(temporary_save_path), env(std::format("[{}]", name), model_path) {
+    check_and_create_path(temporary_save_path);
+  }
 
   inline void reshape(cv::Mat* img) { decimate_keep_aspect_ratio(img, resolution); }
 
   virtual void preprocess(cv::Mat* img) const = 0;
 
-  virtual inline int64_t get_channels() const = 0;
+  virtual inline consteval int64_t get_channels() const noexcept = 0;
 
-  virtual inline float get_threshold() const = 0;
+  virtual inline consteval float get_threshold() const noexcept = 0;
 
-  virtual inline int64_t get_keypoint_maxcnt() const = 0;
+  virtual inline consteval int64_t get_keypoint_maxcnt() const noexcept = 0;
 
 public:
 
@@ -262,7 +266,7 @@ public:
     mem.register_node(
         path.string(),
         std::make_unique<FeaturesMem>(filtered_features),
-        SwapInFunc([this, path] {
+        SwapInFunc([path] {
           std::ifstream ifs(path.string(), std::ios::binary);
           if(!ifs.is_open()) {
             throw std::runtime_error("Error: " + path.string() + " could not be opened");
@@ -275,7 +279,7 @@ public:
           }
           return new FeaturesMem(std::move(features));
         }),
-        SwapOutFunc([this, path](ManageAblePtr ptr) {
+        SwapOutFunc([path](ManageAblePtr ptr) {
           if(ptr) {
             std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
             if(!ofs.is_open()) {
@@ -296,19 +300,16 @@ public:
 class SuperPointExtractor : public Extractor<Feature<256>> {
 private:
 
-  static constexpr float superpoint_threshold       = 0.05f;
-  static constexpr int   superpoint_keypoint_maxcnt = 1024;
-
   void preprocess(cv::Mat* img) const override {
     cv::cvtColor(*img, *img, cv::COLOR_BGR2GRAY);
     img->convertTo(*img, CV_32FC1, 1.0f / 255.0f);
   }
 
-  inline int64_t get_channels() const override { return 1; }
+  inline int64_t consteval get_channels() const noexcept override { return 1; }
 
-  inline float get_threshold() const override { return superpoint_threshold; }
+  inline float consteval get_threshold() const noexcept override { return SUPERPOINT_THRESHOLD; }
 
-  inline int64_t get_keypoint_maxcnt() const override { return superpoint_keypoint_maxcnt; }
+  inline int64_t consteval get_keypoint_maxcnt() const noexcept override { return SUPERPOINT_KEYPOINT_MAXCNT; }
 
 public:
 
@@ -318,9 +319,6 @@ public:
 
 class DiskExtractor : public Extractor<Feature<128>> {
 private:
-
-  static constexpr float disk_threshold       = 0.05f;
-  static constexpr int   disk_keypoint_maxcnt = 1024;
 
   void preprocess(cv::Mat* img) const override {
     if(!img->isContinuous()) {
@@ -334,11 +332,11 @@ private:
     channels[0].reshape(1, 1).convertTo(img->row(2), CV_32FC1, 1.0f / 255.0f);
   }
 
-  inline int64_t get_channels() const override { return 3; }
+  inline consteval int64_t get_channels() const noexcept override { return 3; }
 
-  inline float get_threshold() const override { return disk_threshold; }
+  inline consteval float get_threshold() const noexcept override { return DISK_THRESHOLD; }
 
-  inline int64_t get_keypoint_maxcnt() const override { return disk_keypoint_maxcnt; }
+  inline consteval int64_t get_keypoint_maxcnt() const noexcept override { return DISK_KEYPOINT_MAXCNT; }
 
 public:
 

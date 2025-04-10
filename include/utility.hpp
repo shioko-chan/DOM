@@ -7,6 +7,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "log.hpp"
+
 namespace fs = std::filesystem;
 
 namespace Ortho {
@@ -90,6 +92,15 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024
     const int w = std::min(static_cast<int>(std::round(img_->cols * scale)), resolution.width);
     const int h = std::min(static_cast<int>(std::round(img_->rows * scale)), resolution.height);
     cv::resize(*img_, *img_, cv::Size(w, h), 0.0, 0.0, cv::INTER_NEAREST);
+  }
+}
+
+void check_and_create_path(const fs::path& path) {
+  std::error_code ec;
+  fs::create_directories(path, ec);
+  if(ec) {
+    ERROR("{} could not be created: {}", path.string(), ec.message());
+    throw std::runtime_error(ec.message());
   }
 }
 } // namespace Ortho

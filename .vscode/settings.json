@@ -97,6 +97,7 @@
         "orthophoto",
         "pnts",
         "RANSAC",
+        "STREQUAL",
         "SUPERPOINT"
     ]
 }

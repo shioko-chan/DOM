@@ -3,6 +3,7 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "config.hpp"
 #include "log.hpp"
 #include "pipeline.hpp"
 
@@ -27,11 +28,13 @@ int main(int argc, char* const argv[]) {
   }
 
   auto process = Pipeline(input_dir, output_dir, output_dir / "tmp");
-  MESSAGE("[1/3] Getting image information");
+  MESSAGE("[1/5] Getting image information");
   process.get_image_info();
-  MESSAGE("[2/3] Matching neighbor images");
-  process.match();
-  MESSAGE("[3/3] Stitching panorama");
+  MESSAGE("[2/5] Rectifying images");
+  process.rotate_rectify();
+  MESSAGE("[3/5] Matching neighbor images");
+  process.match(NEIGHBOR_PROPOSAL, IOU_THRESHOLD);
+  MESSAGE("[4/5] Stitching panorama");
   process.stitch();
   return 0;
 }
