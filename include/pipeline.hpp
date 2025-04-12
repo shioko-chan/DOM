@@ -14,6 +14,7 @@
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "config.hpp"
 #include "imgdata.hpp"
 #include "knn.hpp"
 #include "log.hpp"
@@ -53,10 +54,10 @@ private:
            | std::views::transform([cumulative](int i) { return std::make_pair(cumulative[i], cumulative[i + 1]); });
   }
 
-  auto run(std::function<void(int)>&& process) {
+  auto run(size_t tasks, std::function<void(int)>&& process) {
     std::vector<std::thread> threads;
     progress.rerun();
-    auto v = generate_start_end(img_paths.size(), std::thread::hardware_concurrency())
+    auto v = generate_start_end(tasks, std::thread::hardware_concurrency())
              | std::views::transform([this, &process](auto&& start_end) {
                  auto&& [start, end] = start_end;
                  return std::thread([this, start, end, &process]() {
@@ -78,7 +79,7 @@ private:
         KNN(k,
             imgs_data.get() | std::views::transform([](auto&& data) { return data.get_coord(); }) | std::views::common);
     std::vector<std::vector<MatchPair>> matches(imgs_data.size());
-    run([this, &knn, &matches](int i) {
+    run(imgs_data.size(), [this, &knn, &matches](int i) {
       auto neighbors = knn.find_nearest_neighbour(i);
       for(auto&& neighbour : neighbors) {
         if(i < neighbour) {
@@ -106,7 +107,7 @@ public:
   }
 
   void get_image_info() {
-    run([this](int i) {
+    run(img_paths.size(), [this](int i) {
       auto&& img_path = img_paths[i];
       if(!ImgDataFactory::validate(img_path)) {
         return;
@@ -117,7 +118,12 @@ public:
   }
 
   void rotate_rectify() {
-    run([this](int i) { imgs_data[i].rotate_rectify(); });
+    run(imgs_data.size(), [this](int i) {
+      imgs_data[i].rotate_rectify();
+      cv::imwrite(
+          "/test/" + imgs_data[i].get_img_name().string() + imgs_data[i].get_img_extension().string(),
+          imgs_data[i].rotate_rectified().get().get());
+    });
   }
 
   void match(int neighbor_proposal = 8, float iou_threshold = 0.5f) {
@@ -146,8 +152,18 @@ public:
     MatchPairs filtered_match_pairs(v.begin(), v.end());
     MESSAGE("Found {} image pairs after filtering", filtered_match_pairs.size());
     MESSAGE("Matching image pairs");
-    Matcher matcher = matcher_factory<SuperPointExtractor>(temporary_save_path);
-    matcher.match(filtered_match_pairs, imgs_data, progress);
+    if(FEATURE_EXTRACTION_METHOD == method_t::SUPERPOINT) {
+      MESSAGE("Using SuperPoint feature extraction");
+      Matcher matcher = matcher_factory<SuperPointExtractor>(temporary_save_path);
+      matcher.match(filtered_match_pairs, imgs_data, progress);
+    } else if(FEATURE_EXTRACTION_METHOD == method_t::DISK) {
+      MESSAGE("Using DISK feature extraction");
+      Matcher matcher = matcher_factory<DiskExtractor>(temporary_save_path);
+      matcher.match(filtered_match_pairs, imgs_data, progress);
+    } else {
+      ERROR("Unknown feature extraction method");
+      return;
+    }
     std::ranges::move(
         filtered_match_pairs | std::views::filter([](auto&& pair) { return pair.valid; }),
         std::back_inserter(match_pairs));

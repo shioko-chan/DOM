@@ -34,7 +34,9 @@ public:
 
   ImgData(Pose&& pose, Intrinsic&& intrinsic, ExifXmp&& exif_xmp, fs::path img_path, fs::path temp_save_path) :
       pose(std::move(pose)), intrinsic(std::move(intrinsic)), exif_xmp(std::move(exif_xmp)), img_path(img_path),
-      temp_save_path(temp_save_path) {}
+      temp_save_path(temp_save_path) {
+    check_or_create_path(temp_save_path);
+  }
 
   Image rotate_rectified() {
     if(!img_rotated.is_initialized()) {
@@ -118,7 +120,6 @@ public:
   }
 
   void rotate_rectify() {
-    check_and_create_path(temp_save_path);
     if(!reference_set) {
       throw std::runtime_error("Error: Reference coordinate not set");
     }
@@ -130,9 +131,11 @@ public:
     this->ground_points                                 = std::move(ground_points);
     this->world2img_                                    = std::move(world2img);
     this->img_rotated.delay_initialize(
-        temp_save_path / (img_path.stem().string() + "_rotated" + img_path.stem().string()), std::move(rotate_img));
+        temp_save_path / std::format("{}_r{}", img_path.stem().string(), img_path.extension().string()),
+        std::move(rotate_img));
     this->img_rotated_mask.delay_initialize(
-        temp_save_path / (img_path.stem().string() + "_rotated_mask" + img_path.stem().string()), std::move(mask));
+        temp_save_path / std::format("{}_rm{}", img_path.stem().string(), img_path.extension().string()),
+        std::move(mask));
   }
 
 private:
@@ -144,7 +147,7 @@ private:
   ExifXmp        exif_xmp;
   Points<float>  ground_points;
   PointsPipeline world2img_;
-  bool           reference_set = false;
+  bool           reference_set{false};
 };
 
 struct ImgsData {
@@ -262,7 +265,7 @@ public:
 
   static bool validate(const fs::path& path) {
     if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
-      ERROR("Error: {} is not a valid image file", path.string());
+      WARN("Error: {} is not a valid image file", path.string());
       return false;
     }
     ExifXmp exif_xmp(path);

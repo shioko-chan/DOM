@@ -53,6 +53,14 @@ public:
 
   Image() = default;
 
+  Image(const Image&) = default;
+
+  Image(Image&&) = delete;
+
+  Image& operator=(const Image&) = default;
+
+  Image& operator=(Image&&) = delete;
+
   Image(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) : path(img_read_path), initialized(true) {
     if(!fs::exists(path)) {
       ERROR("Path {} does not exist.", path.string());
@@ -69,8 +77,6 @@ public:
   }
 
   Image(fs::path temporary_save_path, cv::Mat&& img) : path(temporary_save_path), initialized(true) {
-    fs::path parent_path = path.parent_path();
-    check_and_create_path(parent_path);
     mem.register_node(
         path.string(),
         std::make_unique<ImageMem>(std::move(img)),
@@ -182,13 +188,13 @@ private:
     }
     auto image_info = Exiv2::ImageFactory::open(path.string());
     if(!image_info) {
-      ERROR("Error: {} could not be opened by Exiv2", path.string());
+      WARN("Error: {} could not be opened by Exiv2", path.string());
       return;
     }
     try {
       image_info->readMetadata();
     } catch(std::exception& e) {
-      ERROR("An error occur while reading Metadata: {}", e.what());
+      WARN("An error occur while reading Metadata: {}", e.what());
       return;
     }
     exif_ = image_info->exifData();

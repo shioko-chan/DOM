@@ -179,18 +179,18 @@ protected:
 
   Extractor(const fs::path& temporary_save_path, const std::string& name, const std::string& model_path) :
       temporary_save_path(temporary_save_path), env(std::format("[{}]", name), model_path) {
-    check_and_create_path(temporary_save_path);
+    check_or_create_path(temporary_save_path);
   }
 
-  inline void reshape(cv::Mat* img) { decimate_keep_aspect_ratio(img, resolution); }
+  inline void reshape(cv::Mat* img) const { decimate_keep_aspect_ratio(img, resolution); }
 
-  virtual void preprocess(cv::Mat* img) const = 0;
+  virtual inline void preprocess(cv::Mat* img) const = 0;
 
-  virtual inline consteval int64_t get_channels() const noexcept = 0;
+  virtual constexpr int64_t get_channels() const noexcept = 0;
 
-  virtual inline consteval float get_threshold() const noexcept = 0;
+  virtual constexpr float get_threshold() const noexcept = 0;
 
-  virtual inline consteval int64_t get_keypoint_maxcnt() const noexcept = 0;
+  virtual constexpr int64_t get_keypoint_maxcnt() const noexcept = 0;
 
 public:
 
@@ -300,16 +300,16 @@ public:
 class SuperPointExtractor : public Extractor<Feature<256>> {
 private:
 
-  void preprocess(cv::Mat* img) const override {
+  inline void preprocess(cv::Mat* img) const override {
     cv::cvtColor(*img, *img, cv::COLOR_BGR2GRAY);
     img->convertTo(*img, CV_32FC1, 1.0f / 255.0f);
   }
 
-  inline int64_t consteval get_channels() const noexcept override { return 1; }
+  constexpr int64_t get_channels() const noexcept override { return 1; }
 
-  inline float consteval get_threshold() const noexcept override { return SUPERPOINT_THRESHOLD; }
+  constexpr float get_threshold() const noexcept override { return SUPERPOINT_THRESHOLD; }
 
-  inline int64_t consteval get_keypoint_maxcnt() const noexcept override { return SUPERPOINT_KEYPOINT_MAXCNT; }
+  constexpr int64_t get_keypoint_maxcnt() const noexcept override { return SUPERPOINT_KEYPOINT_MAXCNT; }
 
 public:
 
@@ -320,7 +320,7 @@ public:
 class DiskExtractor : public Extractor<Feature<128>> {
 private:
 
-  void preprocess(cv::Mat* img) const override {
+  inline void preprocess(cv::Mat* img) const override {
     if(!img->isContinuous()) {
       *img = img->clone();
     }
@@ -332,11 +332,11 @@ private:
     channels[0].reshape(1, 1).convertTo(img->row(2), CV_32FC1, 1.0f / 255.0f);
   }
 
-  inline consteval int64_t get_channels() const noexcept override { return 3; }
+  constexpr int64_t get_channels() const noexcept override { return 3; }
 
-  inline consteval float get_threshold() const noexcept override { return DISK_THRESHOLD; }
+  constexpr float get_threshold() const noexcept override { return DISK_THRESHOLD; }
 
-  inline consteval int64_t get_keypoint_maxcnt() const noexcept override { return DISK_KEYPOINT_MAXCNT; }
+  constexpr int64_t get_keypoint_maxcnt() const noexcept override { return DISK_KEYPOINT_MAXCNT; }
 
 public:
 

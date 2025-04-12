@@ -4,6 +4,7 @@
 #include <cmath>
 #include <filesystem>
 #include <ranges>
+#include <string_view>
 
 #include <opencv2/opencv.hpp>
 
@@ -95,7 +96,7 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024
   }
 }
 
-void check_and_create_path(const fs::path& path) {
+void check_or_create_path(const fs::path& path) {
   std::error_code ec;
   fs::create_directories(path, ec);
   if(ec) {
@@ -103,6 +104,7 @@ void check_and_create_path(const fs::path& path) {
     throw std::runtime_error(ec.message());
   }
 }
+
 } // namespace Ortho
 
 namespace cv {

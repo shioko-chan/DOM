@@ -4,7 +4,7 @@
 namespace Ortho {
 
 constexpr float LIGHTGLUE_THRESHOLD{0.2f};
-constexpr int   INLIER_CNT_THRESHOLD{25};
+constexpr int   INLIER_CNT_THRESHOLD{4};
 
 constexpr float SUPERPOINT_THRESHOLD{0.05f};
 constexpr int   SUPERPOINT_KEYPOINT_MAXCNT{1024};
@@ -17,7 +17,11 @@ constexpr float IOU_THRESHOLD{0.5f};
 
 constexpr unsigned long MEM_LIMIT{4ul * (1ul << 30) /* 4GB */};
 
-constexpr float SPATIAL_RESOLUTION = 0.1f; // meters per pixel
+constexpr float SPATIAL_RESOLUTION{0.1f}; // meters per pixel
+
+enum method_t { SUPERPOINT, DISK };
+
+constexpr method_t FEATURE_EXTRACTION_METHOD{SUPERPOINT};
 
 } // namespace Ortho
 

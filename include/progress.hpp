@@ -7,13 +7,36 @@
 #include <iostream>
 #include <mutex>
 
+#define BOLD "\033[1m"
+#define RESET "\033[0m"
+
 namespace Ortho {
 struct Progress {
 private:
 
+  static constexpr int bar_width{50};
+
   std::mutex mtx;
-  float      factor = 0.0f;
-  int        cnt = 0, total = 0;
+  int        cnt{0}, total{0};
+
+  void print_bar(float factor) {
+    std::cout << BOLD "\r[" << std::fixed << std::setprecision(2) << factor * 100 << "%]";
+    int pos = static_cast<int>(bar_width * factor);
+    for(int i = 0; i < bar_width; ++i) {
+      if(i < pos)
+        std::cout << "=";
+      else if(i == pos)
+        std::cout << ">";
+      else
+        std::cout << "-";
+    }
+    std::cout << "(" << cnt << "/" << total << ")" RESET;
+    if(cnt == total) {
+      std::cout << std::endl;
+    } else {
+      std::cout << std::flush;
+    }
+  }
 
 public:
 
@@ -21,32 +44,35 @@ public:
 
   Progress(int total) : total(total) {}
 
-  void update(const int inc = 1) {
+  void update(int inc = 1, int current = -1, bool countdown = false) {
     std::lock_guard<std::mutex> lock(mtx);
-    cnt += inc;
-    if(cnt >= static_cast<int>(std::round(factor * total)) || cnt == total) {
-      factor = cnt * 1.0f / total;
-      std::cout << "\r[" << std::fixed << std::setprecision(2) << factor * 100 << "%] (" << cnt << "/" << total << ")";
-      if(cnt == total) {
-        std::cout << std::endl;
+    if(countdown) {
+      if(current >= 0) {
+        cnt = total - current;
       } else {
-        std::cout << std::flush;
+        cnt = cnt - inc;
       }
-      factor = std::min(factor + 0.01f, 1.0f);
+      cnt = std::max(0, cnt);
+    } else {
+      if(current >= 0) {
+        cnt = current, total;
+      } else {
+        cnt = cnt + inc, total;
+      }
+      cnt = std::min(total, cnt);
     }
+    print_bar(1.0f * cnt / total);
   }
 
-  void rerun() {
+  inline void rerun() {
     std::lock_guard<std::mutex> lock(mtx);
-    cnt    = 0;
-    factor = 0.0f;
+    cnt = 0;
   }
 
-  void reset(const int total_) {
+  inline void reset(int total_) {
     std::lock_guard<std::mutex> lock(mtx);
-    total  = total_;
-    cnt    = 0;
-    factor = 0.0f;
+    total = total_;
+    cnt   = 0;
   }
 };
 } // namespace Ortho

@@ -18,6 +18,7 @@
 #include "imgdata.hpp"
 #include "log.hpp"
 #include "matchpair.hpp"
+#include "progress.hpp"
 #include "utility.hpp"
 
 namespace fs = std::filesystem;
@@ -43,24 +44,6 @@ private:
   Adjacent adjacent;
   fs::path temporary_save_path;
 
-  static std::string generate_uuid_v4() {
-    std::random_device                      rd;
-    std::mt19937                            gen(rd());
-    std::uniform_int_distribution<uint32_t> dist(0, 0xFFFFFFFF);
-    auto                                    rand_hex = [&gen, &dist](int width) {
-      std::stringstream ss;
-      ss << std::hex << std::setfill('0') << std::setw(width) << dist(gen);
-      return ss.str();
-    };
-    std::stringstream uuid;
-    uuid << rand_hex(8) << "-";
-    uuid << rand_hex(4) << "-";
-    uuid << std::hex << std::setfill('0') << std::setw(4) << ((dist(gen) & 0x0FFF) | 0x4000) << "-";
-    uuid << std::hex << std::setfill('0') << std::setw(4) << ((dist(gen) & 0x3FFF) | 0x8000) << "-";
-    uuid << rand_hex(12);
-    return uuid.str();
-  }
-
   std::optional<int> find_max_out_degree(int priority) {
     if(adjacent.empty()) {
       return std::nullopt;
@@ -79,7 +62,7 @@ private:
     return idx;
   }
 
-  std::pair<Node, cv::Rect> stitch_adjacent_images(int idx0) {
+  std::pair<Node, cv::Rect> stitch_adjacent_images(int idx0, int priority) {
     auto [w, h] = nodes[idx0].mask.get().get().size();
     Points<int> all_corners{Point<int>(0, 0), Point<int>(w - 1, 0), Point<int>(w - 1, h - 1), Point<int>(0, h - 1)};
     for(const auto& [idx1, edge] : adjacent[idx0]) {
@@ -117,11 +100,11 @@ private:
       warped.copyTo(result, mask_warped_unique);
       mask_result = mask_result | mask_warped;
     }
-    std::string uuid = generate_uuid_v4(), extension = nodes[idx0].img.get_img_extension().string();
+    std::string extension = nodes[idx0].img.get_img_extension().string();
     return std::make_pair(
         Node{
-            Image(temporary_save_path / (uuid + extension), std::move(result)),
-            Image(temporary_save_path / (uuid + "_mask" + extension), std::move(mask_result))},
+            Image(temporary_save_path / std::format("p{}-i{}{}", priority, idx0, extension), std::move(result)),
+            Image(temporary_save_path / std::format("p{}-i{}_mask{}", priority, idx0, extension), std::move(mask_result))},
         rect);
   }
 
@@ -150,14 +133,15 @@ public:
     auto i_       = find_max_out_degree(priority);
     while(adjacent.size() > 1 && i_) {
       int i                 = i_.value();
-      auto [stitched, rect] = stitch_adjacent_images(i);
-      fs::path path         = temporary_save_path / std::format("p{}-i{}.jpg", priority, i);
-      cv::imwrite(path.string(), stitched.img.get().get());
+      auto [stitched, rect] = stitch_adjacent_images(i, priority);
+      cv::imwrite(stitched.img.get_img_path().string(), stitched.img.get().get());
       cv::Mat M_p_i         = cv::Mat::eye(3, 3, CV_32FC1);
       M_p_i.at<float>(0, 2) = rect.x;
       M_p_i.at<float>(1, 2) = rect.y;
+      int p                 = nodes.size();
       nodes.push_back(std::move(stitched));
-      for(auto& [j, edge_i_j] : adjacent[i]) {
+      std::vector<int> to_erase;
+      for(const auto& [j, edge_i_j] : adjacent[i]) {
         if(j == i) {
           continue;
         }
@@ -167,18 +151,19 @@ public:
           }
           cv::Mat M_i_j = edge_i_j.M;
           cv::vconcat(M_i_j, cv::Mat{(cv::Mat_<float>(1, 3) << 0, 0, 1)}, M_i_j);
-          cv::Mat M_p_l    = edge_j_l.M * M_i_j * M_p_i;
-          auto&   edge_l_p = adjacent[l][nodes.size() - 1];
-          cv::invertAffineTransform(M_p_l, edge_l_p.M);
-          edge_l_p.priority = edge_j_l.priority + 1;
-          auto& edge_p_l    = adjacent[nodes.size() - 1][l];
-          edge_p_l.M        = M_p_l;
-          edge_p_l.priority = edge_j_l.priority + 1;
+          cv::Mat M_p_l = edge_j_l.M * M_i_j * M_p_i;
+          cv::invertAffineTransform(M_p_l, adjacent[l][p].M);
+          adjacent[l][p].priority = edge_j_l.priority + 1;
+          adjacent[p][l].M        = M_p_l;
+          adjacent[p][l].priority = edge_j_l.priority + 1;
           adjacent[l].erase(j);
         }
-        adjacent.erase(j);
+        to_erase.push_back(j);
       }
       adjacent.erase(i);
+      for(const auto& j : to_erase) {
+        adjacent.erase(j);
+      }
       i_ = find_max_out_degree(priority);
       if(!i_) {
         i_ = find_max_out_degree(++priority);
