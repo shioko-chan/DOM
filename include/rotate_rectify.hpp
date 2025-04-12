@@ -19,7 +19,9 @@ struct RectifyResult {
   PointsPipeline world2img;
 };
 
-RectifyResult rotate_rectify(const cv::Size img_size, const Pose& pose, const Intrinsic& intrinsic, const cv::Mat& img) {
+RectifyResult rotate_rectify(const cv::Size img_size, const Pose& pose, const Intrinsic& intrinsic, const cv::Mat& img_) {
+  cv::Mat img;
+  cv::resize(img_, img, img_size);
   auto [w, h] = img_size;
   if(w < 5 || h < 5) {
     throw std::runtime_error("Image size is too small");
@@ -35,7 +37,8 @@ RectifyResult rotate_rectify(const cv::Size img_size, const Pose& pose, const In
                         if(std::abs(denominator) < eps) {
                           denominator = (denominator < 0 ? -eps : eps);
                         }
-                        const float   gamma = pose.altitude / denominator;
+                        // const float   gamma = pose.altitude / denominator;
+                        const float   gamma = HEIGHT / denominator;
                         const cv::Mat xyz_w = gamma * ray;
                         return Point<float>(xyz_w.at<float>(0, 0), -xyz_w.at<float>(1, 0));
                       });

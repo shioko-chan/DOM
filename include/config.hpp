@@ -13,11 +13,12 @@ constexpr float DISK_THRESHOLD{0.05f};
 constexpr int   DISK_KEYPOINT_MAXCNT{1024};
 
 constexpr int   NEIGHBOR_PROPOSAL{8};
-constexpr float IOU_THRESHOLD{0.5f};
+constexpr float IOU_THRESHOLD{0.2f};
 
-constexpr unsigned long MEM_LIMIT{4ul * (1ul << 30) /* 4GB */};
+constexpr unsigned long MEM_LIMIT{16ul * (1ul << 30) /* 16GB */};
 
-constexpr float SPATIAL_RESOLUTION{0.1f}; // meters per pixel
+constexpr float SPATIAL_RESOLUTION{0.01f}; // meters per pixel
+constexpr float HEIGHT{125.0f};            // meters
 
 enum method_t { SUPERPOINT, DISK };
 

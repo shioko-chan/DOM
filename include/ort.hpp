@@ -49,6 +49,8 @@ public:
     session_options.SetLogSeverityLevel(log_level);
     session_options.SetLogId(name.c_str());
 
+    session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
     session.reset(new Ort::Session(ort_env(), model_path.c_str(), session_options));
 
     Ort::AllocatorWithDefaultOptions allocator;

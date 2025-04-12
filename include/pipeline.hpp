@@ -120,9 +120,7 @@ public:
   void rotate_rectify() {
     run(imgs_data.size(), [this](int i) {
       imgs_data[i].rotate_rectify();
-      cv::imwrite(
-          "/test/" + imgs_data[i].get_img_name().string() + imgs_data[i].get_img_extension().string(),
-          imgs_data[i].rotate_rectified().get().get());
+      cv::imwrite(temporary_save_path / imgs_data[i].get_img_name().string(), imgs_data[i].rotate_rectified().get().get());
     });
   }
 

@@ -32,9 +32,15 @@ public:
 
   ImgData() = default;
 
-  ImgData(Pose&& pose, Intrinsic&& intrinsic, ExifXmp&& exif_xmp, fs::path img_path, fs::path temp_save_path) :
+  ImgData(
+      Pose&&      pose,
+      Intrinsic&& intrinsic,
+      ExifXmp&&   exif_xmp,
+      fs::path    img_path,
+      fs::path    temp_save_path,
+      cv::Size    img_size) :
       pose(std::move(pose)), intrinsic(std::move(intrinsic)), exif_xmp(std::move(exif_xmp)), img_path(img_path),
-      temp_save_path(temp_save_path) {
+      temp_save_path(temp_save_path), img_size(std::move(img_size)) {
     check_or_create_path(temp_save_path);
   }
 
@@ -127,7 +133,7 @@ public:
     if(img.empty()) {
       throw std::runtime_error(img_path.string() + " could not be read");
     }
-    auto&& [rotate_img, mask, ground_points, world2img] = Ortho::rotate_rectify(img.size(), pose, intrinsic, img);
+    auto&& [rotate_img, mask, ground_points, world2img] = Ortho::rotate_rectify(img_size, pose, intrinsic, img);
     this->ground_points                                 = std::move(ground_points);
     this->world2img_                                    = std::move(world2img);
     this->img_rotated.delay_initialize(
@@ -140,6 +146,7 @@ public:
 
 private:
 
+  cv::Size       img_size;
   fs::path       temp_save_path, img_path;
   Pose           pose;
   Intrinsic      intrinsic;
@@ -292,7 +299,7 @@ public:
                  h         = exif_data.findKey(Exiv2::ExifKey(ExifKey::height))->toUint32();
     Intrinsic intrinsic    = IntrinsicFactory::build(exif_xmp.exif_data(), w, h);
     Pose      pose         = PoseFactory::build(exif_xmp.xmp_data());
-    return ImgData{std::move(pose), std::move(intrinsic), std::move(exif_xmp), path, temp_save_path};
+    return ImgData{std::move(pose), std::move(intrinsic), std::move(exif_xmp), path, temp_save_path, cv::Size(w, h)};
   }
 };
 } // namespace Ortho

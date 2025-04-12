@@ -69,8 +69,10 @@ private:
       auto [w, h] = nodes[idx1].mask.get().get().size();
       Points<float> corners{Point<float>(0, 0), Point<float>(w - 1, 0), Point<float>(w - 1, h - 1), Point<float>(0, h - 1)};
       cv::Mat M;
-      cv::invertAffineTransform(edge.M, M);
-      cv::transform(corners, corners, M);
+      // cv::invertAffineTransform(edge.M, M);
+      M = edge.M.inv();
+      // cv::transform(corners, corners, M);
+      cv::perspectiveTransform(corners, corners, M);
       std::ranges::move(
           corners | std::views::transform([](const Point<float>& p) {
             return Point<int>(Ortho::abs_ceil(p.x), Ortho::abs_ceil(p.y));
@@ -86,12 +88,17 @@ private:
     for(const auto& [idx1, edge] : adjacent[idx0]) {
       cv::Mat append_img = nodes[idx1].img.get().get(), append_img_mask = nodes[idx1].mask.get().get();
       cv::Mat M;
-      cv::invertAffineTransform(edge.M, M);
-      M.at<float>(0, 2) -= rect.x;
-      M.at<float>(1, 2) -= rect.y;
+      // cv::invertAffineTransform(edge.M, M);
+      M                 = edge.M.inv();
+      cv::Mat T         = cv::Mat::eye(3, 3, CV_32FC1);
+      T.at<float>(0, 2) = -rect.x;
+      T.at<float>(1, 2) = -rect.y;
+      M                 = T * M;
       cv::Mat warped, mask_warped;
-      cv::warpAffine(append_img, warped, M, result.size(), cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+      cv::warpPerspective(append_img, warped, M, result.size(), cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+      // cv::warpAffine(append_img, warped, M, result.size(), cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
       cv::warpAffine(append_img_mask, mask_warped, M, result.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
+      // cv::warpAffine(append_img_mask, mask_warped, M, result.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
       cv::Mat mixed;
       cv::addWeighted(result, 0.5, warped, 0.5, 0, mixed);
       cv::Mat mask_mixed = mask_result & mask_warped;
@@ -119,7 +126,8 @@ public:
              });
     nodes.assign(v.begin(), v.end());
     for(const auto& match_pair : match_pairs) {
-      cv::invertAffineTransform(match_pair.M, adjacent[match_pair.second][match_pair.first].M);
+      adjacent[match_pair.second][match_pair.first].M = match_pair.M.inv();
+      // cv::invertAffineTransform(match_pair.M, adjacent[match_pair.second][match_pair.first].M);
       adjacent[match_pair.first].emplace(match_pair.second, std::move(match_pair.M));
     }
   }
@@ -150,9 +158,10 @@ public:
             continue;
           }
           cv::Mat M_i_j = edge_i_j.M;
-          cv::vconcat(M_i_j, cv::Mat{(cv::Mat_<float>(1, 3) << 0, 0, 1)}, M_i_j);
+          // cv::vconcat(M_i_j, cv::Mat{(cv::Mat_<float>(1, 3) << 0, 0, 1)}, M_i_j);
           cv::Mat M_p_l = edge_j_l.M * M_i_j * M_p_i;
-          cv::invertAffineTransform(M_p_l, adjacent[l][p].M);
+          // cv::invertAffineTransform(M_p_l, adjacent[l][p].M);
+          adjacent[l][p].M        = M_p_l.inv();
           adjacent[l][p].priority = edge_j_l.priority + 1;
           adjacent[p][l].M        = M_p_l;
           adjacent[p][l].priority = edge_j_l.priority + 1;
