@@ -14,6 +14,7 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "ba.hpp"
 #include "config.hpp"
 #include "extractor.hpp"
 #include "imgdata.hpp"
@@ -173,7 +174,7 @@ public:
       ImgData& lhs_img   = imgs_data[batch.front().first];
       lhs_features       = std::move(extractor.get_features(lhs_img));
       if(!set_input(lhs_features, "kpts0", &kpts0, "desc0", &desc0)) {
-        INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
+        LOG_INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
         continue;
       }
       auto [lhs_w, lhs_h] = lhs_img.get_size();
@@ -182,19 +183,25 @@ public:
         ImgData& rhs_img = imgs_data[pair.second];
         rhs_features     = std::move(extractor.get_features(rhs_img));
         if(!set_input(rhs_features, "kpts1", &kpts1, "desc1", &desc1)) {
-          INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
+          LOG_INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
           continue;
         }
-        auto [rhs_w, rhs_h]         = rhs_img.get_size();
-        auto                matches = infer_and_filter_by_score();
-        const unsigned long len     = matches.size();
-        DEBUG(
+        auto [rhs_w, rhs_h] = rhs_img.get_size();
+        auto matches        = infer_and_filter_by_score();
+#ifdef ENABLE_MIDDLE_OUTPUT
+        cv::imwrite(
+            temporary_save_path
+                / std::format("{}_{}_matches.jpg", lhs_img.get_img_stem().string(), rhs_img.get_img_stem().string()),
+            draw_matchlines(lhs_img, rhs_img, matches, lhs_features, rhs_features));
+#endif
+        const unsigned long len = matches.size();
+        LOG_DEBUG(
             "Image {} and image {} have {} matches after threshold filter!",
             lhs_img.get_img_name().string(),
             rhs_img.get_img_name().string(),
             len);
         if(matches.empty()) {
-          INFO(
+          LOG_INFO(
               "Image {} and image {} have no valid matches!",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string());
@@ -210,89 +217,46 @@ public:
               rhs_img.get_size());
           points0.assign(p0v.begin(), p0v.end());
           points1.assign(p1v.begin(), p1v.end());
-#ifdef ENABLE_MIDDLE_OUTPUT
-          cv::imwrite(
-              temporary_save_path
-                  / std::format("{}_{}_matches.jpg", lhs_img.get_img_stem().string(), rhs_img.get_img_stem().string()),
-              draw_matchlines(lhs_img, rhs_img, matches, lhs_features, rhs_features));
-#endif
         }
-        cv::Mat inlier_mask;
-        cv::findFundamentalMat(points0, points1, cv::FM_RANSAC, 1.0, 0.99, inlier_mask);
-        Points<float> points0_filtered, points1_filtered;
-        Matches       matches_filtered;
         {
-          auto idx_filtered = std::views::iota(0ul, len) | std::views::filter([&inlier_mask](const auto& idx) {
-                                return inlier_mask.at<unsigned char>(idx, 0) != 0;
-                              });
+          cv::Mat inlier_mask;
+          cv::findEssentialMat(
+              points0, points1, lhs_img.K(), lhs_img.D(), rhs_img.K(), rhs_img.D(), cv::RANSAC, 0.999, 1.0, inlier_mask);
           auto p0v =
-              idx_filtered | std::views::transform([&points0](const auto& idx) { return std::move(points0[idx]); });
+              std::views::iota(0ul, len)
+              | std::views::filter([&inlier_mask](const auto& idx) { return inlier_mask.at<unsigned char>(idx) != 0; })
+              | std::views::transform([&points0](const auto& idx) { return points0[idx]; });
           auto p1v =
-              idx_filtered | std::views::transform([&points1](const auto& idx) { return std::move(points1[idx]); });
-          points0_filtered.assign(p0v.begin(), p0v.end());
-          points1_filtered.assign(p1v.begin(), p1v.end());
-          auto matches_filtered_v =
-              idx_filtered | std::views::transform([&matches](const auto& idx) { return matches[idx]; });
-          matches_filtered.assign(matches_filtered_v.begin(), matches_filtered_v.end());
-          DEBUG(
-              "Image {} and image {} have {} matches after RANSAC filter!",
+              std::views::iota(0ul, len)
+              | std::views::filter([&inlier_mask](const auto& idx) { return inlier_mask.at<unsigned char>(idx) != 0; })
+              | std::views::transform([&points1](const auto& idx) { return points1[idx]; });
+          points0.assign(p0v.begin(), p0v.end());
+          points1.assign(p1v.begin(), p1v.end());
+          LOG_INFO(
+              "Image {} and image {} have {} matches after essential matrix filter!",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string(),
-              points0_filtered.size());
-          if(points0_filtered.size() < 8) {
-            INFO(
-                "Image {} and image {} have no enough matches after RANSAC filter, only {} matches!",
-                lhs_img.get_img_name().string(),
-                rhs_img.get_img_name().string(),
-                points0_filtered.size());
-            continue;
-          }
-#ifdef ENABLE_MIDDLE_OUTPUT
-          cv::imwrite(
-              temporary_save_path
-                  / std::format(
-                      "{}_{}_matches_filtered.jpg", lhs_img.get_img_stem().string(), rhs_img.get_img_stem().string()),
-              draw_matchlines(lhs_img, rhs_img, matches_filtered, lhs_features, rhs_features));
-#endif
+              points0.size());
         }
         cv::Mat points3h;
         try {
-          cv::triangulatePoints(
-              lhs_img.projection_matrix(), rhs_img.projection_matrix(), points0_filtered, points1_filtered, points3h);
+          cv::triangulatePoints(lhs_img.projection_matrix(), rhs_img.projection_matrix(), points0, points1, points3h);
         } catch(const std::exception& e) {
-          ERROR("Error in triangulation: {}", e.what());
+          LOG_ERROR("Error in triangulation: {}", e.what());
           continue;
         }
         std::vector<cv::Point3f> obj;
         for(int i = 0; i < points3h.cols; i++) {
           points3h.col(i) /= points3h.at<float>(3, i);
           cv::Point3f point3d{points3h.at<float>(0, i), points3h.at<float>(1, i), points3h.at<float>(2, i)};
-          lhs_img.points_2d_3d.emplace(points0_filtered[i], point3d);
-          rhs_img.points_2d_3d.emplace(points1_filtered[i], point3d);
+          lhs_img.points_2d_3d.emplace(points0[i], point3d);
+          rhs_img.points_2d_3d.emplace(points1[i], point3d);
           obj.push_back(point3d);
         }
-        auto reprojection = [&obj](auto& img) {
-          Points<float> pnts;
-          cv::Mat       rvec;
-          cv::Rodrigues(img.R(), rvec);
-          cv::projectPoints(obj, rvec, img.t(), img.K(), img.D(), pnts);
-          return pnts;
-        };
-        auto  pnts_lhs      = reprojection(lhs_img);
-        auto  pnts_rhs      = reprojection(rhs_img);
-        float error_lhs_sum = 0, error_rhs_sum = 0;
-        for(int i = 0; i < pnts_lhs.size(); i++) {
-          error_lhs_sum += cv::norm(pnts_lhs[i] - points0_filtered[i]);
-          error_rhs_sum += cv::norm(pnts_rhs[i] - points1_filtered[i]);
-        }
-        float error_lhs_avg = error_lhs_sum / points0_filtered.size(),
-              error_rhs_avg = error_rhs_sum / points1_filtered.size();
-        WARN(
-            "Image {} and image {} have average reprojection error {} and {}!",
-            lhs_img.get_img_name().string(),
-            rhs_img.get_img_name().string(),
-            error_lhs_avg,
-            error_rhs_avg);
+        Ortho::ba(points0, points1, lhs_img, rhs_img, obj);
+        // pair.lhs_pnts = std::move(points0);
+        // pair.rhs_pnts = std::move(points1);
+        // pair.points3d = std::move(obj);
         pair.valid = true;
       }
       progress.update(batch_cnt);

@@ -104,6 +104,14 @@ public:
 
   cv::Mat t() const { return -pose.t(); }
 
+  float focal_length() {
+    auto&& key = exif_xmp.exif_data().findKey(Exiv2::ExifKey("Exif.Photo.FocalLength"));
+    if(key == exif_xmp.exif_data().end()) {
+      throw std::runtime_error("Error: Focal length not found in Exif data");
+    }
+    return key->toFloat();
+  }
+
   cv::Mat K() {
     Intrinsic intrinsic{
         static_cast<float>(img_size_rotated.width),
@@ -277,7 +285,7 @@ public:
 
   static bool validate(const fs::path& path) {
     if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
-      WARN("Error: {} is not a valid image file", path.string());
+      LOG_WARN("Error: {} is not a valid image file", path.string());
       return false;
     }
     ExifXmp exif_xmp(path);
@@ -287,7 +295,7 @@ public:
     const auto& exif_data = exif_xmp.exif_data();
     for(const auto& key : ExifKey::keys) {
       if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
-        WARN("{}: Key {} not found in Exif data", path.string(), key);
+        LOG_WARN("{}: Key {} not found in Exif data", path.string(), key);
         return false;
       }
     }

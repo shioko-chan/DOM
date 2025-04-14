@@ -19,7 +19,7 @@ int main(int argc, char* const argv[]) {
 
   fs::path input_dir(argv[1]);
   if(!fs::exists(input_dir)) {
-    ERROR("Input directory \"{}\" does not exist", input_dir.string());
+    LOG_ERROR("Input directory \"{}\" does not exist", input_dir.string());
     return 1;
   }
   fs::path output_dir(argv[2]);

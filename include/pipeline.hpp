@@ -137,7 +137,7 @@ public:
       Matcher matcher = matcher_factory<DiskExtractor>(temporary_save_path);
       matcher.match(match_pairs_, imgs_data, progress);
     } else {
-      ERROR("Unknown feature extraction method");
+      LOG_ERROR("Unknown feature extraction method");
       return;
     }
     std::ranges::move(
@@ -174,7 +174,7 @@ public:
       //   cv::Mat M = cv::findHomography(src, dst, cv::RANSAC);
       //   cv::warpPerspective(img, dst_img, M, rect.size(), cv::INTER_LINEAR);
       // } catch(const std::exception& e) {
-      //   ERROR("Error in ortho-rectification: {}", e.what());
+      //   LOG_ERROR("Error in ortho-rectification: {}", e.what());
       //   return;
       // }
       cv::imwrite(
@@ -193,7 +193,7 @@ public:
     Stitcher stitcher(match_pairs, imgs_data, temporary_save_path);
     auto     stitched_img = stitcher.stitch();
     if(stitched_img.empty()) {
-      ERROR("Stitching failed");
+      LOG_ERROR("Stitching failed");
       return;
     }
     fs::path stitched_img_path = output_dir / "stitched_image.jpg";

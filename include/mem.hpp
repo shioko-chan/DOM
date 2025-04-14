@@ -127,7 +127,7 @@ public:
     std::unique_lock<std::mutex> lock(lru_mtx);
     auto                         it = k_v.find(key);
     if(it != k_v.end()) {
-      WARN(
+      LOG_WARN(
           "register_node: node of name \"{}\" already been registered, if this is not intended, please check your program.",
           key);
       return;

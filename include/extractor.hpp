@@ -226,7 +226,7 @@ public:
     const int64_t* kps    = res[env.get_output_index("keypoints")].GetTensorData<int64_t>();
     const float *  scores = res[env.get_output_index("scores")].GetTensorData<float>(),
                 *descs    = res[env.get_output_index("descriptors")].GetTensorData<float>();
-    DEBUG("Image {} has {} keypoints detected!", img_data.get_img_name().string(), cnt);
+    LOG_DEBUG("Image {} has {} keypoints detected!", img_data.get_img_name().string(), cnt);
     auto v = std::views::iota(0, cnt) | std::views::filter([this, &scores, &mask_processed, &kps](const auto& idx) {
                return scores[idx] >= get_threshold()
                       && mask_processed.at<unsigned char>(kps[idx * 2 + 1], kps[idx * 2]) != 0;
@@ -250,7 +250,7 @@ public:
               .x = (kps[idx * 2] - wf2) / max2, .y = (kps[idx * 2 + 1] - hf2) / max2, .desc = std::move(descriptor)};
         });
     Features filtered_features(u.begin(), u.end());
-    DEBUG("Image {} has {} keypoints after filter.", img_data.get_img_name().string(), filtered_features.size() / 2);
+    LOG_DEBUG("Image {} has {} keypoints after filter.", img_data.get_img_name().string(), filtered_features.size() / 2);
     mem.register_node(
         path.string(),
         std::make_unique<FeaturesMem>(filtered_features),

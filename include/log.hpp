@@ -25,27 +25,27 @@ void log(std::ostream& ostream, const char* prefix, std::string_view format, Arg
 }
 
 #if defined(LOGLEVEL_DEBUG) || defined(LOGLEVEL_INFO) || defined(LOGLEVEL_WARN) || defined(LOGLEVEL_ERROR)
-  #define ERROR(...) log(std::cerr, RESET RED BOLD "[ERROR] ", __VA_ARGS__)
+  #define LOG_ERROR(...) log(std::cerr, RESET RED BOLD "[LOG_ERROR] ", __VA_ARGS__)
 #else
-  #define ERROR(...)
+  #define LOG_ERROR(...)
 #endif
 
 #if defined(LOGLEVEL_DEBUG) || defined(LOGLEVEL_INFO) || defined(LOGLEVEL_WARN)
-  #define WARN(...) log(std::cerr, YELLOW BOLD "[WARN] " RESET, __VA_ARGS__)
+  #define LOG_WARN(...) log(std::cerr, YELLOW BOLD "[LOG_WARN] " RESET, __VA_ARGS__)
 #else
-  #define WARN(...)
+  #define LOG_WARN(...)
 #endif
 
 #if defined(LOGLEVEL_DEBUG) || defined(LOGLEVEL_INFO)
-  #define INFO(...) log(std::cout, GREEN "[INFO] " RESET, __VA_ARGS__)
+  #define LOG_INFO(...) log(std::cout, GREEN "[LOG_INFO] " RESET, __VA_ARGS__)
 #else
-  #define INFO(...)
+  #define LOG_INFO(...)
 #endif
 
 #if defined(LOGLEVEL_DEBUG)
-  #define DEBUG(...) log(std::cout, BLUE "[DEBUG] " RESET, __VA_ARGS__)
+  #define LOG_DEBUG(...) log(std::cout, BLUE "[LOG_DEBUG] " RESET, __VA_ARGS__)
 #else
-  #define DEBUG(...)
+  #define LOG_DEBUG(...)
 #endif
 
 template <typename... Args>

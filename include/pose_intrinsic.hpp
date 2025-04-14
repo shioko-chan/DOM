@@ -12,7 +12,6 @@
 #include <opencv2/opencv.hpp>
 
 #include "image.hpp"
-#include "log.hpp"
 #include "models.h"
 #include "utility.hpp"
 
@@ -190,7 +189,7 @@ public:
     const Exiv2::XmpData& xmp_data = img_exif_xmp.xmp_data();
     for(const auto& key : XmpKey::keys) {
       if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
-        WARN("{}: Key {} not found in XMP data", img_exif_xmp.get_img_path().string(), key);
+        LOG_WARN("{}: Key {} not found in XMP data", img_exif_xmp.get_img_path().string(), key);
         return false;
       }
     }
@@ -223,7 +222,7 @@ public:
     const auto& exif_data = img_exif_xmp.exif_data();
     for(const auto& key : ExifKey::keys) {
       if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
-        WARN("{}: Key {} not found in Exif data", img_exif_xmp.get_img_path().string(), key);
+        LOG_WARN("{}: Key {} not found in Exif data", img_exif_xmp.get_img_path().string(), key);
         return false;
       }
     }

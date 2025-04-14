@@ -98,6 +98,7 @@
         "orthophoto",
         "pnts",
         "RANSAC",
+        "Reprojection",
         "STREQUAL",
         "SUPERPOINT"
     ]

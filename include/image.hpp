@@ -9,7 +9,6 @@
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "log.hpp"
 #include "mem.hpp"
 #include "utility.hpp"
 
@@ -63,8 +62,7 @@ public:
 
   Image(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) : path(img_read_path), initialized(true) {
     if(!fs::exists(path)) {
-      ERROR("Path {} does not exist.", path.string());
-      return;
+      throw std::runtime_error("Error: Path does not exist");
     }
     mem.register_node(
         path.string(),
@@ -188,14 +186,13 @@ private:
     }
     auto image_info = Exiv2::ImageFactory::open(path.string());
     if(!image_info) {
-      WARN("Error: {} could not be opened by Exiv2", path.string());
+      throw std::runtime_error("Error: " + path.string() + " could not be opened by Exiv2");
       return;
     }
     try {
       image_info->readMetadata();
     } catch(std::exception& e) {
-      WARN("An error occur while reading Metadata: {}", e.what());
-      return;
+      throw std::runtime_error(std::string("An error occur while reading Metadata: ") + e.what());
     }
     exif_ = image_info->exifData();
     xmp_  = image_info->xmpData();

@@ -8,8 +8,6 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "log.hpp"
-
 namespace fs = std::filesystem;
 
 namespace Ortho {
@@ -110,7 +108,6 @@ void check_or_create_path(const fs::path& path) {
   std::error_code ec;
   fs::create_directories(path, ec);
   if(ec) {
-    ERROR("{} could not be created: {}", path.string(), ec.message());
     throw std::runtime_error(ec.message());
   }
 }
