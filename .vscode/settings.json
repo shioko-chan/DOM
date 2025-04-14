@@ -82,6 +82,7 @@
         "DCMAKE",
         "exiv",
         "Exiv",
+        "hconcat",
         "Homography",
         "imread",
         "imshow",

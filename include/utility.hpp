@@ -32,6 +32,11 @@ auto min_y(const Range& points) {
 }
 
 template <std::ranges::range Range>
+Point<float> min(const Range& points) {
+  return Point<float>(min_x(points), min_y(points));
+}
+
+template <std::ranges::range Range>
 auto max_x(const Range& points) {
   return std::ranges::max(points, {}, &std::ranges::range_value_t<Range>::x).x;
 }
@@ -39,6 +44,11 @@ auto max_x(const Range& points) {
 template <std::ranges::range Range>
 auto max_y(const Range& points) {
   return std::ranges::max(points, {}, &std::ranges::range_value_t<Range>::y).y;
+}
+
+template <std::ranges::range Range>
+Point<float> max(const Range& points) {
+  return Point<float>(max_x(points), max_y(points));
 }
 
 template <std::ranges::range Range>
@@ -103,6 +113,13 @@ void check_or_create_path(const fs::path& path) {
     ERROR("{} could not be created: {}", path.string(), ec.message());
     throw std::runtime_error(ec.message());
   }
+}
+
+template <std::ranges::range Range>
+cv::Rect2f boundingRect(const Range& points) {
+  Point<float> min_point = min(points);
+  Point<float> max_point = max(points);
+  return cv::Rect2f(min_point.x, min_point.y, max_point.x - min_point.x, max_point.y - min_point.y);
 }
 
 } // namespace Ortho

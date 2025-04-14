@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y \
     build-essential gnupg pkg-config ninja-build \
     wget curl zip unzip tar git \
     libopencv-dev \
+    libgoogle-glog-dev libgflags-dev \
+    libatlas-base-dev \
+    libeigen3-dev \
+    libsuitesparse-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
@@ -19,6 +23,19 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
     && echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null \
     && apt-get update && apt-get install -y cmake \
     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt 
+RUN wget http://ceres-solver.org/ceres-solver-2.2.0.tar.gz \
+    && tar zxf ceres-solver-2.2.0.tar.gz \
+    && mkdir ceres-bin \
+    && cd ceres-bin \
+    && cmake ../ceres-solver-2.2.0 \
+    && make -j3 \
+    && make test \
+    && make install \
+    && cd /opt \
+    && rm -rf ceres-solver-2.2.0.tar.gz ceres-solver-2.2.0 \
+    && rm -rf ceres-bin
 
 WORKDIR /opt
 RUN wget https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-gpu-1.21.0.tgz \

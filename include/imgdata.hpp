@@ -11,6 +11,7 @@
 #include <optional>
 #include <ranges>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -26,64 +27,60 @@
 namespace fs = std::filesystem;
 
 namespace Ortho {
-
 struct ImgData {
+private:
+
+  struct Point2fHasher {
+    size_t operator()(const cv::Point2f& p) const {
+      size_t h1 = std::hash<float>{}(p.x);
+      size_t h2 = std::hash<float>{}(p.y);
+      return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+  };
+
 public:
 
   ImgData() = default;
 
-  ImgData(
-      Pose&&      pose,
-      Intrinsic&& intrinsic,
-      ExifXmp&&   exif_xmp,
-      fs::path    img_path,
-      fs::path    temp_save_path,
-      cv::Size    img_size) :
-      pose(std::move(pose)), intrinsic(std::move(intrinsic)), exif_xmp(std::move(exif_xmp)), img_path(img_path),
-      temp_save_path(temp_save_path), img_size(std::move(img_size)) {
+  ImgData(Pose&& pose, ExifXmp&& exif_xmp, fs::path img_path, fs::path temp_save_path, cv::Size img_size) :
+      pose(std::move(pose)), exif_xmp(std::move(exif_xmp)), img_path(img_path), temp_save_path(temp_save_path),
+      img_size(std::move(img_size)) {
     check_or_create_path(temp_save_path);
   }
 
-  Image rotate_rectified() {
+  Image img() {
     if(!img_rotated.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated;
   }
 
-  Image rotate_rectified_mask() {
+  Image mask() {
     if(!img_rotated_mask.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated_mask;
   }
 
-  ImgRefGuard get_rotate_rectified() {
+  ImgRefGuard get_img() {
     if(!img_rotated.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated.get();
   }
 
-  ImgRefGuard get_rotate_rectified_mask() {
+  ImgRefGuard get_mask() {
     if(!img_rotated_mask.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated_mask.get();
   }
 
-  const Points<float>& get_spans() {
-    if(ground_points.empty()) {
+  cv::Size get_size() {
+    if(img_size_rotated.area() == 0) {
       rotate_rectify();
     }
-    return ground_points;
-  }
-
-  Points<float> world2img(const Points<float>& points) {
-    if(!world2img_) {
-      rotate_rectify();
-    }
-    return world2img_(points);
+    return img_size_rotated;
   }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
@@ -103,13 +100,29 @@ public:
 
   const Angle& get_roll() const { return pose.roll; }
 
-  const cv::Mat& get_rotation_matrix() const { return pose.R(); }
+  cv::Mat R() const { return pose.R().t(); }
+
+  cv::Mat t() const { return -pose.t(); }
+
+  cv::Mat K() {
+    Intrinsic intrinsic{
+        static_cast<float>(img_size_rotated.width),
+        static_cast<float>(img_size_rotated.height),
+        exif_xmp.exif_data().findKey(Exiv2::ExifKey("Exif.Photo.FocalLength"))->toFloat()};
+    return intrinsic.K();
+  }
+
+  cv::Mat D() { return cv::Mat::zeros(5, 1, CV_32F); }
+
+  cv::Mat norm_projection_matrix() {
+    cv::Mat M;
+    cv::hconcat(R(), t(), M);
+    return M;
+  }
+
+  cv::Mat projection_matrix() { return K() * norm_projection_matrix(); }
 
   const Point<float>& get_coord() const { return pose.coord; }
-
-  const cv::Mat& get_camera_matrix() const { return intrinsic.K(); }
-
-  const cv::Mat& get_distortion_coefficients() const { return intrinsic.D(); }
 
   const fs::path& get_img_path() const { return img_path; }
 
@@ -119,12 +132,6 @@ public:
 
   fs::path get_img_extension() const { return img_path.extension(); }
 
-  friend std::ostream& operator<<(std::ostream& os, const ImgData& data) {
-    os << "Camera Matrix: " << data.intrinsic << "\n"
-       << "Pose: " << data.pose << "\n";
-    return os;
-  }
-
   void rotate_rectify() {
     if(!reference_set) {
       throw std::runtime_error("Error: Reference coordinate not set");
@@ -133,9 +140,8 @@ public:
     if(img.empty()) {
       throw std::runtime_error(img_path.string() + " could not be read");
     }
-    auto&& [rotate_img, mask, ground_points, world2img] = Ortho::rotate_rectify(img_size, pose, intrinsic, img);
-    this->ground_points                                 = std::move(ground_points);
-    this->world2img_                                    = std::move(world2img);
+    auto&& [rotate_img, mask] = Ortho::rotate_rectify(img_size, pose, img);
+    img_size_rotated          = rotate_img.size();
     this->img_rotated.delay_initialize(
         temp_save_path / std::format("{}_r{}", img_path.stem().string(), img_path.extension().string()),
         std::move(rotate_img));
@@ -144,17 +150,16 @@ public:
         std::move(mask));
   }
 
+  std::unordered_map<cv::Point2f, cv::Point3f, Point2fHasher> points_2d_3d;
+
 private:
 
-  cv::Size       img_size;
-  fs::path       temp_save_path, img_path;
-  Pose           pose;
-  Intrinsic      intrinsic;
-  Image          img_rotated, img_rotated_mask;
-  ExifXmp        exif_xmp;
-  Points<float>  ground_points;
-  PointsPipeline world2img_;
-  bool           reference_set{false};
+  cv::Size img_size, img_size_rotated;
+  fs::path temp_save_path, img_path;
+  Pose     pose;
+  Image    img_rotated, img_rotated_mask;
+  ExifXmp  exif_xmp;
+  bool     reference_set{false};
 };
 
 struct ImgsData {
@@ -276,9 +281,6 @@ public:
       return false;
     }
     ExifXmp exif_xmp(path);
-    if(!IntrinsicFactory::validate(exif_xmp)) {
-      return false;
-    }
     if(!PoseFactory::validate(exif_xmp)) {
       return false;
     }
@@ -297,9 +299,8 @@ public:
     const auto&  exif_data = exif_xmp.exif_data();
     unsigned int w         = exif_data.findKey(Exiv2::ExifKey(ExifKey::width))->toUint32(),
                  h         = exif_data.findKey(Exiv2::ExifKey(ExifKey::height))->toUint32();
-    Intrinsic intrinsic    = IntrinsicFactory::build(exif_xmp.exif_data(), w, h);
-    Pose      pose         = PoseFactory::build(exif_xmp.xmp_data());
-    return ImgData{std::move(pose), std::move(intrinsic), std::move(exif_xmp), path, temp_save_path, cv::Size(w, h)};
+    Pose pose              = PoseFactory::build(exif_xmp.xmp_data());
+    return ImgData{std::move(pose), std::move(exif_xmp), path, temp_save_path, cv::Size(w, h)};
   }
 };
 } // namespace Ortho

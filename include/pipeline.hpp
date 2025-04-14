@@ -56,7 +56,7 @@ private:
 
   auto run(size_t tasks, std::function<void(int)>&& process) {
     std::vector<std::thread> threads;
-    progress.rerun();
+    progress.reset(tasks);
     auto v = generate_start_end(tasks, std::thread::hardware_concurrency())
              | std::views::transform([this, &process](auto&& start_end) {
                  auto&& [start, end] = start_end;
@@ -120,51 +120,72 @@ public:
   void rotate_rectify() {
     run(imgs_data.size(), [this](int i) {
       imgs_data[i].rotate_rectify();
-      cv::imwrite(temporary_save_path / imgs_data[i].get_img_name().string(), imgs_data[i].rotate_rectified().get().get());
+      // cv::imwrite(temporary_save_path / imgs_data[i].get_img_name().string(), imgs_data[i].img().get().get());
     });
   }
 
-  void match(int neighbor_proposal = 8, float iou_threshold = 0.5f) {
+  void match(int neighbor_proposal = 8) {
     MESSAGE("Finding image pairs with neighbor proposal {}", neighbor_proposal);
     auto match_pairs_ = find_neighbors(neighbor_proposal);
     MESSAGE("Found {} image pairs", match_pairs_.size());
-    MESSAGE("Filtering image pairs with IoU threshold {}", iou_threshold);
-    auto       v = match_pairs_ | std::views::filter([this, iou_threshold](auto&& pair) {
-               auto &img0 = imgs_data[pair.first], &img1 = imgs_data[pair.second];
-               if(cv::isContourConvex(img0.get_spans()) && cv::isContourConvex(img1.get_spans())) {
-                 return Ortho::iou(img0.get_spans(), img1.get_spans()) >= iou_threshold;
-               }
-               WARN("Image {} and {} has non-convex span", img0.get_img_name().string(), img1.get_img_name().string());
-               WARN(
-                   "Image1 yaw: {}, pitch: {}, roll: {}",
-                   img0.get_yaw().degrees(),
-                   img0.get_pitch().degrees(),
-                   img0.get_roll().degrees());
-               WARN(
-                   "Image2 yaw: {}, pitch: {}, roll: {}",
-                   img1.get_yaw().degrees(),
-                   img1.get_pitch().degrees(),
-                   img1.get_roll().degrees());
-               return false;
-             });
-    MatchPairs filtered_match_pairs(v.begin(), v.end());
-    MESSAGE("Found {} image pairs after filtering", filtered_match_pairs.size());
-    MESSAGE("Matching image pairs");
     if(FEATURE_EXTRACTION_METHOD == method_t::SUPERPOINT) {
       MESSAGE("Using SuperPoint feature extraction");
       Matcher matcher = matcher_factory<SuperPointExtractor>(temporary_save_path);
-      matcher.match(filtered_match_pairs, imgs_data, progress);
+      matcher.match(match_pairs_, imgs_data, progress);
     } else if(FEATURE_EXTRACTION_METHOD == method_t::DISK) {
       MESSAGE("Using DISK feature extraction");
       Matcher matcher = matcher_factory<DiskExtractor>(temporary_save_path);
-      matcher.match(filtered_match_pairs, imgs_data, progress);
+      matcher.match(match_pairs_, imgs_data, progress);
     } else {
       ERROR("Unknown feature extraction method");
       return;
     }
     std::ranges::move(
-        filtered_match_pairs | std::views::filter([](auto&& pair) { return pair.valid; }),
-        std::back_inserter(match_pairs));
+        match_pairs_ | std::views::filter([](auto&& pair) { return pair.valid; }), std::back_inserter(match_pairs));
+  }
+
+  void ortho_rectify() {
+    MESSAGE("Ortho-rectifying images");
+    run(imgs_data.size(), [this](int i) {
+      auto&&        img_data = imgs_data[i];
+      Points<float> src, dst;
+      auto          guard = img_data.img().get();
+      cv::Mat       dst_img, img{guard.get()};
+      guard.unlock();
+      for(const auto& [p2d, p3d] : img_data.points_2d_3d) {
+        src.push_back(p2d);
+        dst.emplace_back(p3d.x, p3d.y);
+        cv::putText(
+            img,
+            std::format("({:.2f}, {:.2f}, {:.2f})", p3d.x, p3d.y, p3d.z),
+            cv::Point(p2d.x + 3, p2d.y + 3),
+            cv::FONT_HERSHEY_SIMPLEX,
+            0.5,
+            cv::Scalar(0, 255, 0),
+            1);
+        cv::circle(img, cv::Point(p2d.x, p2d.y), 3, cv::Scalar(0, 255, 0), -1);
+      }
+      // cv::Rect rect = cv::boundingRect(dst);
+      // std::for_each(dst.begin(), dst.end(), [rect](auto&& p) {
+      //   p.x -= rect.x;
+      //   p.y -= rect.y;
+      // });
+      // try {
+      //   cv::Mat M = cv::findHomography(src, dst, cv::RANSAC);
+      //   cv::warpPerspective(img, dst_img, M, rect.size(), cv::INTER_LINEAR);
+      // } catch(const std::exception& e) {
+      //   ERROR("Error in ortho-rectification: {}", e.what());
+      //   return;
+      // }
+      cv::imwrite(
+          temporary_save_path
+              / std::format("{}_mark{}", img_data.get_img_stem().string(), img_data.get_img_extension().string()),
+          img);
+      // cv::imwrite(
+      //     temporary_save_path
+      //         / std::format("{}_ortho{}", img_data.get_img_stem().string(), img_data.get_img_extension().string()),
+      //     dst_img);
+    });
   }
 
   void stitch() {

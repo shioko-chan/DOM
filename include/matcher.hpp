@@ -31,64 +31,42 @@ template <typename E>
 class Matcher {
 private:
 
-  using Feature  = typename E::Feature;
-  using Features = typename E::Features;
+  using Feature   = typename E::Feature;
+  using Features  = typename E::Features;
+  using Matches   = std::vector<cv::DMatch>;
+  using KeyPoints = std::vector<cv::KeyPoint>;
 
-  InferEnv            lightglue;
-  fs::path            temporary_save_path;
-  E                   extractor;
-  std::vector<float>  kpts0, kpts1, desc0, desc1;
-  Features            lhs_features, rhs_features;
-  std::vector<size_t> lhs_idx, rhs_idx;
+  InferEnv           lightglue;
+  fs::path           temporary_save_path;
+  E                  extractor;
+  std::vector<float> kpts0, kpts1, desc0, desc1;
+  Features           lhs_features, rhs_features;
 
-  void generate_indexs_with_roi_filter(ImgData& lhs_img, ImgData& rhs_img) {
-    auto inter = intersection(lhs_img.get_spans(), rhs_img.get_spans());
-    if(inter.empty()) {
-      INFO("Image {} and image {} have no intersection!", lhs_img.get_img_name().string(), rhs_img.get_img_name().string());
-      return;
-    }
-    auto generate_idx = [](const Points<float>& area, const Features& features, std::vector<size_t>* idx_list) {
-      auto v = std::views::iota(0ul, features.size()) | std::views::filter([&area, &features](const size_t& idx) {
-                 return cv::pointPolygonTest(area, cv::Point2f(features[idx].pix_x, features[idx].pix_y), false) >= 0;
-               });
-      idx_list->assign(v.begin(), v.end());
-    };
-    generate_idx(lhs_img.world2img(inter), lhs_features, &lhs_idx);
-    generate_idx(rhs_img.world2img(inter), rhs_features, &rhs_idx);
-  }
-
-  bool set_input_(
-      const Features&            features,
-      const std::vector<size_t>& idx,
-      const std::string&         kpts_name,
-      std::vector<float>*        kpts,
-      const std::string&         desc_name,
-      std::vector<float>*        desc) {
-    if(features.empty() || idx.empty()) {
+  bool set_input(
+      const Features&     features,
+      const std::string&  kpts_name,
+      std::vector<float>* kpts,
+      const std::string&  desc_name,
+      std::vector<float>* desc) {
+    if(features.empty()) {
       return false;
     }
-    auto v = idx | std::views::transform([&features](const auto& idx) {
-               return std::array<float, 2>{features[idx].x, features[idx].y};
-             })
+    auto v = features
+             | std::views::transform([](const auto& feature) { return std::array<float, 2>{feature.x, feature.y}; })
              | std::views::join | std::views::common;
     kpts->assign(v.begin(), v.end());
-    auto w = idx | std::views::transform([&features](const auto& idx) { return features[idx].desc; }) | std::views::join
-             | std::views::common;
+    auto w = features | std::views::transform([&features](const auto& feature) { return feature.desc; })
+             | std::views::join | std::views::common;
     desc->assign(w.begin(), w.end());
-    lightglue.set_input(kpts_name, *kpts, {1, static_cast<unsigned int>(idx.size()), 2});
+    lightglue.set_input(kpts_name, *kpts, {1, static_cast<unsigned int>(features.size()), 2});
     lightglue.set_input(
         desc_name,
         *desc,
-        {1, static_cast<unsigned int>(idx.size()), static_cast<unsigned int>(Feature::descriptor_size)});
+        {1, static_cast<unsigned int>(features.size()), static_cast<unsigned int>(Feature::descriptor_size)});
     return true;
   }
 
-  bool set_input() {
-    return set_input_(lhs_features, lhs_idx, "kpts0", &kpts0, "desc0", &desc0)
-           && set_input_(rhs_features, rhs_idx, "kpts1", &kpts1, "desc1", &desc1);
-  }
-
-  auto infer_and_filter_by_score() {
+  Matches infer_and_filter_by_score() {
     std::vector<Ort::Value> res = lightglue.infer();
     const int      cnt_         = res[lightglue.get_output_index("matches0")].GetTensorTypeAndShapeInfo().GetShape()[0];
     const int64_t* matches_     = res[lightglue.get_output_index("matches0")].GetTensorData<int64_t>();
@@ -96,7 +74,15 @@ private:
     return filter_matches_by_score(matches_, scores_, cnt_);
   }
 
-  auto filter_matches_by_score_precise(const int64_t* matches, const float* scores, const int cnt) {
+  Matches infer_and_filter_by_score_precise() {
+    std::vector<Ort::Value> res = lightglue.infer();
+    const int      cnt_         = res[lightglue.get_output_index("matches0")].GetTensorTypeAndShapeInfo().GetShape()[0];
+    const int64_t* matches_     = res[lightglue.get_output_index("matches0")].GetTensorData<int64_t>();
+    const float*   scores_      = res[lightglue.get_output_index("mscores0")].GetTensorData<float>();
+    return filter_matches_by_score_precise(matches_, scores_, cnt_);
+  }
+
+  Matches filter_matches_by_score_precise(const int64_t* matches, const float* scores, int cnt) {
     std::unordered_map<int, std::pair<int, float>> match_score0, match_score1;
     for(int i = 0; i < cnt; ++i) {
       if(scores[i] >= LIGHTGLUE_THRESHOLD) {
@@ -113,16 +99,65 @@ private:
       }
     }
     auto v = match_score1
-             | std::views::transform([](const auto& pair) { return std::make_pair(pair.second.first, pair.first); });
-    return std::vector<std::pair<int, int>>(v.begin(), v.end());
+             | std::views::transform([](const auto& pair) { return cv::DMatch{pair.second.first, pair.first, 0}; });
+    return Matches{v.begin(), v.end()};
   }
 
-  auto filter_matches_by_score(const int64_t* matches, const float* scores, const int cnt) {
+  Matches filter_matches_by_score(const int64_t* matches, const float* scores, int cnt) {
     auto v = std::views::iota(0, cnt)
              | std::views::filter([&scores](const auto& idx) { return scores[idx] >= LIGHTGLUE_THRESHOLD; })
-             | std::views::transform(
-                 [&matches](const auto& idx) { return std::make_pair(matches[idx * 2], matches[idx * 2 + 1]); });
-    return std::vector<std::pair<int, int>>(v.begin(), v.end());
+             | std::views::transform([&matches](const auto& idx) {
+                 return cv::DMatch{static_cast<int>(matches[idx * 2]), static_cast<int>(matches[idx * 2 + 1]), 0};
+               });
+    return Matches{v.begin(), v.end()};
+  }
+
+  static cv::Mat draw_matchlines(
+      ImgData&             img_lhs,
+      ImgData&             img_rhs,
+      const Matches&       matches,
+      const Points<float>& points_lhs,
+      const Points<float>& points_rhs) {
+    cv::Mat img0;
+    {
+      auto guard = img_lhs.img().get();
+      guard.get().copyTo(img0);
+    }
+    cv::Mat img1;
+    {
+      auto guard = img_rhs.img().get();
+      guard.get().copyTo(img1);
+    }
+    auto points2keypoints = [](const auto& points) {
+      return points | std::views::transform([](const auto& point) { return cv::KeyPoint(point.x, point.y, 1.0f); });
+    };
+    auto      v_lhs = points2keypoints(points_lhs);
+    auto      v_rhs = points2keypoints(points_rhs);
+    KeyPoints keypoints_lhs{v_lhs.begin(), v_lhs.end()}, keypoints_rhs{v_rhs.begin(), v_rhs.end()};
+    cv::Mat   res;
+    cv::drawMatches(img0, keypoints_lhs, img1, keypoints_rhs, matches, res, cv::Scalar::all(-1), cv::Scalar(255, 255, 255));
+    return res;
+  }
+
+  static auto features2points(const auto& features, cv::Size size) {
+    auto [w, h]     = size;
+    const float wf2 = w / 2.0f, hf2 = h / 2.0f;
+    const float max2 = std::max(wf2, hf2);
+    return features | std::views::transform([wf2, hf2, max2](const auto& feature) {
+             return Point<float>{feature.x * max2 + wf2, feature.y * max2 + hf2};
+           });
+  };
+
+  static cv::Mat draw_matchlines(
+      ImgData&        img_lhs,
+      ImgData&        img_rhs,
+      const Matches&  matches,
+      const Features& features_lhs,
+      const Features& features_rhs) {
+    auto v_lhs = features2points(features_lhs, img_lhs.get_size());
+    auto v_rhs = features2points(features_rhs, img_rhs.get_size());
+    return draw_matchlines(
+        img_lhs, img_rhs, matches, Points<float>{v_lhs.begin(), v_lhs.end()}, Points<float>{v_rhs.begin(), v_rhs.end()});
   }
 
 public:
@@ -137,179 +172,127 @@ public:
       int      batch_cnt = 0;
       ImgData& lhs_img   = imgs_data[batch.front().first];
       lhs_features       = std::move(extractor.get_features(lhs_img));
+      if(!set_input(lhs_features, "kpts0", &kpts0, "desc0", &desc0)) {
+        INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
+        continue;
+      }
+      auto [lhs_w, lhs_h] = lhs_img.get_size();
       for(auto&& pair : batch) {
         batch_cnt += 1;
         ImgData& rhs_img = imgs_data[pair.second];
         rhs_features     = std::move(extractor.get_features(rhs_img));
-        generate_indexs_with_roi_filter(lhs_img, rhs_img);
-        if(!set_input()) {
-          INFO(
-              "Image {} and image {} have no valid features after filter!",
-              lhs_img.get_img_name().string(),
-              rhs_img.get_img_name().string());
+        if(!set_input(rhs_features, "kpts1", &kpts1, "desc1", &desc1)) {
+          INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
           continue;
         }
-        auto matches = infer_and_filter_by_score();
+        auto [rhs_w, rhs_h]         = rhs_img.get_size();
+        auto                matches = infer_and_filter_by_score();
+        const unsigned long len     = matches.size();
         DEBUG(
             "Image {} and image {} have {} matches after threshold filter!",
             lhs_img.get_img_name().string(),
             rhs_img.get_img_name().string(),
-            matches.size());
-
-        if(matches.size() < 4) {
+            len);
+        if(matches.empty()) {
           INFO(
-              "Image {} and image {}. Not enough matches for RANSAC. At least 4 matches are needed, while only {} matches are found",
-              lhs_img.get_img_name().string(),
-              rhs_img.get_img_name().string(),
-              matches.size());
-          continue;
-        }
-
-        cv::Mat img2;
-        {
-          auto img2_ = lhs_img.get_rotate_rectified();
-          img2_.get().copyTo(img2);
-        }
-        cv::Mat img1;
-        {
-          auto img1_ = rhs_img.get_rotate_rectified();
-          img1_.get().copyTo(img1);
-        }
-        auto              lhs_pnts = lhs_img.get_spans();
-        auto              rhs_pnts = rhs_img.get_spans();
-        auto              inter    = intersection(lhs_pnts, rhs_pnts);
-        std::stringstream ss, ss1;
-        ss1 << "lhs_pnts: " << lhs_pnts << "rhs_pnts: " << rhs_pnts << "inter: " << inter;
-        INFO("{}", ss1.str());
-        ss << "lhs_ world2img: " << lhs_img.world2img(inter) << "rhs_ world2img: " << rhs_img.world2img(inter);
-        INFO("{}", ss.str());
-        std::vector<std::vector<cv::Point>> lhs_img_pnts(1), rhs_img_pnts(1);
-        for(auto&& p : lhs_img.world2img(inter)) {
-          lhs_img_pnts[0].emplace_back(cv::Point{cv::Point(p.x, p.y)});
-        }
-        for(auto&& p : rhs_img.world2img(inter)) {
-          rhs_img_pnts[0].emplace_back(cv::Point{cv::Point(p.x, p.y)});
-        }
-        cv::drawContours(img2, lhs_img_pnts, -1, cv::Scalar(0, 255, 0), 2);
-        cv::drawContours(img1, rhs_img_pnts, -1, cv::Scalar(0, 255, 0), 2);
-        // cv::imshow("lhs_img", img1);
-        // cv::imshow("rhs_img", img2);
-        // cv::waitKey(0);
-
-        cv::Mat img2_mask;
-        {
-          auto img2_mask_ = lhs_img.get_rotate_rectified_mask();
-          img2_mask_.get().copyTo(img2_mask);
-        }
-        cv::Mat img1_mask;
-        {
-          auto img1_mask_ = rhs_img.get_rotate_rectified_mask();
-          img1_mask_.get().copyTo(img1_mask);
-        }
-
-        Points<float> points0, points1;
-        points0.reserve(matches.size());
-        points1.reserve(matches.size());
-        for(auto&& [lhs, rhs] : matches) {
-          points0.emplace_back(lhs_features[lhs_idx[lhs]].pix_x, lhs_features[lhs_idx[lhs]].pix_y);
-          points1.emplace_back(rhs_features[rhs_idx[rhs]].pix_x, rhs_features[rhs_idx[rhs]].pix_y);
-        }
-        cv::Mat ransac_filter;
-        // cv::Mat M = cv::estimateAffinePartial2D(points0, points1, ransac_filter, cv::RANSAC, 0.5, 200000ul, 0.99, 100ul);
-        cv::Mat M = cv::findHomography(points0, points1, cv::RANSAC, 0.5, ransac_filter, 200000ul, 0.995);
-        M.convertTo(M, CV_32FC1);
-
-        std::vector<cv::DMatch> inlier_matches;
-        for(size_t i = 0; i < points0.size(); i++) {
-          if(ransac_filter.at<unsigned char>(i) != 0) {
-            inlier_matches.emplace_back(i, i, 0.0);
-          }
-        }
-
-        if(M.empty()) {
-          INFO(
-              "Image {} and image {}. Estimate affine transform failed.",
+              "Image {} and image {} have no valid matches!",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string());
           continue;
         }
-        const int inlier_cnt = cv::countNonZero(ransac_filter);
-        DEBUG(
-            "Image {} and image {} have {} matches after RANSAC!",
-            lhs_img.get_img_name().string(),
-            rhs_img.get_img_name().string(),
-            inlier_cnt);
-        if(inlier_cnt < INLIER_CNT_THRESHOLD) {
-          INFO(
-              "Image {} and image {}. Not enough inlier matches. Threshold is {} matches, while only {} matches are found",
+        Points<float> points0, points1;
+        {
+          auto p0v = features2points(
+              matches | std::views::transform([this](const auto& match) { return lhs_features[match.queryIdx]; }),
+              lhs_img.get_size());
+          auto p1v = features2points(
+              matches | std::views::transform([this](const auto& match) { return rhs_features[match.trainIdx]; }),
+              rhs_img.get_size());
+          points0.assign(p0v.begin(), p0v.end());
+          points1.assign(p1v.begin(), p1v.end());
+#ifdef ENABLE_MIDDLE_OUTPUT
+          cv::imwrite(
+              temporary_save_path
+                  / std::format("{}_{}_matches.jpg", lhs_img.get_img_stem().string(), rhs_img.get_img_stem().string()),
+              draw_matchlines(lhs_img, rhs_img, matches, lhs_features, rhs_features));
+#endif
+        }
+        cv::Mat inlier_mask;
+        cv::findFundamentalMat(points0, points1, cv::FM_RANSAC, 1.0, 0.99, inlier_mask);
+        Points<float> points0_filtered, points1_filtered;
+        Matches       matches_filtered;
+        {
+          auto idx_filtered = std::views::iota(0ul, len) | std::views::filter([&inlier_mask](const auto& idx) {
+                                return inlier_mask.at<unsigned char>(idx, 0) != 0;
+                              });
+          auto p0v =
+              idx_filtered | std::views::transform([&points0](const auto& idx) { return std::move(points0[idx]); });
+          auto p1v =
+              idx_filtered | std::views::transform([&points1](const auto& idx) { return std::move(points1[idx]); });
+          points0_filtered.assign(p0v.begin(), p0v.end());
+          points1_filtered.assign(p1v.begin(), p1v.end());
+          auto matches_filtered_v =
+              idx_filtered | std::views::transform([&matches](const auto& idx) { return matches[idx]; });
+          matches_filtered.assign(matches_filtered_v.begin(), matches_filtered_v.end());
+          DEBUG(
+              "Image {} and image {} have {} matches after RANSAC filter!",
               lhs_img.get_img_name().string(),
               rhs_img.get_img_name().string(),
-              INLIER_CNT_THRESHOLD,
-              inlier_cnt);
+              points0_filtered.size());
+          if(points0_filtered.size() < 8) {
+            INFO(
+                "Image {} and image {} have no enough matches after RANSAC filter, only {} matches!",
+                lhs_img.get_img_name().string(),
+                rhs_img.get_img_name().string(),
+                points0_filtered.size());
+            continue;
+          }
+#ifdef ENABLE_MIDDLE_OUTPUT
+          cv::imwrite(
+              temporary_save_path
+                  / std::format(
+                      "{}_{}_matches_filtered.jpg", lhs_img.get_img_stem().string(), rhs_img.get_img_stem().string()),
+              draw_matchlines(lhs_img, rhs_img, matches_filtered, lhs_features, rhs_features));
+#endif
+        }
+        cv::Mat points3h;
+        try {
+          cv::triangulatePoints(
+              lhs_img.projection_matrix(), rhs_img.projection_matrix(), points0_filtered, points1_filtered, points3h);
+        } catch(const std::exception& e) {
+          ERROR("Error in triangulation: {}", e.what());
           continue;
         }
-
-        // {
-        //   Points<float> corners =
-        //       {Point<float>(0, 0),
-        //        Point<float>(img2.cols - 1, 0),
-        //        Point<float>(img2.cols - 1, img2.rows - 1),
-        //        Point<float>(0, img2.rows - 1)};
-        //   Points<float> corners1 =
-        //       {Point<float>(0, 0),
-        //        Point<float>(img1.cols - 1, 0),
-        //        Point<float>(img1.cols - 1, img1.rows - 1),
-        //        Point<float>(0, img1.rows - 1)};
-        //   cv::transform(corners, corners, M);
-        //   corners.insert(corners.end(), corners1.begin(), corners1.end());
-        //   auto        v = corners | std::views::transform([](const Point<float>& p) {
-        //              return Point<int>(abs_ceil(p.x), abs_ceil(p.y));
-        //            });
-        //   Points<int> corners_int(v.begin(), v.end());
-        //   cv::Rect    rect = cv::boundingRect(corners_int);
-        //   std::for_each(corners.begin(), corners.end(), [&rect](Point<float>& p) {
-        //     p.x -= rect.x;
-        //     p.y -= rect.y;
-        //   });
-        //   cv::Mat result1(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
-        //   img1.copyTo(result1(cv::Rect(corners[4].x, corners[4].y, img1.cols, img1.rows)));
-        //   cv::Mat       result2(rect.height, rect.width, img1.type(), cv::Scalar(0, 0, 0));
-        //   Points<float> from =
-        //       {Point<float>(0, 0),
-        //        Point<float>(img2.cols - 1, 0),
-        //        Point<float>(img2.cols - 1, img2.rows - 1),
-        //        Point<float>(0, img2.rows - 1)};
-        //   Points<float> to(corners.begin(), corners.begin() + 4);
-        //   cv::Mat       M = cv::estimateAffinePartial2D(from, to);
-        //   cv::warpAffine(img2, result2, M, result1.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0,
-        //   0)); cv::Mat avg; cv::addWeighted(result1, 0.5, result2, 0.5, 0, avg); cv::Mat mask1(rect.height,
-        //   rect.width, img1_mask.type(), cv::Scalar(0)); img1_mask.copyTo(mask1(cv::Rect(corners[4].x, corners[4].y,
-        //   img1_mask.cols, img1_mask.rows))); cv::Mat mask2(rect.height, rect.width, img1_mask.type(), cv::Scalar(0));
-        //   cv::warpAffine(img2_mask, mask2, M, result1.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
-        //   cv::Mat res;
-        //   result1.copyTo(res, mask1);
-        //   result2.copyTo(res, mask2);
-        //   avg.copyTo(res, mask1 & mask2);
-        //   if(!fs::exists(temporary_save_path / "foo")) {
-        //     fs::create_directories(temporary_save_path / "foo");
-        //   }
-        //   cv::imwrite(
-        //       temporary_save_path / "foo"
-        //           / (lhs_img.get_img_stem().string() + "_" + rhs_img.get_img_stem().string() + "_avg.jpg"),
-        //       res);
-        //   auto v0 = points0 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
-        //   auto v1 = points1 | std::views::transform([](const Point<float>& p) { return cv::KeyPoint(p.x, p.y, 1); });
-        //   std::vector<cv::KeyPoint> kpts0(v0.begin(), v0.end()), kpts1(v1.begin(), v1.end());
-        //   // cv::drawKeypoints(img1, kpts0, img1, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-        //   // cv::drawKeypoints(img2, kpts1, img2, cv::Scalar(0, 255, 0), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-        //   cv::Mat resultImg;
-        //   cv::drawMatches(img2, kpts0, img1, kpts1, inlier_matches, resultImg);
-        //   cv::imwrite(
-        //       temporary_save_path / "foo"
-        //           / (lhs_img.get_img_stem().string() + "_" + rhs_img.get_img_stem().string() + "_matches.jpg"),
-        //       resultImg);
-        // }
-        pair.M     = std::move(M);
+        std::vector<cv::Point3f> obj;
+        for(int i = 0; i < points3h.cols; i++) {
+          points3h.col(i) /= points3h.at<float>(3, i);
+          cv::Point3f point3d{points3h.at<float>(0, i), points3h.at<float>(1, i), points3h.at<float>(2, i)};
+          lhs_img.points_2d_3d.emplace(points0_filtered[i], point3d);
+          rhs_img.points_2d_3d.emplace(points1_filtered[i], point3d);
+          obj.push_back(point3d);
+        }
+        auto reprojection = [&obj](auto& img) {
+          Points<float> pnts;
+          cv::Mat       rvec;
+          cv::Rodrigues(img.R(), rvec);
+          cv::projectPoints(obj, rvec, img.t(), img.K(), img.D(), pnts);
+          return pnts;
+        };
+        auto  pnts_lhs      = reprojection(lhs_img);
+        auto  pnts_rhs      = reprojection(rhs_img);
+        float error_lhs_sum = 0, error_rhs_sum = 0;
+        for(int i = 0; i < pnts_lhs.size(); i++) {
+          error_lhs_sum += cv::norm(pnts_lhs[i] - points0_filtered[i]);
+          error_rhs_sum += cv::norm(pnts_rhs[i] - points1_filtered[i]);
+        }
+        float error_lhs_avg = error_lhs_sum / points0_filtered.size(),
+              error_rhs_avg = error_rhs_sum / points1_filtered.size();
+        WARN(
+            "Image {} and image {} have average reprojection error {} and {}!",
+            lhs_img.get_img_name().string(),
+            rhs_img.get_img_name().string(),
+            error_lhs_avg,
+            error_rhs_avg);
         pair.valid = true;
       }
       progress.update(batch_cnt);

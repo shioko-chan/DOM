@@ -116,6 +116,8 @@ public:
 
   const cv::Mat& R() const { return R_; }
 
+  cv::Mat t() const { return cv::Mat_<float>(3, 1) << coord.x, coord.y, -altitude; }
+
   friend std::ostream& operator<<(std::ostream& os, const Pose& pose) {
     os << "Yaw: " << pose.yaw << "\n"
        << "Pitch: " << pose.pitch << "\n"
@@ -236,49 +238,4 @@ public:
 };
 } // namespace Ortho
 
-namespace std {
-template <>
-struct formatter<cv::Mat> : formatter<string> {
-  template <typename FormatContext>
-  auto format(const cv::Mat& mat, FormatContext& ctx) {
-    std::stringstream ss;
-    ss << mat;
-    return format_to(ctx.out(), "{}", ss.str());
-  }
-};
-
-template <>
-struct formatter<Ortho::Angle> : formatter<string> {
-  template <typename FormatContext>
-  auto format(const Ortho::Angle& angle, FormatContext& ctx) {
-    return format_to(ctx.out(), "({} rad, {} degree)", angle.radians(), angle.degrees());
-  }
-};
-
-template <>
-struct formatter<Ortho::Pose> : formatter<string> {
-  template <typename FormatContext>
-  auto format(const Ortho::Pose& angle, FormatContext& ctx) {
-    return format_to(
-        ctx.out(),
-        "Yaw: {}, Pitch: {}, Roll: {}, Latitude: {}, Longitude: {}, Altitude: {}\nR: {}",
-        angle.yaw,
-        angle.pitch,
-        angle.roll,
-        angle.latitude,
-        angle.longitude,
-        angle.altitude,
-        angle.R());
-  }
-};
-
-template <>
-struct formatter<Ortho::Intrinsic> : formatter<string> {
-  template <typename FormatContext>
-  auto format(const Ortho::Intrinsic& intrinsic, FormatContext& ctx) {
-    return format_to(ctx.out(), "Camera Matrix: {}\n Distortion Coefficients: {}", intrinsic.K(), intrinsic.D());
-  }
-};
-
-} // namespace std
 #endif

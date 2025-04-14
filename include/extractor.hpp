@@ -31,14 +31,11 @@ struct Feature {
   static constexpr size_t descriptor_size = N;
 
   float                              x, y;
-  int                                pix_x, pix_y;
   std::array<float, descriptor_size> desc;
 
   friend std::ofstream& operator<<(std::ofstream& ofs, const Feature& f) {
     ofs.write(reinterpret_cast<const char*>(&f.x), sizeof(float));
     ofs.write(reinterpret_cast<const char*>(&f.y), sizeof(float));
-    ofs.write(reinterpret_cast<const char*>(&f.pix_x), sizeof(int));
-    ofs.write(reinterpret_cast<const char*>(&f.pix_y), sizeof(int));
     ofs.write(reinterpret_cast<const char*>(f.desc.data()), descriptor_size * sizeof(float));
     return ofs;
   }
@@ -46,8 +43,6 @@ struct Feature {
   friend std::ifstream& operator>>(std::ifstream& ifs, Feature& f) {
     ifs.read(reinterpret_cast<char*>(&f.x), sizeof(float));
     ifs.read(reinterpret_cast<char*>(&f.y), sizeof(float));
-    ifs.read(reinterpret_cast<char*>(&f.pix_x), sizeof(int));
-    ifs.read(reinterpret_cast<char*>(&f.pix_y), sizeof(int));
     ifs.read(reinterpret_cast<char*>(f.desc.data()), descriptor_size * sizeof(float));
     return ifs;
   }
@@ -203,18 +198,17 @@ public:
       return features;
     }
 
-    auto    img_guard     = img_data.get_rotate_rectified();
+    auto    img_guard     = img_data.get_img();
     cv::Mat img_processed = img_guard.get().clone();
     img_guard.unlock();
     reshape(&img_processed);
     preprocess(&img_processed);
 
-    auto    mask_guard     = img_data.get_rotate_rectified_mask();
+    auto    mask_guard     = img_data.get_mask();
     cv::Mat mask_processed = mask_guard.get().clone();
     mask_guard.unlock();
-
-    const int64_t h0 = mask_processed.rows, w0 = mask_processed.cols;
     reshape(&mask_processed);
+
     const int64_t h = mask_processed.rows, w = mask_processed.cols;
 
     std::vector<float> img_vec(img_processed.begin<float>(), img_processed.end<float>());
@@ -232,7 +226,7 @@ public:
     const int64_t* kps    = res[env.get_output_index("keypoints")].GetTensorData<int64_t>();
     const float *  scores = res[env.get_output_index("scores")].GetTensorData<float>(),
                 *descs    = res[env.get_output_index("descriptors")].GetTensorData<float>();
-    INFO("Image {} has {} keypoints detected!", img_data.get_img_name().string(), cnt);
+    DEBUG("Image {} has {} keypoints detected!", img_data.get_img_name().string(), cnt);
     auto v = std::views::iota(0, cnt) | std::views::filter([this, &scores, &mask_processed, &kps](const auto& idx) {
                return scores[idx] >= get_threshold()
                       && mask_processed.at<unsigned char>(kps[idx * 2 + 1], kps[idx * 2]) != 0;
@@ -246,19 +240,17 @@ public:
           [&scores](const size_t& lhs, const size_t& rhs) { return scores[lhs] > scores[rhs]; });
       indices.resize(get_keypoint_maxcnt());
     }
-    auto     u = indices | std::views::transform([kps, descs, w, h, w0, h0](const size_t& idx) {
-               std::array<float, descriptor_size> descriptor;
-               std::copy_n(descs + idx * descriptor_size, descriptor_size, descriptor.begin());
-               const float wf2 = w / 2.0f, hf2 = h / 2.0f;
-               return Feature{
-                       .x     = (kps[idx * 2] - wf2) / wf2,
-                       .y     = (kps[idx * 2 + 1] - hf2) / hf2,
-                       .pix_x = static_cast<int>(std::round(1.0f * kps[idx * 2] / w * w0)),
-                       .pix_y = static_cast<int>(std::round(1.0f * kps[idx * 2 + 1] / h * h0)),
-                       .desc  = std::move(descriptor)};
-             });
+    const float wf2 = w / 2.0f, hf2 = h / 2.0f;
+    const float max2 = std::max(wf2, hf2);
+    auto        u =
+        indices | std::views::transform([kps, descs, wf2, hf2, max2](const size_t& idx) {
+          std::array<float, descriptor_size> descriptor;
+          std::copy_n(descs + idx * descriptor_size, descriptor_size, descriptor.begin());
+          return Feature{
+              .x = (kps[idx * 2] - wf2) / max2, .y = (kps[idx * 2 + 1] - hf2) / max2, .desc = std::move(descriptor)};
+        });
     Features filtered_features(u.begin(), u.end());
-    INFO("Image {} has {} keypoints after filter.", img_data.get_img_name().string(), filtered_features.size() / 2);
+    DEBUG("Image {} has {} keypoints after filter.", img_data.get_img_name().string(), filtered_features.size() / 2);
     mem.register_node(
         path.string(),
         std::make_unique<FeaturesMem>(filtered_features),

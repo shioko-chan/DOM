@@ -31,7 +31,11 @@ target_compile_definitions(orthophoto PRIVATE SUPERPOINT_WEIGHT="${MODEL_FILE_PR
 target_compile_definitions(orthophoto PRIVATE SUPERPOINT_LIGHTGLUE_WEIGHT="${MODEL_FILE_PREFIX}/superpoint_lightglue_fused.onnx")
 target_compile_definitions(orthophoto PRIVATE DISK_WEIGHT="${MODEL_FILE_PREFIX}/disk.onnx")
 target_compile_definitions(orthophoto PRIVATE DISK_LIGHTGLUE_WEIGHT="${MODEL_FILE_PREFIX}/disk_lightglue_fused.onnx")
-target_compile_definitions(orthophoto PRIVATE ${LOG_LEVEL})
+target_compile_definitions(orthophoto PRIVATE LOGLEVEL_${LOG_LEVEL})
+
+if(ENABLE_MIDDLE_OUTPUT)
+  target_compile_definitions(orthophoto PRIVATE ENABLE_MIDDLE_OUTPUT)
+endif()
 
 target_link_libraries(orthophoto PUBLIC
   exiv2
