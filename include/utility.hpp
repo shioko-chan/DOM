@@ -119,6 +119,11 @@ cv::Rect2f boundingRect(const Range& points) {
   return cv::Rect2f(min_point.x, min_point.y, max_point.x - min_point.x, max_point.y - min_point.y);
 }
 
+cv::Mat get_projection_matrix(const cv::Mat& R, const cv::Mat& t, const cv::Mat& K) {
+  cv::Mat M;
+  cv::hconcat(R, t, M);
+  return K * M;
+}
 } // namespace Ortho
 
 namespace cv {

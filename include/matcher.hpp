@@ -248,15 +248,66 @@ public:
         std::vector<cv::Point3f> obj;
         for(int i = 0; i < points3h.cols; i++) {
           points3h.col(i) /= points3h.at<float>(3, i);
-          cv::Point3f point3d{points3h.at<float>(0, i), points3h.at<float>(1, i), points3h.at<float>(2, i)};
-          lhs_img.points_2d_3d.emplace(points0[i], point3d);
-          rhs_img.points_2d_3d.emplace(points1[i], point3d);
-          obj.push_back(point3d);
+          obj.emplace_back(points3h.at<float>(0, i), points3h.at<float>(1, i), points3h.at<float>(2, i));
         }
-        Ortho::ba(points0, points1, lhs_img, rhs_img, obj);
-        // pair.lhs_pnts = std::move(points0);
-        // pair.rhs_pnts = std::move(points1);
-        // pair.points3d = std::move(obj);
+
+        float error_lhs_ = 0, error_rhs_ = 0;
+        for(const auto& [p0, p1, wp] : std::views::zip(points0, points1, obj)) {
+          if(std::isnan(wp.x) || std::isnan(wp.y) || std::isnan(wp.z)) {
+            continue;
+          }
+          cv::Mat wp_homo(4, 1, CV_32F);
+          wp_homo.at<float>(0)    = wp.x;
+          wp_homo.at<float>(1)    = wp.y;
+          wp_homo.at<float>(2)    = wp.z;
+          wp_homo.at<float>(3)    = 1.0f;
+          cv::Mat proj_lhs        = lhs_img.projection_matrix() * wp_homo;
+          cv::Mat proj_rhs        = rhs_img.projection_matrix() * wp_homo;
+          float   projected_lhs_x = proj_lhs.at<float>(0) / proj_lhs.at<float>(2);
+          float   projected_lhs_y = proj_lhs.at<float>(1) / proj_lhs.at<float>(2);
+          float   projected_rhs_x = proj_rhs.at<float>(0) / proj_rhs.at<float>(2);
+          float   projected_rhs_y = proj_rhs.at<float>(1) / proj_rhs.at<float>(2);
+          float   error_lhs       = std::hypot(projected_lhs_x - p0.x, projected_lhs_y - p0.y);
+          float   error_rhs       = std::hypot(projected_rhs_x - p1.x, projected_rhs_y - p1.y);
+          error_lhs_ += error_lhs;
+          error_rhs_ += error_rhs;
+        }
+
+        LOG_INFO("BEFORE {} {}", error_lhs_, error_rhs_);
+        error_lhs_ = 0, error_rhs_ = 0;
+        auto [R_lhs, R_rhs, t_lhs, t_rhs, K_lhs, K_rhs, world_pnts] = Ortho::ba(points0, points1, lhs_img, rhs_img, obj);
+        cv::Mat projection_lhs = get_projection_matrix(R_lhs, t_lhs, K_lhs),
+                projection_rhs = get_projection_matrix(R_rhs, t_rhs, K_rhs);
+        Points<float> points0_f, points1_f;
+        for(const auto& [p0, p1, wp] : std::views::zip(points0, points1, world_pnts)) {
+          if(std::isnan(wp.x) || std::isnan(wp.y) || std::isnan(wp.z)) {
+            continue;
+          }
+          cv::Mat proj_lhs        = projection_lhs * wp;
+          float   projected_lhs_x = proj_lhs.at<float>(0) / proj_lhs.at<float>(2);
+          float   projected_lhs_y = proj_lhs.at<float>(1) / proj_lhs.at<float>(2);
+          float   error_lhs       = std::hypot(projected_lhs_x - p0.x, projected_lhs_y - p0.y);
+          error_lhs_ += error_lhs;
+
+          cv::Mat proj_rhs        = projection_rhs * wp;
+          float   projected_rhs_x = proj_rhs.at<float>(0) / proj_rhs.at<float>(2);
+          float   projected_rhs_y = proj_rhs.at<float>(1) / proj_rhs.at<float>(2);
+          float   error_rhs       = std::hypot(projected_rhs_x - p1.x, projected_rhs_y - p1.y);
+          error_rhs_ += error_rhs;
+
+          const float max_reprojection_error = 2.0f;
+          if(error_lhs > max_reprojection_error || error_rhs > max_reprojection_error) {
+            continue;
+          }
+          points0_f.push_back(p0);
+          points1_f.push_back(p1);
+          lhs_img.points_2d_3d.emplace(p0, wp);
+          rhs_img.points_2d_3d.emplace(p1, wp);
+        }
+
+        LOG_INFO("AFTER {} {}", error_lhs_, error_rhs_);
+
+        LOG_INFO("{} matches!", points0_f.size());
         pair.valid = true;
       }
       progress.update(batch_cnt);
