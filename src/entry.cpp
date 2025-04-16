@@ -34,7 +34,7 @@ int main(int argc, char* const argv[]) {
   process.rotate_rectify();
   MESSAGE("[3/5] Matching neighbor images");
   process.match(NEIGHBOR_PROPOSAL);
-  process.ortho_rectify();
+  // process.ortho_rectify();
   MESSAGE("[4/5] Stitching panorama");
   // process.stitch();
   return 0;

@@ -222,12 +222,12 @@ public:
       throw std::runtime_error("Error: Image is empty");
     }
     img_vec.clear();
-    const int      cnt    = res[env.get_output_index("keypoints")].GetTensorTypeAndShapeInfo().GetShape()[1];
+    const size_t   cnt    = res[env.get_output_index("keypoints")].GetTensorTypeAndShapeInfo().GetShape()[1];
     const int64_t* kps    = res[env.get_output_index("keypoints")].GetTensorData<int64_t>();
     const float *  scores = res[env.get_output_index("scores")].GetTensorData<float>(),
                 *descs    = res[env.get_output_index("descriptors")].GetTensorData<float>();
     LOG_DEBUG("Image {} has {} keypoints detected!", img_data.get_img_name().string(), cnt);
-    auto v = std::views::iota(0, cnt) | std::views::filter([this, &scores, &mask_processed, &kps](const auto& idx) {
+    auto v = std::views::iota(0ul, cnt) | std::views::filter([this, &scores, &mask_processed, &kps](const auto& idx) {
                return scores[idx] >= get_threshold()
                       && mask_processed.at<unsigned char>(kps[idx * 2 + 1], kps[idx * 2]) != 0;
              });

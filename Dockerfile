@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     libatlas-base-dev \
     libeigen3-dev \
     libsuitesparse-dev \
+    libmetis-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt

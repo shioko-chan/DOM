@@ -80,6 +80,7 @@
     "cSpell.words": [
         "cudnn",
         "DCMAKE",
+        "Eigen",
         "exiv",
         "Exiv",
         "hconcat",
@@ -97,6 +98,7 @@
         "ONNXRUNTIME",
         "orthophoto",
         "pnts",
+        "Quaterniond",
         "RANSAC",
         "Reprojection",
         "STREQUAL",

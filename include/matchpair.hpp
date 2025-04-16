@@ -11,10 +11,10 @@ public:
 
   int first, second;
 
-  bool         valid = false;
-  cv::Mat      M;
-  Point<float> lhs_pnts, rhs_pnts;
-  cv::Point3f  pnts3d;
+  bool          valid = false;
+  cv::Mat       M;
+  Point<float>  lhs_pnts, rhs_pnts;
+  Point3<float> pnts3d;
 
   MatchPair() = default;
 

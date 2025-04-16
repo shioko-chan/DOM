@@ -124,7 +124,7 @@ public:
 
   cv::Mat norm_projection_matrix() {
     cv::Mat M;
-    cv::hconcat(R(), t(), M);
+    cv::hconcat(R(), R() * t(), M);
     return M;
   }
 
@@ -158,7 +158,7 @@ public:
         std::move(mask));
   }
 
-  std::unordered_map<cv::Point2f, cv::Point3f, Point2fHasher> points_2d_3d;
+  std::unordered_map<cv::Point2f, Point3<float>, Point2fHasher> points_2d_3d;
 
 private:
 
