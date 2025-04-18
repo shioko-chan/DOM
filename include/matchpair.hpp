@@ -4,17 +4,19 @@
 #include <iostream>
 #include <utility>
 
+#include "types.hpp"
+
 namespace Ortho {
 
 class MatchPair {
 public:
 
-  int first, second;
-
+  int           first, second;
   bool          valid = false;
   cv::Mat       M;
   Point<float>  lhs_pnts, rhs_pnts;
   Point3<float> pnts3d;
+  Matches       matches;
 
   MatchPair() = default;
 

@@ -11,8 +11,6 @@
 
 namespace Ortho {
 
-using PointsPipeline = std::function<Points<float>(const Points<float>&)>;
-
 constexpr float square_size{4096};
 
 struct RectifyResult {

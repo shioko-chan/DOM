@@ -10,6 +10,7 @@
 #include <onnxruntime_cxx_api.h>
 
 #include "log.hpp"
+#include "types.hpp"
 
 namespace Ortho {
 static Ort::Env& ort_env() {
@@ -21,7 +22,7 @@ class InferEnv {
 private:
 
   std::unique_ptr<Ort::Session> session;
-  std::vector<Ort::Value>       inputs;
+  OrtValues                     inputs;
   std::vector<std::string>      input_names, output_names;
   std::vector<const char*>      input_names_cstr, output_names_cstr;
 
@@ -85,7 +86,7 @@ public:
             shape.size()));
   }
 
-  std::vector<Ort::Value> infer() {
+  OrtValues infer() {
     return session->Run(
         Ort::RunOptions{nullptr},
         input_names_cstr.data(),

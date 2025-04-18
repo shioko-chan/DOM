@@ -4,7 +4,7 @@
 namespace Ortho {
 
 constexpr float LIGHTGLUE_THRESHOLD{0.2f};
-constexpr int   INLIER_CNT_THRESHOLD{4};
+constexpr int   MATCH_CNT_THRESHOLD{100};
 
 constexpr float SUPERPOINT_THRESHOLD{0.05f};
 constexpr int   SUPERPOINT_KEYPOINT_MAXCNT{1024};

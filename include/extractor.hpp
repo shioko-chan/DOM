@@ -20,9 +20,8 @@
 #include "mem.hpp"
 #include "models.h"
 #include "ort.hpp"
+#include "types.hpp"
 #include "utility.hpp"
-
-namespace fs = std::filesystem;
 
 namespace Ortho {
 

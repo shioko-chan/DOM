@@ -13,10 +13,8 @@
 
 #include "image.hpp"
 #include "models.h"
+#include "types.hpp"
 #include "utility.hpp"
-
-namespace fs    = std::filesystem;
-namespace views = std::views;
 
 namespace Ortho {
 

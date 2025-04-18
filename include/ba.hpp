@@ -2,6 +2,7 @@
 #define ORTHO_BA_HPP
 
 #include <array>
+#include <cassert>
 #include <thread>
 #include <vector>
 
@@ -12,64 +13,44 @@
 #include <opencv2/opencv.hpp>
 
 #include "imgdata.hpp"
+#include "types.hpp"
 #include "utility.hpp"
 
 namespace Ortho {
 
 struct ReprojectionError {
-  ReprojectionError(Point<double> img_pnt_lhs, Point<double> img_pnt_rhs) :
-      img_pnt_lhs(img_pnt_lhs), img_pnt_rhs(img_pnt_rhs) {}
+public:
+
+  ReprojectionError(Point<double> img_pnt) : pnt2d(std::move(img_pnt)) {}
 
   template <typename T>
-  bool operator()(
-      const T* const q_lhs,
-      const T* const q_rhs,
-      const T* const t_lhs,
-      const T* const t_rhs,
-      const T* const camera_lhs,
-      const T* const camera_rhs,
-      const T* const point3d,
-      T*             residuals) const {
-    auto calculate = [this, point3d](T* residuals, const T* const q, const T* const t, const T* const c, T u, T v) {
-      T p[3];
-      ceres::QuaternionRotatePoint(q, point3d, p);
-      for(size_t i = 0; i < 3; ++i) {
-        p[i] += t[i];
-      }
-      T predicted_x = c[0] * p[0] / p[2] + c[2];
-      T predicted_y = c[1] * p[1] / p[2] + c[3];
-      residuals[0]  = predicted_x - u;
-      residuals[1]  = predicted_y - v;
-    };
-    calculate(residuals, q_lhs, t_lhs, camera_lhs, T(img_pnt_lhs.x), T(img_pnt_lhs.y));
-    calculate(residuals + 2, q_rhs, t_rhs, camera_rhs, T(img_pnt_rhs.x), T(img_pnt_rhs.y));
+  bool operator()(const T* const q, const T* const t, const T* const c, const T* const pnt3d, T* residuals) const {
+    T p0[3];
+    for(size_t i = 0; i < 3; ++i) {
+      p0[i] = pnt3d[i] + t[i];
+    }
+    T p1[3];
+    ceres::QuaternionRotatePoint(q, p0, p1);
+    residuals[0] = c[0] * p1[0] / p1[2] + c[2] - T(pnt2d.x);
+    residuals[1] = c[1] * p1[1] / p1[2] + c[3] - T(pnt2d.y);
     return true;
   }
 
-  static ceres::CostFunction* create(const Point<float>& img_pnt_lhs, const Point<float>& img_pnt_rhs) {
-    return new ceres::AutoDiffCostFunction<ReprojectionError, 4, 4, 4, 3, 3, 4, 4, 3>(
-        new ReprojectionError(Point<double>(img_pnt_lhs.x, img_pnt_lhs.y), Point<double>(img_pnt_rhs.x, img_pnt_rhs.y)));
+  static ceres::CostFunction* create(const Point<float>& img_pnt) {
+    return new ceres::AutoDiffCostFunction<ReprojectionError, 4, 4, 3, 4, 3>(
+        new ReprojectionError(Point<double>(img_pnt)));
   }
 
-  Point<double> img_pnt_lhs, img_pnt_rhs;
+private:
+
+  Point<double> pnt2d;
 };
 
-struct BAResults {
-  cv::Mat                    R_lhs, R_rhs;
-  cv::Mat                    t_lhs, t_rhs;
-  cv::Mat                    K_lhs, K_rhs;
-  std::vector<Point3<float>> points3d;
-};
+// class RegisterTool {};
 
-BAResults
-ba(const Points<float>&              lhs_pnts,
-   const Points<float>&              rhs_pnts,
-   ImgData&                          img_lhs,
-   ImgData&                          img_rhs,
-   const std::vector<Point3<float>>& pnts3d) {
+void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
   ceres::Problem problem;
 
-  // Camera parameters: [rotation(4), translation(3), camera(4)(fx(1), fy(1), cx(1), cy(1))]
   auto add_parameter_block = [&problem](auto& param) { problem.AddParameterBlock(param.data(), param.size()); };
   auto add_parameter_block_quaternion = [&problem](auto& param) {
     problem.AddParameterBlock(param.data(), param.size(), new ceres::QuaternionManifold());
@@ -96,27 +77,21 @@ ba(const Points<float>&              lhs_pnts,
   auto camera_lhs = get_camera_params(img_lhs.K()), camera_rhs = get_camera_params(img_rhs.K());
   add_parameter_block(camera_lhs), add_parameter_block(camera_rhs);
 
-  auto set_lower_bound = [&problem](auto& param, double lower_bound = 0.0) {
-    for(size_t i = 0; i < param.size(); ++i) {
-      problem.SetParameterLowerBound(param.data(), i, lower_bound);
-    }
+  auto set_lower_bound = [&problem](auto& param, size_t idx, double lower_bound = 0.0) {
+    problem.SetParameterLowerBound(param.data(), idx, lower_bound);
   };
-  set_lower_bound(camera_lhs);
-  set_lower_bound(camera_rhs);
 
-  problem.SetParameterBlockConstant(q_lhs.data());
-  problem.SetParameterBlockConstant(q_rhs.data());
-  problem.SetParameterBlockConstant(t_lhs.data());
-  problem.SetParameterBlockConstant(t_rhs.data());
-  problem.SetParameterBlockConstant(camera_lhs.data());
-  problem.SetParameterBlockConstant(camera_rhs.data());
+  set_lower_bound(camera_lhs, 0);
+  set_lower_bound(camera_lhs, 1);
 
-  std::vector<std::array<double, 3>> points3d(lhs_pnts.size());
-  for(int i = 0; i < pnts3d.size(); ++i) {
-    points3d[i] = {pnts3d[i].x, pnts3d[i].y, pnts3d[i].z};
-    add_parameter_block(points3d[i]);
+  set_lower_bound(camera_rhs, 0);
+  set_lower_bound(camera_rhs, 1);
+
+  std::vector<std::array<double, 3>> optimized_pnts3d(lhs_pnts.size());
+  for(int i = 0; i < input_pnts3d.size(); ++i) {
+    optimized_pnts3d[i] = {input_pnts3d[i].x, input_pnts3d[i].y, input_pnts3d[i].z};
+    add_parameter_block(optimized_pnts3d[i]);
     ceres::CostFunction* cost_function = ReprojectionError::create(lhs_pnts[i], rhs_pnts[i]);
-    // problem.SetParameterBlockConstant(points3d[i].data());
     problem.AddResidualBlock(
         cost_function,
         new ceres::HuberLoss(1.0),
@@ -126,21 +101,21 @@ ba(const Points<float>&              lhs_pnts,
         t_rhs.data(),
         camera_lhs.data(),
         camera_rhs.data(),
-        points3d[i].data());
+        optimized_pnts3d[i].data());
   }
 
   ceres::Solver::Options options;
-  options.linear_solver_type           = ceres::DENSE_QR;
+  options.num_threads                  = std::thread::hardware_concurrency();
+  options.linear_solver_type           = ceres::SPARSE_SCHUR;
   options.check_gradients              = false;
   options.minimizer_progress_to_stdout = false;
-  options.max_num_iterations           = 500;
-  options.num_threads                  = std::thread::hardware_concurrency();
+  options.max_num_iterations           = 1000;
 
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
   std::cout << summary.BriefReport() << std::endl;
 
-  auto v     = std::views::transform(points3d, [](const auto& point) {
+  auto v     = std::views::transform(optimized_pnts3d, [](const auto& point) {
     return Point3<float>{static_cast<float>(point[0]), static_cast<float>(point[1]), static_cast<float>(point[2])};
   });
   auto q2mat = [](const std::array<double, 4>& q) {

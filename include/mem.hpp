@@ -13,6 +13,7 @@
 
 #include "config.hpp"
 #include "log.hpp"
+#include "types.hpp"
 
 namespace Ortho {
 
@@ -23,8 +24,6 @@ public:
 
   virtual ~ManageAble() = default;
 };
-
-using Lock = std::unique_lock<std::mutex>;
 
 struct RefGuard {
 public:

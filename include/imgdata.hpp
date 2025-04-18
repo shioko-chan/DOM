@@ -22,22 +22,48 @@
 #include "image.hpp"
 #include "pose_intrinsic.hpp"
 #include "rotate_rectify.hpp"
+#include "types.hpp"
 #include "utility.hpp"
 
-namespace fs = std::filesystem;
-
 namespace Ortho {
-struct ImgData {
+
+struct Kpnts {
+public:
+
+  size_t append(const Point<float>& kpnt) {
+    auto it = kpnts_map.find(kpnt);
+    if(it == kpnts_map.end()) {
+      size_t idx = kpnts_map.size();
+      kpnts_map.emplace(kpnt, idx);
+      kpnts_map_rev.emplace(idx, kpnt);
+      return idx;
+    } else {
+      return it->second;
+    }
+  }
+
+  template <std::ranges::range R>
+  auto append(const R& kpnts) {
+    return kpnts | std::views::transform([this](const auto& kpnt) { return append(kpnt); });
+  }
+
+  Point<float> get(size_t idx) const {
+    auto it = kpnts_map_rev.find(idx);
+    if(it == kpnts_map_rev.end()) {
+      throw std::runtime_error("Error: Keypoint not found");
+    }
+    return it->second;
+  }
+
+  size_t size() { return kpnts_map.size(); }
+
 private:
 
-  struct Point2fHasher {
-    size_t operator()(const cv::Point2f& p) const {
-      size_t h1 = std::hash<float>{}(p.x);
-      size_t h2 = std::hash<float>{}(p.y);
-      return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-    }
-  };
+  PointUMap<float, size_t>    kpnts_map;
+  PointUMapRev<size_t, float> kpnts_map_rev;
+};
 
+struct ImgData {
 public:
 
   ImgData() = default;
@@ -104,14 +130,6 @@ public:
 
   cv::Mat t() const { return -pose.t(); }
 
-  float focal_length() {
-    auto&& key = exif_xmp.exif_data().findKey(Exiv2::ExifKey("Exif.Photo.FocalLength"));
-    if(key == exif_xmp.exif_data().end()) {
-      throw std::runtime_error("Error: Focal length not found in Exif data");
-    }
-    return key->toFloat();
-  }
-
   cv::Mat K() {
     Intrinsic intrinsic{
         static_cast<float>(img_size_rotated.width),
@@ -122,13 +140,7 @@ public:
 
   cv::Mat D() { return cv::Mat::zeros(5, 1, CV_32F); }
 
-  cv::Mat norm_projection_matrix() {
-    cv::Mat M;
-    cv::hconcat(R(), R() * t(), M);
-    return M;
-  }
-
-  cv::Mat projection_matrix() { return K() * norm_projection_matrix(); }
+  cv::Mat projection_matrix() { return get_projection_matrix(R(), t(), K()); }
 
   const Point<float>& get_coord() const { return pose.coord; }
 
@@ -158,7 +170,7 @@ public:
         std::move(mask));
   }
 
-  std::unordered_map<cv::Point2f, Point3<float>, Point2fHasher> points_2d_3d;
+  Kpnts kpnts;
 
 private:
 

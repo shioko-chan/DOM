@@ -75,7 +75,8 @@
         "cfenv": "cpp",
         "cinttypes": "cpp",
         "typeindex": "cpp",
-        "log": "cpp"
+        "log": "cpp",
+        "sparse": "cpp"
     },
     "cSpell.words": [
         "cudnn",
@@ -89,6 +90,8 @@
         "imshow",
         "imwrite",
         "keyrings",
+        "kpnt",
+        "kpnts",
         "kpts",
         "LIGHTGLUE",
         "LMEDS",
@@ -97,10 +100,13 @@
         "onnx",
         "ONNXRUNTIME",
         "orthophoto",
+        "pntidx",
+        "pntidxs",
         "pnts",
         "Quaterniond",
         "RANSAC",
         "Reprojection",
+        "SCHUR",
         "STREQUAL",
         "SUPERPOINT"
     ]

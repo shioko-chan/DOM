@@ -19,9 +19,8 @@
 #include "log.hpp"
 #include "matchpair.hpp"
 #include "progress.hpp"
+#include "types.hpp"
 #include "utility.hpp"
-
-namespace fs = std::filesystem;
 
 namespace Ortho {
 class Stitcher {

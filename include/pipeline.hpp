@@ -22,19 +22,19 @@
 #include "matchpair.hpp"
 #include "progress.hpp"
 #include "stitcher.hpp"
-
-namespace fs = std::filesystem;
+#include "tri.hpp"
+#include "types.hpp"
 
 namespace Ortho {
 
-struct Exiv2XmpParserInitializer {
-  Exiv2XmpParserInitializer() { Exiv2::XmpParser::initialize(); }
-
-  ~Exiv2XmpParserInitializer() { Exiv2::XmpParser::terminate(); }
-};
-
 class Pipeline {
 private:
+
+  struct Exiv2XmpParserInitializer {
+    Exiv2XmpParserInitializer() { Exiv2::XmpParser::initialize(); }
+
+    ~Exiv2XmpParserInitializer() { Exiv2::XmpParser::terminate(); }
+  };
 
   Progress                  progress;
   std::vector<fs::path>     img_paths;
@@ -144,49 +144,7 @@ public:
         match_pairs_ | std::views::filter([](auto&& pair) { return pair.valid; }), std::back_inserter(match_pairs));
   }
 
-  void ortho_rectify() {
-    MESSAGE("Ortho-rectifying images");
-    run(imgs_data.size(), [this](int i) {
-      auto&&        img_data = imgs_data[i];
-      Points<float> src, dst;
-      auto          guard = img_data.img().get();
-      cv::Mat       dst_img, img{guard.get()};
-      guard.unlock();
-      for(const auto& [p2d, p3d] : img_data.points_2d_3d) {
-        src.push_back(p2d);
-        dst.emplace_back(p3d.x, p3d.y);
-        cv::putText(
-            img,
-            std::format("({:.2f}, {:.2f}, {:.2f})", p3d.x, p3d.y, p3d.z),
-            cv::Point(p2d.x + 3, p2d.y + 3),
-            cv::FONT_HERSHEY_SIMPLEX,
-            0.5,
-            cv::Scalar(0, 255, 0),
-            1);
-        cv::circle(img, cv::Point(p2d.x, p2d.y), 3, cv::Scalar(0, 255, 0), -1);
-      }
-      // cv::Rect rect = cv::boundingRect(dst);
-      // std::for_each(dst.begin(), dst.end(), [rect](auto&& p) {
-      //   p.x -= rect.x;
-      //   p.y -= rect.y;
-      // });
-      // try {
-      //   cv::Mat M = cv::findHomography(src, dst, cv::RANSAC);
-      //   cv::warpPerspective(img, dst_img, M, rect.size(), cv::INTER_LINEAR);
-      // } catch(const std::exception& e) {
-      //   LOG_ERROR("Error in ortho-rectification: {}", e.what());
-      //   return;
-      // }
-      cv::imwrite(
-          temporary_save_path
-              / std::format("{}_mark{}", img_data.get_img_stem().string(), img_data.get_img_extension().string()),
-          img);
-      // cv::imwrite(
-      //     temporary_save_path
-      //         / std::format("{}_ortho{}", img_data.get_img_stem().string(), img_data.get_img_extension().string()),
-      //     dst_img);
-    });
-  }
+  void triangulate() { triangulation(match_pairs, imgs_data); }
 
   void stitch() {
     MESSAGE("Stitching images");

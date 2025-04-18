@@ -6,8 +6,7 @@
 #include "config.hpp"
 #include "log.hpp"
 #include "pipeline.hpp"
-
-namespace fs = std::filesystem;
+#include "types.hpp"
 
 using namespace Ortho;
 
@@ -34,8 +33,7 @@ int main(int argc, char* const argv[]) {
   process.rotate_rectify();
   MESSAGE("[3/5] Matching neighbor images");
   process.match(NEIGHBOR_PROPOSAL);
-  // process.ortho_rectify();
-  MESSAGE("[4/5] Stitching panorama");
-  // process.stitch();
+  MESSAGE("[4/5] Triangulate");
+  process.triangulate();
   return 0;
 }
