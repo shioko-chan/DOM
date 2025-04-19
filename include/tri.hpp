@@ -22,7 +22,7 @@ namespace Ortho {
 namespace Tri {
 struct ReprojectionError {
 public:
-  ReprojectionError(Point<double> img_pnt, const std::array<double, 4>& q, const std::array<double, 4>& c, const std::array<double, 3>& t) : pnt2d(std::move(img_pnt)), q(std::move(q)), c(std::move(c)), t(std::move(t)) {}
+  ReprojectionError(Point<double> img_pnt, const RotateQArray& q, const IntrinsicArray& c, const TransposeArray& t) : pnt2d(std::move(img_pnt)), q(std::move(q)), c(std::move(c)), t(std::move(t)) {}
   template <typename T>
   bool operator()(const T* const pnt3d, T* residuals) const {
     T p0[3];
@@ -38,14 +38,15 @@ public:
     residuals[1] = T(c[1]) * p1[1] / p1[2] + T(c[3]) - T(pnt2d.y);
     return true;
   }
-  static ceres::CostFunction* create(const Point<float>& img_pnt, std::array<double, 4> q, std::array<double, 4> c, std::array<double, 3> t) {
+  static ceres::CostFunction* create(const Point<float>& img_pnt, RotateQArray q, IntrinsicArray c, TransposeArray t) {
     return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 3>(
         new ReprojectionError(Point<double>(img_pnt), std::move(q), std::move(c), std::move(t)));
   }
 private:
   Point<double> pnt2d;
-  std::array<double, 4> q, c;
-  std::array<double, 3> t;
+  RotateQArray q;
+  IntrinsicArray c;
+  TransposeArray t;
 };
 
 struct TriRes {
@@ -100,7 +101,7 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
     problem.AddParameterBlock(wp.data(), wp.size());
     for (const auto& pntidx : pntidx_vec) {
       ImgData& img = imgs_data[pntidx.img_idx];
-      ceres::CostFunction* cost = ReprojectionError::create(img.kpnts[pntidx.pnt_idx], rotate2qarray(img.R()), intrinsics2array(img.K()),
+      ceres::CostFunction* cost = ReprojectionError::create(img.kpnts[pntidx.pnt_idx], rotate2qarray(img.R()), intrinsic2array(img.K()),
        transpose2array(img.t())
       );
       problem.AddResidualBlock(cost, new ceres::HuberLoss(1.0), wp.data());

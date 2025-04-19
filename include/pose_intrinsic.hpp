@@ -52,8 +52,8 @@ private:
 struct Pose {
 public:
 
-  Angle        yaw, pitch, roll, latitude, longitude;
-  float        altitude, altitude_ref;
+  Angle latitude, longitude;
+  float        altitude;
   Point<float> coord;
 
   Pose() = default;
@@ -65,70 +65,68 @@ public:
       const float& latitude_,
       const float& longitude_,
       const float& altitude_) :
-      yaw(yaw_), pitch(pitch_), roll(roll_), latitude(latitude_), longitude(longitude_), altitude(altitude_) {
-    R_ = Rz(-yaw.radians()) * Ry(-pitch.radians()) * Rx(-roll.radians()) * Ry(-Angle::PI / 2);
+    latitude(latitude_), longitude(longitude_), altitude(altitude_) {
+    Angle yaw(yaw_), pitch(pitch_), roll(roll_);
+    cv::Mat R_ = Rz(-yaw.radians()) * Ry(-pitch.radians()) * Rx(-roll.radians()) * Ry(-Angle::PI / 2);
+    Q_proj = rotate2qarray(R_.t());
   }
 
   void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
-    altitude_ref          = altitude_ref_;
     const auto latitude_r = Angle(latitude_ref_degree), longitude_r = Angle(longitude_ref_degree);
     // WGS84
-    const double a          = 6378137.0;
-    const double f          = 1 / 298.257223563;
-    const double e_sq       = 2 * f - f * f;
+    const double a = 6378137.0;
+    const double f = 1 / 298.257223563;
+    const double e_sq = 2 * f - f * f;
     const double sin_phi_sq = std::pow(std::sin(latitude_r.radians()), 2);
-    const double M          = a * (1 - e_sq) / std::pow(1 - e_sq * sin_phi_sq, 1.5);
-    const double N          = a / std::sqrt(1 - e_sq * sin_phi_sq);
-    const float  x          = N * (longitude.radians() - longitude_r.radians()) * std::cos(latitude_r.radians());
-    const float  y          = M * (latitude.radians() - latitude_r.radians());
-    coord                   = Point<float>(x, y);
+    const double M = a * (1 - e_sq) / std::pow(1 - e_sq * sin_phi_sq, 1.5);
+    const double N = a / std::sqrt(1 - e_sq * sin_phi_sq);
+    const float  x = N * (longitude.radians() - longitude_r.radians()) * std::cos(latitude_r.radians());
+    const float  y = M * (latitude.radians() - latitude_r.radians());
+    coord = Point<float>(x, y);
   }
 
   static cv::Mat Rx(float radians) {
     // clang-format off
-        return (cv::Mat_<float>(3, 3) << 
-          1, 0                , 0                ,
-          0, std::cos(radians), std::sin(radians),
-          0,-std::sin(radians), std::cos(radians));
+    return (cv::Mat_<float>(3, 3) <<
+      1, 0, 0,
+      0, std::cos(radians), std::sin(radians),
+      0, -std::sin(radians), std::cos(radians));
     // clang-format on
   }
 
   static cv::Mat Ry(float radians) {
     // clang-format off
-        return (cv::Mat_<float>(3, 3) << 
-         std::cos(radians), 0,-std::sin(radians),
-         0                , 1, 0                ,
-         std::sin(radians), 0, std::cos(radians));
+    return (cv::Mat_<float>(3, 3) <<
+     std::cos(radians), 0, -std::sin(radians),
+     0, 1, 0,
+     std::sin(radians), 0, std::cos(radians));
     // clang-format on
   }
 
   static cv::Mat Rz(float radians) {
     // clang-format off
-        return (cv::Mat_<float>(3, 3) << 
-        std::cos(radians), std::sin(radians), 0,
-       -std::sin(radians), std::cos(radians), 0,
-        0                , 0                , 1);
+    return (cv::Mat_<float>(3, 3) <<
+    std::cos(radians), std::sin(radians), 0,
+   -std::sin(radians), std::cos(radians), 0,
+    0, 0, 1);
     // clang-format on
   }
 
-  const cv::Mat& R() const { return R_; }
+  const cv::Mat& R_proj() const { return R_; }
 
-  cv::Mat t() const { return cv::Mat_<float>(3, 1) << coord.x, coord.y, -altitude; }
+  cv::Mat t_proj() const { return cv::Mat_<float>(3, 1) << coord.x, coord.y, -altitude; }
 
   friend std::ostream& operator<<(std::ostream& os, const Pose& pose) {
-    os << "Yaw: " << pose.yaw << "\n"
-       << "Pitch: " << pose.pitch << "\n"
-       << "Roll: " << pose.roll << "\n"
-       << "Latitude: " << pose.latitude << "\n"
-       << "Longitude: " << pose.longitude << "\n"
-       << "Altitude: " << pose.altitude << "\n"
-       << "R: " << pose.R_ << "\n";
+    os << "Latitude: " << pose.latitude << "\n"
+      << "Longitude: " << pose.longitude << "\n"
+      << "Altitude: " << pose.altitude << "\n"
+      << "R: " << pose.R_ << "\n";
     return os;
   }
 
 private:
 
-  cv::Mat R_;
+  RotateQArray Q_proj;
 };
 
 struct Intrinsic {
@@ -137,17 +135,17 @@ public:
   Intrinsic() = default;
 
   explicit Intrinsic(const float w, const float h, const float focal, const float focal_35mm = 28.0f) :
-      distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
-    float factor        = focal / focal_35mm;
-    float sensor_width  = factor * 36.0f;
+    distortion_coefficients((cv::Mat_<float>::zeros(1, 5))) {
+    float factor = focal / focal_35mm;
+    float sensor_width = factor * 36.0f;
     float sensor_height = factor * 24.0f;
-    float fx            = w * focal / sensor_width;
-    float fy            = h * focal / sensor_height;
+    float fx = w * focal / sensor_width;
+    float fy = h * focal / sensor_height;
     // clang-format off
-    camera_matrix = (cv::Mat_<float>(3, 3) << 
-        fx,  0,  w / 2,
-        0,   fy, h / 2,
-        0,   0,  1
+    camera_matrix = (cv::Mat_<float>(3, 3) <<
+        fx, 0, w / 2,
+        0, fy, h / 2,
+        0, 0, 1
     );
     // clang-format on
   }
@@ -158,7 +156,7 @@ public:
 
   friend std::ostream& operator<<(std::ostream& os, const Intrinsic& intrinsic) {
     os << "Camera Matrix: " << intrinsic.camera_matrix << "\n"
-       << "Distortion Coefficients: " << intrinsic.distortion_coefficients << "\n";
+      << "Distortion Coefficients: " << intrinsic.distortion_coefficients << "\n";
     return os;
   }
 
@@ -173,20 +171,20 @@ private:
 
   struct XmpKey {
     static inline const std::string yaw = "Xmp.drone-dji.GimbalYawDegree", pitch = "Xmp.drone-dji.GimbalPitchDegree",
-                                    roll = "Xmp.drone-dji.GimbalRollDegree", latitude = "Xmp.drone-dji.GpsLatitude",
-                                    longitude         = "Xmp.drone-dji.GpsLongitude",
-                                    relative_altitude = "Xmp.drone-dji.RelativeAltitude",
-                                    absolute_altitude = "Xmp.drone-dji.AbsoluteAltitude";
+      roll = "Xmp.drone-dji.GimbalRollDegree", latitude = "Xmp.drone-dji.GpsLatitude",
+      longitude = "Xmp.drone-dji.GpsLongitude",
+      relative_altitude = "Xmp.drone-dji.RelativeAltitude",
+      absolute_altitude = "Xmp.drone-dji.AbsoluteAltitude";
     static inline const std::vector<std::string> keys =
-        {yaw, pitch, roll, latitude, longitude, relative_altitude, absolute_altitude};
+    { yaw, pitch, roll, latitude, longitude, relative_altitude, absolute_altitude };
   };
 
 public:
 
   static bool validate(ExifXmp& img_exif_xmp) {
     const Exiv2::XmpData& xmp_data = img_exif_xmp.xmp_data();
-    for(const auto& key : XmpKey::keys) {
-      if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
+    for (const auto& key : XmpKey::keys) {
+      if (xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
         LOG_WARN("{}: Key {} not found in XMP data", img_exif_xmp.get_img_path().string(), key);
         return false;
       }
@@ -195,12 +193,12 @@ public:
   }
 
   static Pose build(Exiv2::XmpData& xmp) {
-    const float& yaw       = xmp[XmpKey::yaw].toFloat();
-    const float& pitch     = xmp[XmpKey::pitch].toFloat();
-    const float& roll      = xmp[XmpKey::roll].toFloat();
-    const float& latitude  = xmp[XmpKey::latitude].toFloat();
+    const float& yaw = xmp[XmpKey::yaw].toFloat();
+    const float& pitch = xmp[XmpKey::pitch].toFloat();
+    const float& roll = xmp[XmpKey::roll].toFloat();
+    const float& latitude = xmp[XmpKey::latitude].toFloat();
     const float& longitude = xmp[XmpKey::longitude].toFloat();
-    const float& altitude  = xmp[XmpKey::relative_altitude].toFloat();
+    const float& altitude = xmp[XmpKey::relative_altitude].toFloat();
     return Pose(yaw, pitch, roll, latitude, longitude, altitude);
   }
 };
@@ -209,17 +207,17 @@ class IntrinsicFactory {
 private:
 
   struct ExifKey {
-    static inline const std::string              focal_length      = "Exif.Photo.FocalLength";
+    static inline const std::string              focal_length = "Exif.Photo.FocalLength";
     static inline const std::string              focal_length_35mm = "Exif.Photo.FocalLengthIn35mmFilm";
-    static inline const std::vector<std::string> keys              = {focal_length, focal_length_35mm};
+    static inline const std::vector<std::string> keys = { focal_length, focal_length_35mm };
   };
 
 public:
 
   static bool validate(ExifXmp& img_exif_xmp) {
     const auto& exif_data = img_exif_xmp.exif_data();
-    for(const auto& key : ExifKey::keys) {
-      if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
+    for (const auto& key : ExifKey::keys) {
+      if (exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
         LOG_WARN("{}: Key {} not found in Exif data", img_exif_xmp.get_img_path().string(), key);
         return false;
       }
@@ -228,7 +226,7 @@ public:
   }
 
   static Intrinsic build(Exiv2::ExifData& exif, const unsigned int w, const unsigned int h) {
-    const float focal      = exif[ExifKey::focal_length].toFloat();
+    const float focal = exif[ExifKey::focal_length].toFloat();
     const float focal_35mm = exif[ExifKey::focal_length_35mm].toFloat();
     return Intrinsic(w, h, focal, focal_35mm);
   }

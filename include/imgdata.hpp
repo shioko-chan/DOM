@@ -32,7 +32,7 @@ public:
 
   size_t append(const Point<float>& kpnt) {
     auto it = kpnts_map.find(kpnt);
-    if(it == kpnts_map.end()) {
+    if (it == kpnts_map.end()) {
       size_t idx = kpnts_map.size();
       kpnts_map.emplace(kpnt, idx);
       kpnts_map_rev.emplace(idx, kpnt);
@@ -49,7 +49,7 @@ public:
 
   Point<float> get(size_t idx) const {
     auto it = kpnts_map_rev.find(idx);
-    if(it == kpnts_map_rev.end()) {
+    if (it == kpnts_map_rev.end()) {
       throw std::runtime_error("Error: Keypoint not found");
     }
     return it->second;
@@ -63,54 +63,55 @@ private:
   PointUMapRev<size_t, float> kpnts_map_rev;
 };
 
-struct ImgData {
+class ImgData {
+  friend class ImgsData;
 public:
 
   ImgData() = default;
 
   ImgData(Pose&& pose, ExifXmp&& exif_xmp, fs::path img_path, fs::path temp_save_path, cv::Size img_size) :
-      pose(std::move(pose)), exif_xmp(std::move(exif_xmp)), img_path(img_path), temp_save_path(temp_save_path),
-      img_size(std::move(img_size)) {
+    pose(std::move(pose)), exif_xmp(std::move(exif_xmp)), img_path(img_path), temp_save_path(temp_save_path),
+    img_size(std::move(img_size)) {
     check_or_create_path(temp_save_path);
   }
 
   Image img() {
-    if(!img_rotated.is_initialized()) {
+    if (!img_rotated.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated;
   }
 
   Image mask() {
-    if(!img_rotated_mask.is_initialized()) {
+    if (!img_rotated_mask.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated_mask;
   }
 
   ImgRefGuard get_img() {
-    if(!img_rotated.is_initialized()) {
+    if (!img_rotated.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated.get();
   }
 
   ImgRefGuard get_mask() {
-    if(!img_rotated_mask.is_initialized()) {
+    if (!img_rotated_mask.is_initialized()) {
       rotate_rectify();
     }
     return img_rotated_mask.get();
   }
 
   cv::Size get_size() {
-    if(img_size_rotated.area() == 0) {
+    if (img_size_rotated.area() == 0) {
       rotate_rectify();
     }
     return img_size_rotated;
   }
 
-  void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree, const float& altitude_ref_) {
-    pose.set_reference(latitude_ref_degree, longitude_ref_degree, altitude_ref_);
+  void set_reference(const float& latitude_ref_degree, const float& longitude_ref_degree) {
+    pose.set_reference(latitude_ref_degree, longitude_ref_degree);
     reference_set = true;
   }
 
@@ -118,29 +119,21 @@ public:
 
   const Angle& get_longitude() const { return pose.longitude; }
 
-  float get_altitude() const { return pose.altitude; }
+  cv::Mat R_proj() const { return pose.R_proj(); }
 
-  const Angle& get_yaw() const { return pose.yaw; }
-
-  const Angle& get_pitch() const { return pose.pitch; }
-
-  const Angle& get_roll() const { return pose.roll; }
-
-  cv::Mat R() const { return pose.R().t(); }
-
-  cv::Mat t() const { return -pose.t(); }
+  cv::Mat t_proj() const { return pose.t_proj(); }
 
   cv::Mat K() {
-    Intrinsic intrinsic{
+    Intrinsic intrinsic {
         static_cast<float>(img_size_rotated.width),
         static_cast<float>(img_size_rotated.height),
-        exif_xmp.exif_data().findKey(Exiv2::ExifKey("Exif.Photo.FocalLength"))->toFloat()};
+        exif_xmp.exif_data().findKey(Exiv2::ExifKey("Exif.Photo.FocalLength"))->toFloat() };
     return intrinsic.K();
   }
 
   cv::Mat D() { return cv::Mat::zeros(5, 1, CV_32F); }
 
-  cv::Mat projection_matrix() { return get_projection_matrix(R(), t(), K()); }
+  cv::Mat projection_matrix() { return get_projection_matrix(R_proj(), t_proj(), K()); }
 
   const Point<float>& get_coord() const { return pose.coord; }
 
@@ -153,15 +146,15 @@ public:
   fs::path get_img_extension() const { return img_path.extension(); }
 
   void rotate_rectify() {
-    if(!reference_set) {
+    if (!reference_set) {
       throw std::runtime_error("Error: Reference coordinate not set");
     }
     cv::Mat img = cv::imread(img_path.string());
-    if(img.empty()) {
+    if (img.empty()) {
       throw std::runtime_error(img_path.string() + " could not be read");
     }
-    auto&& [rotate_img, mask] = Ortho::rotate_rectify(img_size, pose, img);
-    img_size_rotated          = rotate_img.size();
+    auto&& [rotate_img, mask] = Ortho::rotate_rectify(img_size, pose.R_proj().t_proj(), img);
+    img_size_rotated = rotate_img.size();
     this->img_rotated.delay_initialize(
         temp_save_path / std::format("{}_r{}", img_path.stem().string(), img_path.extension().string()),
         std::move(rotate_img));
@@ -179,10 +172,11 @@ private:
   Pose     pose;
   Image    img_rotated, img_rotated_mask;
   ExifXmp  exif_xmp;
-  bool     reference_set{false};
+  bool     reference_set { false };
+
 };
 
-struct ImgsData {
+class ImgsData {
 public:
 
   ImgsData() = default;
@@ -257,21 +251,18 @@ public:
 
   void find_and_set_reference_coord() {
     std::lock_guard<std::mutex> lock(mutex);
-    std::vector<float>          latitudes, longitudes, altitudes;
-    for(auto&& data : imgs_data) {
-      latitudes.push_back(data.get_latitude().degrees());
-      longitudes.push_back(data.get_longitude().degrees());
-      altitudes.push_back(data.get_altitude());
+    std::vector<float>          latitudes, longitudes;
+    for (auto&& data : imgs_data) {
+      latitudes.push_back(data.latitude.degrees());
+      longitudes.push_back(data.longitude.degrees());
     }
     size_t n = latitudes.size() / 2;
     std::nth_element(latitudes.begin(), latitudes.begin() + n, latitudes.end());
     std::nth_element(longitudes.begin(), longitudes.begin() + n, longitudes.end());
-    std::nth_element(altitudes.begin(), altitudes.begin() + n, altitudes.end());
-    float latitude_ref  = latitudes[n];
+    float latitude_ref = latitudes[n];
     float longitude_ref = longitudes[n];
-    float altitude_ref  = altitudes[n];
-    for(auto&& data : imgs_data) {
-      data.set_reference(latitude_ref, longitude_ref, altitude_ref);
+    for (auto&& data : imgs_data) {
+      data.set_reference(latitude_ref, longitude_ref);
     }
   }
 
@@ -285,28 +276,28 @@ class ImgDataFactory {
 private:
 
   static inline const std::unordered_set<std::string> extensions =
-      {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
+  { ".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP" };
 
   struct ExifKey {
-    static inline const std::string              width  = "Exif.Photo.PixelXDimension";
+    static inline const std::string              width = "Exif.Photo.PixelXDimension";
     static inline const std::string              height = "Exif.Photo.PixelYDimension";
-    static inline const std::vector<std::string> keys   = {width, height};
+    static inline const std::vector<std::string> keys = { width, height };
   };
 
 public:
 
   static bool validate(const fs::path& path) {
-    if(!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
+    if (!fs::is_regular_file(path) || extensions.count(path.extension().string()) == 0) {
       LOG_WARN("Error: {} is not a valid image file", path.string());
       return false;
     }
     ExifXmp exif_xmp(path);
-    if(!PoseFactory::validate(exif_xmp)) {
+    if (!PoseFactory::validate(exif_xmp)) {
       return false;
     }
     const auto& exif_data = exif_xmp.exif_data();
-    for(const auto& key : ExifKey::keys) {
-      if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
+    for (const auto& key : ExifKey::keys) {
+      if (exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
         LOG_WARN("{}: Key {} not found in Exif data", path.string(), key);
         return false;
       }
@@ -316,11 +307,11 @@ public:
 
   static ImgData build(const fs::path& path, fs::path temp_save_path) {
     ExifXmp      exif_xmp(path);
-    const auto&  exif_data = exif_xmp.exif_data();
-    unsigned int w         = exif_data.findKey(Exiv2::ExifKey(ExifKey::width))->toUint32(),
-                 h         = exif_data.findKey(Exiv2::ExifKey(ExifKey::height))->toUint32();
-    Pose pose              = PoseFactory::build(exif_xmp.xmp_data());
-    return ImgData{std::move(pose), std::move(exif_xmp), path, temp_save_path, cv::Size(w, h)};
+    const auto& exif_data = exif_xmp.exif_data();
+    unsigned int w = exif_data.findKey(Exiv2::ExifKey(ExifKey::width))->toUint32(),
+      h = exif_data.findKey(Exiv2::ExifKey(ExifKey::height))->toUint32();
+    Pose pose = PoseFactory::build(exif_xmp.xmp_data());
+    return ImgData { std::move(pose), std::move(exif_xmp), path, temp_save_path, cv::Size(w, h) };
   }
 };
 } // namespace Ortho

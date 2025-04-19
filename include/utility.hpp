@@ -16,16 +16,19 @@
 #include "types.hpp"
 
 namespace Ortho {
-std::array<double, 4> rotate2qarray(const cv::Mat& R) {
+RotateQArray rotate2qarray(const cv::InputArray& R_) {
+  cv::Mat R = R_.getMat();
   Eigen::Matrix3d m;
   cv::cv2eigen(R, m);
-  Eigen::rotate2qarrayd q(m);
+  Eigen::quaterniond q(m);
   return { q.w(), q.x(), q.y(), q.z() };
 }
-std::array<double, 4> intrinsics2array(const cv::Mat& K) {
+IntrinsicArray intrinsic2array(const cv::InputArray& K_) {
+  cv::Mat K = K_.getMat();
   return { K.at<float>(0, 0), K.at<float>(1, 1), K.at<float>(0, 2), K.at<float>(1, 2) };
 }
-std::array<double, 3> transpose2array(const cv::Mat& t) {
+TransposeArray transpose2array(const cv::InputArray&& t_) {
+  cv::Mat t = t_.getMat();
   return { t.at<float>(0), t.at<float>(1), t.at<float>(2) };
 }
 template <std::ranges::range Range>

@@ -18,6 +18,9 @@ namespace Ortho {
 
 namespace fs = std::filesystem;
 
+using RotateQArray = std::array<double, 4>;
+using IntrinsicArray = std::array<double, 4>;
+using TransposeArray = std::array<double, 3>;
 template<typename T>
 using USets = std::vector<std::unordered_set<T>>;
 

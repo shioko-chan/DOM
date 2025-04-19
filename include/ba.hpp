@@ -60,7 +60,7 @@ void ba(ImgsData& imgs_data, std::vector<Tri::TriRes>& res) {
   auto t_lhs = transpose2array(img_lhs.t()), t_rhs = transpose2array(img_rhs.t());
   add_parameter_block(t_lhs), add_parameter_block(t_rhs);
 
-  auto camera_lhs = intrinsics2array(img_lhs.K()), camera_rhs = intrinsics2array(img_rhs.K());
+  auto camera_lhs = intrinsic2array(img_lhs.K()), camera_rhs = intrinsic2array(img_rhs.K());
   add_parameter_block(camera_lhs), add_parameter_block(camera_rhs);
 
   auto set_lower_bound = [&problem](auto& param, size_t idx, double lower_bound = 0.0) {
