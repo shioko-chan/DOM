@@ -87,7 +87,7 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(rows, cols);
     Eigen::VectorXd b(rows);
     for (size_t i = 0; i < n; ++i) {
-      Eigen::Vector3d v = get_v_c2w(pntidx_vec[i + 1]), t = get_t_c2w(pntidx_vec[i + 1]);
+      Eigen::Vector3d v = get_v_c2w(pntidx_vec[i]), t = get_t_c2w(pntidx_vec[i]);
       A.block<3, 3>(i * 3, 0) = -Eigen::Matrix3d::Identity();
       A.block<3, 1>(i * 3, 3) = v;
       b.segment<3>(i * 3) = t;
