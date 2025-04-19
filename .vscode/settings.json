@@ -24,11 +24,23 @@
         "pntidx",
         "pntidxs",
         "pnts",
-        "Quaterniond",
+        "qarray",
         "RANSAC",
         "Reprojection",
         "SCHUR",
         "STREQUAL",
         "SUPERPOINT"
-    ]
+    ],
+    "files.associations": {
+        "Paradox": "stellaris",
+        "*.cjson": "jsonc",
+        "*.wxss": "css",
+        "*.wxs": "javascript",
+        "*.s": "mips",
+        "*.html": "jinja-html",
+        "*.ttml": "html",
+        "*.ttss": "css",
+        "random": "cpp",
+        "array": "cpp"
+    }
 }

@@ -120,7 +120,9 @@ public:
   void rotate_rectify() {
     run(imgs_data.size(), [this](int i) {
       imgs_data[i].rotate_rectify();
-      // cv::imwrite(temporary_save_path / imgs_data[i].get_img_name().string(), imgs_data[i].img().get().get());
+#ifdef ENABLE_MIDDLE_OUTPUT
+      cv::imwrite(temporary_save_path / imgs_data[i].get_img_name().string(), imgs_data[i].img().get().get());
+#endif
     });
   }
 
@@ -145,8 +147,8 @@ public:
   }
 
   void triangulate() {
-    TriRes res = triangulation(match_pairs, imgs_data);
-    ba(imgs_data, res);
+    auto res = Tri::triangulation(match_pairs, imgs_data);
+    Ba::ba(imgs_data, res);
   }
 
   void stitch() {

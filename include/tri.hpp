@@ -18,6 +18,8 @@
 #include "utility.hpp"
 
 namespace Ortho {
+
+namespace Tri {
 struct ReprojectionError {
 public:
   ReprojectionError(Point<double> img_pnt, const std::array<double, 4>& q, const std::array<double, 4>& c, const std::array<double, 3>& t) : pnt2d(std::move(img_pnt)), q(std::move(q)), c(std::move(c)), t(std::move(t)) {}
@@ -31,7 +33,7 @@ public:
     for (size_t i = 0; i < 4; ++i) {
       q[i] = T(this->q[i]);
     }
-    ceres::QuaternionRotatePoint(q, p0, p1);
+    ceres::rotate2qarrayRotatePoint(q, p0, p1);
     residuals[0] = T(c[0]) * p1[0] / p1[2] + T(c[2]) - T(pnt2d.x);
     residuals[1] = T(c[1]) * p1[1] / p1[2] + T(c[3]) - T(pnt2d.y);
     return true;
@@ -98,8 +100,8 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
     problem.AddParameterBlock(wp.data(), wp.size());
     for (const auto& pntidx : pntidx_vec) {
       ImgData& img = imgs_data[pntidx.img_idx];
-      ceres::CostFunction* cost = ReprojectionError::create(img.kpnts[pntidx.pnt_idx], quaternion(img.R()), get_camera_params(img.K()),
-       get_transpose_params(img.t())
+      ceres::CostFunction* cost = ReprojectionError::create(img.kpnts[pntidx.pnt_idx], rotate2qarray(img.R()), intrinsics2array(img.K()),
+       transpose2array(img.t())
       );
       problem.AddResidualBlock(cost, new ceres::HuberLoss(1.0), wp.data());
     }
@@ -115,6 +117,7 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
       res.emplace_back(Point3<float>(wp[0], wp[1], wp[2]), std::move(pntidx_vec));
     }
   }
+}
 }
 } // namespace Ortho
 

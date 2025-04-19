@@ -17,7 +17,7 @@
 #include "utility.hpp"
 
 namespace Ortho {
-
+namespace Ba {
 struct ReprojectionError {
 public:
 
@@ -30,14 +30,14 @@ public:
       p0[i] = pnt3d[i] + t[i];
     }
     T p1[3];
-    ceres::QuaternionRotatePoint(q, p0, p1);
+    ceres::rotate2qarrayRotatePoint(q, p0, p1);
     residuals[0] = c[0] * p1[0] / p1[2] + c[2] - T(pnt2d.x);
     residuals[1] = c[1] * p1[1] / p1[2] + c[3] - T(pnt2d.y);
     return true;
   }
 
   static ceres::CostFunction* create(const Point<float>& img_pnt) {
-    return new ceres::AutoDiffCostFunction<ReprojectionError, 4, 4, 3, 4, 3>(
+    return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 4, 3, 4, 3>(
         new ReprojectionError(Point<double>(img_pnt)));
   }
 
@@ -46,34 +46,21 @@ private:
   Point<double> pnt2d;
 };
 
-
-void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
+void ba(ImgsData& imgs_data, std::vector<Tri::TriRes>& res) {
   ceres::Problem problem;
 
   auto add_parameter_block = [&problem](auto& param) { problem.AddParameterBlock(param.data(), param.size()); };
-  auto add_parameter_block_quaternion = [&problem](auto& param) {
-    problem.AddParameterBlock(param.data(), param.size(), new ceres::QuaternionManifold());
+  auto add_parameter_block_rotate2qarray = [&problem](auto& param) {
+    problem.AddParameterBlock(param.data(), param.size(), new ceres::rotate2qarrayManifold());
     };
 
-  auto quaternion = [](const cv::Mat& R)->std::array<double, 4> {
-    Eigen::Matrix3d m;
-    cv::cv2eigen(R, m);
-    Eigen::Quaterniond q(m);
-    return { q.w(), q.x(), q.y(), q.z() };
-  };
-  auto q_lhs = quaternion(img_lhs.R()), q_rhs = quaternion(img_rhs.R());
-  add_parameter_block_quaternion(q_lhs), add_parameter_block_quaternion(q_rhs);
+  auto q_lhs = rotate2qarray(img_lhs.R()), q_rhs = rotate2qarray(img_rhs.R());
+  add_parameter_block_rotate2qarray(q_lhs), add_parameter_block_rotate2qarray(q_rhs);
 
-  auto get_transpose_params = [](const cv::Mat& t)->std::array<double, 3> {
-    return { t.at<float>(0), t.at<float>(1), t.at<float>(2) };
-  };
-  auto t_lhs = get_transpose_params(img_lhs.t()), t_rhs = get_transpose_params(img_rhs.t());
+  auto t_lhs = transpose2array(img_lhs.t()), t_rhs = transpose2array(img_rhs.t());
   add_parameter_block(t_lhs), add_parameter_block(t_rhs);
 
-  auto get_camera_params = [](const cv::Mat& K)->std::array<double, 4> {
-    return { K.at<float>(0, 0), K.at<float>(1, 1), K.at<float>(0, 2), K.at<float>(1, 2) };
-  };
-  auto camera_lhs = get_camera_params(img_lhs.K()), camera_rhs = get_camera_params(img_rhs.K());
+  auto camera_lhs = intrinsics2array(img_lhs.K()), camera_rhs = intrinsics2array(img_rhs.K());
   add_parameter_block(camera_lhs), add_parameter_block(camera_rhs);
 
   auto set_lower_bound = [&problem](auto& param, size_t idx, double lower_bound = 0.0) {
@@ -118,8 +105,8 @@ void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
     return Point3<float>{static_cast<float>(point[0]), static_cast<float>(point[1]), static_cast<float>(point[2])};
   });
   auto q2mat = [](const std::array<double, 4>& q) {
-    Eigen::Quaterniond quaternion(q[0], q[1], q[2], q[3]);
-    Eigen::Matrix3d    m = quaternion.toRotationMatrix();
+    Eigen::rotate2qarrayd rotate2qarray(q[0], q[1], q[2], q[3]);
+    Eigen::Matrix3d    m = rotate2qarray.toRotationMatrix();
     cv::Mat            R;
     cv::eigen2cv(m, R);
     R.convertTo(R, CV_32F);
@@ -148,6 +135,7 @@ void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
       .K_lhs = k2mat(camera_lhs),
       .K_rhs = k2mat(camera_rhs),
       .points3d = std::vector<Point3<float>>{v.begin(), v.end()} };
+}
 }
 } // namespace Ortho
 #endif
