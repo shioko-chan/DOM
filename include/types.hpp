@@ -18,6 +18,12 @@ namespace Ortho {
 
 namespace fs = std::filesystem;
 
+template<typename T>
+using USets = std::vector<std::unordered_set<T>>;
+
+template<typename T>
+using Sets = std::vector<std::set<T>>;
+
 using KeyPoints = std::vector<cv::KeyPoint>;
 
 using OrtValues = std::vector<Ort::Value>;
@@ -29,7 +35,11 @@ struct Match {
 
 using Matches = std::vector<Match>;
 
-using PointIdx = std::pair<int, size_t>;
+struct PointIdx {
+  int img_idx;
+  size_t pnt_idx;
+  auto operator<=>(const PointIdx&) const = default;
+};
 
 template <typename T>
 void hash_append(size_t& seed, const T& val) {
@@ -44,7 +54,7 @@ size_t hash(const Args&... args) {
 }
 
 struct PointIdxHasher {
-  size_t operator()(const PointIdx& p) const { return hash(p.first, p.second); }
+  size_t operator()(const PointIdx& p) const { return hash(p.img_idx, p.pnt_idx); }
 };
 
 template <typename T>

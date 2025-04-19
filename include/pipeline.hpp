@@ -44,31 +44,31 @@ private:
   MatchPairs                match_pairs;
 
   static auto generate_start_end(unsigned int total, unsigned int divisor) {
-    int  base      = total / divisor;
+    int  base = total / divisor;
     int  remainder = total % divisor;
     auto sequence =
-        std::views::iota(0u, divisor) | std::views::transform([=](int i) { return i < remainder ? base + 1 : base; });
-    std::vector<int> cumulative{0};
+      std::views::iota(0u, divisor) | std::views::transform([=](int i) { return i < remainder ? base + 1 : base; });
+    std::vector<int> cumulative { 0 };
     std::partial_sum(sequence.begin(), sequence.end(), std::back_inserter(cumulative));
     return std::views::iota(0u, divisor)
-           | std::views::transform([cumulative](int i) { return std::make_pair(cumulative[i], cumulative[i + 1]); });
+      | std::views::transform([cumulative](int i) { return std::make_pair(cumulative[i], cumulative[i + 1]); });
   }
 
   auto run(size_t tasks, std::function<void(int)>&& process) {
     std::vector<std::thread> threads;
     progress.reset(tasks);
     auto v = generate_start_end(tasks, std::thread::hardware_concurrency())
-             | std::views::transform([this, &process](auto&& start_end) {
-                 auto&& [start, end] = start_end;
-                 return std::thread([this, start, end, &process]() {
-                   for(int i = start; i < end; i++, progress.update()) {
-                     process(i);
-                   }
-                 });
-               });
+      | std::views::transform([this, &process](auto&& start_end) {
+      auto&& [start, end] = start_end;
+      return std::thread([this, start, end, &process]() {
+        for (int i = start; i < end; i++, progress.update()) {
+          process(i);
+        }
+      });
+        });
     threads.assign(v.begin(), v.end());
-    for(auto&& thread : threads) {
-      if(thread.joinable()) {
+    for (auto&& thread : threads) {
+      if (thread.joinable()) {
         thread.join();
       }
     }
@@ -76,13 +76,13 @@ private:
 
   MatchPairs find_neighbors(const int k = 8) {
     auto knn =
-        KNN(k,
-            imgs_data.get() | std::views::transform([](auto&& data) { return data.get_coord(); }) | std::views::common);
+      KNN(k,
+          imgs_data.get() | std::views::transform([](auto&& data) { return data.get_coord(); }) | std::views::common);
     std::vector<std::vector<MatchPair>> matches(imgs_data.size());
     run(imgs_data.size(), [this, &knn, &matches](int i) {
       auto neighbors = knn.find_nearest_neighbour(i);
-      for(auto&& neighbour : neighbors) {
-        if(i < neighbour) {
+      for (auto&& neighbour : neighbors) {
+        if (i < neighbour) {
           matches[i].emplace_back(i, neighbour);
         } else {
           matches[i].emplace_back(neighbour, i);
@@ -97,7 +97,7 @@ private:
 public:
 
   Pipeline(fs::path input_dir, fs::path output_dir, fs::path temporary_save_path) :
-      output_dir(output_dir), temporary_save_path(temporary_save_path) {
+    output_dir(output_dir), temporary_save_path(temporary_save_path) {
     std::transform(
         fs::directory_iterator(input_dir),
         fs::directory_iterator(),
@@ -109,7 +109,7 @@ public:
   void get_image_info() {
     run(img_paths.size(), [this](int i) {
       auto&& img_path = img_paths[i];
-      if(!ImgDataFactory::validate(img_path)) {
+      if (!ImgDataFactory::validate(img_path)) {
         return;
       }
       imgs_data.push_back(ImgDataFactory::build(img_path, temporary_save_path));
@@ -128,11 +128,11 @@ public:
     MESSAGE("Finding image pairs with neighbor proposal {}", neighbor_proposal);
     auto match_pairs_ = find_neighbors(neighbor_proposal);
     MESSAGE("Found {} image pairs", match_pairs_.size());
-    if(FEATURE_EXTRACTION_METHOD == method_t::SUPERPOINT) {
+    if (FEATURE_EXTRACTION_METHOD == method_t::SUPERPOINT) {
       MESSAGE("Using SuperPoint feature extraction");
       Matcher matcher = matcher_factory<SuperPointExtractor>(temporary_save_path);
       matcher.match(match_pairs_, imgs_data, progress);
-    } else if(FEATURE_EXTRACTION_METHOD == method_t::DISK) {
+    } else if (FEATURE_EXTRACTION_METHOD == method_t::DISK) {
       MESSAGE("Using DISK feature extraction");
       Matcher matcher = matcher_factory<DiskExtractor>(temporary_save_path);
       matcher.match(match_pairs_, imgs_data, progress);
@@ -144,13 +144,16 @@ public:
         match_pairs_ | std::views::filter([](auto&& pair) { return pair.valid; }), std::back_inserter(match_pairs));
   }
 
-  void triangulate() { triangulation(match_pairs, imgs_data); }
+  void triangulate() {
+    TriRes res = triangulation(match_pairs, imgs_data);
+    ba(imgs_data, res);
+  }
 
   void stitch() {
     MESSAGE("Stitching images");
     Stitcher stitcher(match_pairs, imgs_data, temporary_save_path);
     auto     stitched_img = stitcher.stitch();
-    if(stitched_img.empty()) {
+    if (stitched_img.empty()) {
       LOG_ERROR("Stitching failed");
       return;
     }

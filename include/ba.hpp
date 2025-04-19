@@ -26,7 +26,7 @@ public:
   template <typename T>
   bool operator()(const T* const q, const T* const t, const T* const c, const T* const pnt3d, T* residuals) const {
     T p0[3];
-    for(size_t i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < 3; ++i) {
       p0[i] = pnt3d[i] + t[i];
     }
     T p1[3];
@@ -46,7 +46,6 @@ private:
   Point<double> pnt2d;
 };
 
-// class RegisterTool {};
 
 void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
   ceres::Problem problem;
@@ -54,32 +53,32 @@ void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
   auto add_parameter_block = [&problem](auto& param) { problem.AddParameterBlock(param.data(), param.size()); };
   auto add_parameter_block_quaternion = [&problem](auto& param) {
     problem.AddParameterBlock(param.data(), param.size(), new ceres::QuaternionManifold());
-  };
+    };
 
-  auto quaternion = [](const cv::Mat& R) -> std::array<double, 4> {
+  auto quaternion = [](const cv::Mat& R)->std::array<double, 4> {
     Eigen::Matrix3d m;
     cv::cv2eigen(R, m);
     Eigen::Quaterniond q(m);
-    return {q.w(), q.x(), q.y(), q.z()};
+    return { q.w(), q.x(), q.y(), q.z() };
   };
   auto q_lhs = quaternion(img_lhs.R()), q_rhs = quaternion(img_rhs.R());
   add_parameter_block_quaternion(q_lhs), add_parameter_block_quaternion(q_rhs);
 
-  auto get_transpose_params = [](const cv::Mat& t) -> std::array<double, 3> {
-    return {t.at<float>(0), t.at<float>(1), t.at<float>(2)};
+  auto get_transpose_params = [](const cv::Mat& t)->std::array<double, 3> {
+    return { t.at<float>(0), t.at<float>(1), t.at<float>(2) };
   };
   auto t_lhs = get_transpose_params(img_lhs.t()), t_rhs = get_transpose_params(img_rhs.t());
   add_parameter_block(t_lhs), add_parameter_block(t_rhs);
 
-  auto get_camera_params = [](const cv::Mat& K) -> std::array<double, 4> {
-    return {K.at<float>(0, 0), K.at<float>(1, 1), K.at<float>(0, 2), K.at<float>(1, 2)};
+  auto get_camera_params = [](const cv::Mat& K)->std::array<double, 4> {
+    return { K.at<float>(0, 0), K.at<float>(1, 1), K.at<float>(0, 2), K.at<float>(1, 2) };
   };
   auto camera_lhs = get_camera_params(img_lhs.K()), camera_rhs = get_camera_params(img_rhs.K());
   add_parameter_block(camera_lhs), add_parameter_block(camera_rhs);
 
   auto set_lower_bound = [&problem](auto& param, size_t idx, double lower_bound = 0.0) {
     problem.SetParameterLowerBound(param.data(), idx, lower_bound);
-  };
+    };
 
   set_lower_bound(camera_lhs, 0);
   set_lower_bound(camera_lhs, 1);
@@ -88,8 +87,8 @@ void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
   set_lower_bound(camera_rhs, 1);
 
   std::vector<std::array<double, 3>> optimized_pnts3d(lhs_pnts.size());
-  for(int i = 0; i < input_pnts3d.size(); ++i) {
-    optimized_pnts3d[i] = {input_pnts3d[i].x, input_pnts3d[i].y, input_pnts3d[i].z};
+  for (int i = 0; i < input_pnts3d.size(); ++i) {
+    optimized_pnts3d[i] = { input_pnts3d[i].x, input_pnts3d[i].y, input_pnts3d[i].z };
     add_parameter_block(optimized_pnts3d[i]);
     ceres::CostFunction* cost_function = ReprojectionError::create(lhs_pnts[i], rhs_pnts[i]);
     problem.AddResidualBlock(
@@ -105,17 +104,17 @@ void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
   }
 
   ceres::Solver::Options options;
-  options.num_threads                  = std::thread::hardware_concurrency();
-  options.linear_solver_type           = ceres::SPARSE_SCHUR;
-  options.check_gradients              = false;
+  options.num_threads = std::thread::hardware_concurrency();
+  options.linear_solver_type = ceres::SPARSE_SCHUR;
+  options.check_gradients = false;
   options.minimizer_progress_to_stdout = false;
-  options.max_num_iterations           = 1000;
+  options.max_num_iterations = 1000;
 
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
   std::cout << summary.BriefReport() << std::endl;
 
-  auto v     = std::views::transform(optimized_pnts3d, [](const auto& point) {
+  auto v = std::views::transform(optimized_pnts3d, [](const auto& point) {
     return Point3<float>{static_cast<float>(point[0]), static_cast<float>(point[1]), static_cast<float>(point[2])};
   });
   auto q2mat = [](const std::array<double, 4>& q) {
@@ -125,30 +124,30 @@ void ba(ImgsData& imgs_data, std::vector<TriRes>& res) {
     cv::eigen2cv(m, R);
     R.convertTo(R, CV_32F);
     return R;
-  };
+    };
   auto t2mat = [](const std::array<double, 3>& t) {
     cv::Mat T(3, 1, CV_32F);
     T.at<float>(0, 0) = t[0];
     T.at<float>(1, 0) = t[1];
     T.at<float>(2, 0) = t[2];
     return T;
-  };
+    };
   auto k2mat = [](const std::array<double, 4>& k) {
-    cv::Mat K         = (cv::Mat_<float>(3, 3) << k[0], 0, k[2], 0, k[1], k[3], 0, 0, 1);
+    cv::Mat K = (cv::Mat_<float>(3, 3) << k[0], 0, k[2], 0, k[1], k[3], 0, 0, 1);
     K.at<float>(0, 0) = k[0];
     K.at<float>(1, 1) = k[1];
     K.at<float>(0, 2) = k[2];
     K.at<float>(1, 2) = k[3];
     return K;
-  };
-  return BAResults{
-      .R_lhs    = q2mat(q_lhs),
-      .R_rhs    = q2mat(q_rhs),
-      .t_lhs    = t2mat(t_lhs),
-      .t_rhs    = t2mat(t_rhs),
-      .K_lhs    = k2mat(camera_lhs),
-      .K_rhs    = k2mat(camera_rhs),
-      .points3d = std::vector<Point3<float>>{v.begin(), v.end()}};
+    };
+  return BAResults {
+      .R_lhs = q2mat(q_lhs),
+      .R_rhs = q2mat(q_rhs),
+      .t_lhs = t2mat(t_lhs),
+      .t_rhs = t2mat(t_rhs),
+      .K_lhs = k2mat(camera_lhs),
+      .K_rhs = k2mat(camera_rhs),
+      .points3d = std::vector<Point3<float>>{v.begin(), v.end()} };
 }
 } // namespace Ortho
 #endif

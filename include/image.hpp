@@ -22,7 +22,7 @@ public:
   ImageMem(T&& img) : img(std::forward<T>(img)) {}
 
   size_t size() const noexcept override {
-    if(img.empty()) {
+    if (img.empty()) {
       return 0;
     }
     return img.cols * img.rows * img.channels() * img.elemSize1();
@@ -61,7 +61,7 @@ public:
   Image& operator=(Image&&) = delete;
 
   Image(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) : path(img_read_path), initialized(true) {
-    if(!fs::exists(path)) {
+    if (!fs::exists(path)) {
       throw std::runtime_error("Error: Path does not exist");
     }
     mem.register_node(
@@ -70,7 +70,7 @@ public:
         SwapInFunc([path_string = this->path.string(), mode] {
           cv::Mat img = read(path_string, mode);
           return new ImageMem(std::move(img));
-        }),
+          }),
         SwapOutFunc([](ManageAblePtr ptr) {}));
   }
 
@@ -80,36 +80,36 @@ public:
         std::make_unique<ImageMem>(std::move(img)),
         SwapInFunc([path_string = this->path.string()] {
           return new ImageMem(std::move(read(path_string, cv::IMREAD_UNCHANGED)));
-        }),
+          }),
         SwapOutFunc([path_string = this->path.string()](ManageAblePtr ptr) {
-          if(ptr) {
+          if (ptr) {
             cv::imwrite(path_string, dynamic_cast<ImageMem*>(ptr.get())->get());
           }
-        }));
+          }));
   }
 
   void delay_initialize(fs::path temporary_save_path, cv::Mat&& img) {
-    if(initialized) {
+    if (initialized) {
       return;
     }
-    path        = temporary_save_path;
+    path = temporary_save_path;
     initialized = true;
     mem.register_node(
         path.string(),
         std::make_unique<ImageMem>(std::move(img)),
         SwapInFunc([path_string = this->path.string()] {
           return new ImageMem(std::move(read(path_string, cv::IMREAD_UNCHANGED)));
-        }),
+          }),
         SwapOutFunc([path_string = this->path.string()](ManageAblePtr ptr) {
-          if(ptr) {
+          if (ptr) {
             cv::imwrite(path_string, dynamic_cast<ImageMem*>(ptr.get())->get());
           }
-        }));
+          }));
   }
 
   ImgRefGuard get() const {
     check_init();
-    return mem.get_node(path.string()).value();
+    return *mem.get_node(path.string());
   }
 
   const fs::path& get_img_path() const {
@@ -137,14 +137,14 @@ public:
 private:
 
   void check_init() const {
-    if(!initialized) {
+    if (!initialized) {
       throw std::runtime_error("Error: Image not initialized");
     }
   }
 
   static cv::Mat read(const fs::path& path, cv::ImreadModes mode) {
     cv::Mat img = cv::imread(path.string(), mode);
-    if(img.empty()) {
+    if (img.empty()) {
       throw std::runtime_error(path.string() + " could not be read");
     }
     return img;
@@ -152,7 +152,7 @@ private:
 
   fs::path path;
 
-  bool initialized{false};
+  bool initialized { false };
 };
 
 class ExifXmp {
@@ -181,21 +181,21 @@ private:
   Exiv2::XmpData  xmp_;
 
   void check_and_load_exif_xmp() {
-    if(!exif_.empty() && !xmp_.empty()) {
+    if (!exif_.empty() && !xmp_.empty()) {
       return;
     }
     auto image_info = Exiv2::ImageFactory::open(path.string());
-    if(!image_info) {
+    if (!image_info) {
       throw std::runtime_error("Error: " + path.string() + " could not be opened by Exiv2");
       return;
     }
     try {
       image_info->readMetadata();
-    } catch(std::exception& e) {
+    } catch (std::exception& e) {
       throw std::runtime_error(std::string("An error occur while reading Metadata: ") + e.what());
     }
     exif_ = image_info->exifData();
-    xmp_  = image_info->xmpData();
+    xmp_ = image_info->xmpData();
   }
 };
 } // namespace Ortho
