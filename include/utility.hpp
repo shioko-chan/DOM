@@ -17,20 +17,23 @@
 
 namespace Ortho {
 RotateQArray rotate2qarray(const cv::InputArray& R_) {
-  cv::Mat R = R_.getMat();
+  cv::Mat         R = R_.getMat();
   Eigen::Matrix3d m;
   cv::cv2eigen(R, m);
-  Eigen::quaterniond q(m);
-  return { q.w(), q.x(), q.y(), q.z() };
+  Eigen::Quaterniond q(m);
+  return {q.w(), q.x(), q.y(), q.z()};
 }
+
 IntrinsicArray intrinsic2array(const cv::InputArray& K_) {
   cv::Mat K = K_.getMat();
-  return { K.at<float>(0, 0), K.at<float>(1, 1), K.at<float>(0, 2), K.at<float>(1, 2) };
+  return {K.at<float>(0, 0), K.at<float>(1, 1), K.at<float>(0, 2), K.at<float>(1, 2)};
 }
+
 TransposeArray transpose2array(const cv::InputArray&& t_) {
   cv::Mat t = t_.getMat();
-  return { t.at<float>(0), t.at<float>(1), t.at<float>(2) };
+  return {t.at<float>(0), t.at<float>(1), t.at<float>(2)};
 }
+
 template <std::ranges::range Range>
 auto min_x(const Range& points) {
   return std::ranges::min(points, {}, &std::ranges::range_value_t<Range>::x).x;
@@ -86,7 +89,7 @@ float iou(const Points<float>& points0, const Points<float>& points1) {
 }
 
 Points<float> intersection(const Points<float>& points0, const Points<float>& points1) {
-  if (!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
+  if(!cv::isContourConvex(points0) || !cv::isContourConvex(points1)) {
     std::cerr << "points0: " << points0 << std::endl;
     std::cerr << "points1: " << points1 << std::endl;
     throw std::runtime_error("Image has non-convex span");
@@ -97,17 +100,17 @@ Points<float> intersection(const Points<float>& points0, const Points<float>& po
 }
 
 float abs_ceil(float x) {
-  if (x >= 0) {
+  if(x >= 0) {
     return std::ceil(x);
   } else {
     return std::floor(x);
   }
 }
 
-void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = { 1024, 1024 }) {
+void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = {1024, 1024}) {
   const float scale =
-    std::min(resolution.width / static_cast<float>(img_->cols), resolution.height / static_cast<float>(img_->rows));
-  if (scale < 1.0f) {
+      std::min(resolution.width / static_cast<float>(img_->cols), resolution.height / static_cast<float>(img_->rows));
+  if(scale < 1.0f) {
     const int w = std::min(static_cast<int>(std::round(img_->cols * scale)), resolution.width);
     const int h = std::min(static_cast<int>(std::round(img_->rows * scale)), resolution.height);
     cv::resize(*img_, *img_, cv::Size(w, h), 0.0, 0.0, cv::INTER_NEAREST);
@@ -117,7 +120,7 @@ void decimate_keep_aspect_ratio(cv::Mat* img_, cv::Size resolution = { 1024, 102
 void check_or_create_path(const fs::path& path) {
   std::error_code ec;
   fs::create_directories(path, ec);
-  if (ec) {
+  if(ec) {
     throw std::runtime_error(ec.message());
   }
 }
@@ -137,10 +140,10 @@ cv::Mat get_projection_matrix(const cv::Mat& R, const cv::Mat& t, const cv::Mat&
 
 Point<float> mat2point(const cv::Mat& mat) noexcept {
   assert(mat.cols == 1 && (mat.rows == 2 || mat.rows == 3) && mat.channels() == 1);
-  if (mat.type() != CV_32F) {
+  if(mat.type() != CV_32F) {
     mat.convertTo(mat, CV_32F);
   }
-  switch (mat.rows) {
+  switch(mat.rows) {
     case 2:
       return Point<float>(mat.at<float>(0), mat.at<float>(1));
     case 3:
@@ -152,10 +155,10 @@ Point<float> mat2point(const cv::Mat& mat) noexcept {
 
 Point3<float> mat2point3(const cv::Mat& mat) noexcept {
   assert(mat.cols == 1 && (mat.rows == 3 || mat.rows == 4) && mat.channels() == 1);
-  if (mat.type() != CV_32F) {
+  if(mat.type() != CV_32F) {
     mat.convertTo(mat, CV_32F);
   }
-  switch (mat.rows) {
+  switch(mat.rows) {
     case 3:
       return Point3<float>(mat.at<float>(0), mat.at<float>(1), mat.at<float>(2));
     case 4:
@@ -167,13 +170,13 @@ Point3<float> mat2point3(const cv::Mat& mat) noexcept {
 }
 
 template <typename T, typename U>
-  requires std::is_arithmetic_v<T>&& std::is_arithmetic_v<U>
+  requires std::is_arithmetic_v<T> && std::is_arithmetic_v<U>
 double distance(const Point<T>& p0, const Point<U>& p1) noexcept {
   return std::hypot(static_cast<double>(p0.x - p1.x), static_cast<double>(p0.y - p1.y));
 }
 
 template <typename T, typename U>
-  requires std::is_arithmetic_v<T>&& std::is_arithmetic_v<U>
+  requires std::is_arithmetic_v<T> && std::is_arithmetic_v<U>
 double distance(const Point3<T>& p0, const Point3<U>& p1) noexcept {
   return std::hypot(static_cast<double>(p0.x - p1.x), static_cast<double>(p0.y - p1.y), static_cast<double>(p0.z - p1.z));
 }
@@ -184,11 +187,11 @@ namespace cv {
 
 template <typename T>
 constexpr int cv_type_of() {
-  if constexpr (std::is_same_v<T, float>) {
+  if constexpr(std::is_same_v<T, float>) {
     return CV_32F;
-  } else if constexpr (std::is_same_v<T, double>) {
+  } else if constexpr(std::is_same_v<T, double>) {
     return CV_64F;
-  } else if constexpr (std::is_same_v<T, int>) {
+  } else if constexpr(std::is_same_v<T, int>) {
     return CV_32S;
   } else {
     static_assert(false, "Unsupported type");
@@ -201,7 +204,7 @@ Mat operator*(const InputArray& lhs_, const Point_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 2 || lhs.cols == 3) && lhs.type() == cv_type_of<T>());
-  if (lhs.cols == 2) {
+  if(lhs.cols == 2) {
     return lhs * (Mat_<T>(2, 1) << rhs.x, rhs.y);
   } else {
     return lhs * (Mat_<T>(3, 1) << rhs.x, rhs.y, 1);
@@ -214,7 +217,7 @@ Mat operator*(const InputArray& lhs_, const Point3_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 3 || lhs.cols == 4) && lhs.type() == cv_type_of<T>());
-  if (lhs.cols == 3) {
+  if(lhs.cols == 3) {
     return lhs * (Mat_<T>(3, 1) << rhs.x, rhs.y, rhs.z);
   } else {
     return lhs * (Mat_<T>(4, 1) << rhs.x, rhs.y, rhs.z, 1);
@@ -227,7 +230,7 @@ Mat operator+(const InputArray& lhs_, const Point_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 2 && lhs.rows == 1 || lhs.cols == 1 && lhs.rows == 2) && lhs.type() == cv_type_of<T>());
-  if (lhs.cols == 2) {
+  if(lhs.cols == 2) {
     return lhs + (Mat_<T>(1, 2) << rhs.x, rhs.y);
   } else {
     return lhs + (Mat_<T>(2, 1) << rhs.x, rhs.y);
@@ -240,7 +243,7 @@ Mat operator+(const InputArray& lhs_, const Point3_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 3 && lhs.rows == 1 || lhs.cols == 1 && lhs.rows == 3) && lhs.type() == cv_type_of<T>());
-  if (lhs.cols == 3) {
+  if(lhs.cols == 3) {
     return lhs + (Mat_<T>(1, 3) << rhs.x, rhs.y, rhs.z);
   } else {
     return lhs + (Mat_<T>(3, 1) << rhs.x, rhs.y, rhs.z);

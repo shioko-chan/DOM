@@ -18,13 +18,13 @@ namespace Ortho {
 
 namespace fs = std::filesystem;
 
-using RotateQArray = std::array<double, 4>;
+using RotateQArray   = std::array<double, 4>;
 using IntrinsicArray = std::array<double, 4>;
 using TransposeArray = std::array<double, 3>;
-template<typename T>
+template <typename T>
 using USets = std::vector<std::unordered_set<T>>;
 
-template<typename T>
+template <typename T>
 using Sets = std::vector<std::set<T>>;
 
 using KeyPoints = std::vector<cv::KeyPoint>;
@@ -39,9 +39,9 @@ struct Match {
 using Matches = std::vector<Match>;
 
 struct PointIdx {
-  int img_idx;
+  int    img_idx;
   size_t pnt_idx;
-  auto operator<=>(const PointIdx&) const = default;
+  auto   operator<=>(const PointIdx&) const = default;
 };
 
 template <typename T>
