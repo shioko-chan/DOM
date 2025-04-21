@@ -129,8 +129,8 @@ private:
         [wf2, hf2, max2](const auto& feature) { return Point<float>{feature.x * max2 + wf2, feature.y * max2 + hf2}; });
   }
 
-  using cv::DMatch;
-  using DMatches = std::vector<cv::DMatch>;
+  using DMatch   = cv::DMatch;
+  using DMatches = std::vector<DMatch>;
 
   static cv::Mat draw_matchlines(
       ImgData&        img_lhs,
@@ -141,12 +141,11 @@ private:
     auto          v_lhs = features_lhs | feature2point(img_lhs.get_size());
     auto          v_rhs = features_rhs | feature2point(img_rhs.get_size());
     auto          v     = matches | std::views::transform([](const auto& match) {
-               return DMatch(static_cast<int>(match.lhs), static_cast<int>(match.rhs), match.score)
+               return DMatch(static_cast<int>(match.lhs), static_cast<int>(match.rhs), match.score);
              });
     Points<float> points_lhs{v_lhs.begin(), v_lhs.end()}, points_rhs{v_rhs.begin(), v_rhs.end()};
-    DMatches      matches{v.begin(), v.end()};
-
-    cv::Mat img0;
+    DMatches      d_matches{v.begin(), v.end()};
+    cv::Mat       img0;
     {
       auto guard = img_lhs.img().get();
       guard.get().copyTo(img0);
@@ -159,12 +158,13 @@ private:
     auto points2keypoints = [](const auto& points) {
       return points | std::views::transform([](const auto& point) { return cv::KeyPoint(point.x, point.y, 1.0f); });
     };
-    auto      v_lhs = points2keypoints(points_lhs);
-    auto      v_rhs = points2keypoints(points_rhs);
-    KeyPoints keypoints_lhs{v_lhs.begin(), v_lhs.end()}, keypoints_rhs{v_rhs.begin(), v_rhs.end()};
+    auto      v1_lhs = points2keypoints(points_lhs);
+    auto      v1_rhs = points2keypoints(points_rhs);
+    KeyPoints keypoints_lhs{v_lhs.begin(), v_lhs.end()}, keypoints_rhs{v1_rhs.begin(), v1_rhs.end()};
     cv::Mat   res;
 
-    cv::drawMatches(img0, keypoints_lhs, img1, keypoints_rhs, matches, res, cv::Scalar::all(-1), cv::Scalar(255, 255, 255));
+    cv::drawMatches(
+        img0, keypoints_lhs, img1, keypoints_rhs, d_matches, res, cv::Scalar::all(-1), cv::Scalar(255, 255, 255));
     return res;
   }
 
@@ -222,8 +222,8 @@ public:
                         | std::views::transform([&rhs_features](const auto& match) { return rhs_features[match.rhs]; })
                         | feature2point(rhs_img.get_size());
         auto score     = matches | std::views::transform([](const auto& match) { return match.score; });
-        auto idx_lhs   = lhs_img.kpnts.append(kpnt_lhs);
-        auto idx_rhs   = rhs_img.kpnts.append(kpnt_rhs);
+        auto idx_lhs   = lhs_img.get_kpnts().append(kpnt_lhs);
+        auto idx_rhs   = rhs_img.get_kpnts().append(kpnt_rhs);
         auto matches_v = std::views::zip(idx_lhs, idx_rhs, score) | std::views::transform([](auto&& idx) {
                            auto&& [i0, i1, score] = idx;
                            return Match{i0, i1, score};

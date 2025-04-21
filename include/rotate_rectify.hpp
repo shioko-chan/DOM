@@ -6,7 +6,6 @@
 #include <ranges>
 
 #include "config.hpp"
-#include "pose_intrinsic.hpp"
 #include "utility.hpp"
 
 namespace Ortho {
@@ -17,10 +16,8 @@ struct RectifyResult {
   cv::Mat img, mask;
 };
 
-RectifyResult rotate_rectify(const cv::Size img_size, const cv::Mat& R_cam2world, const cv::Mat& img_) {
-  cv::Mat img;
-  cv::resize(img_, img, img_size);
-  auto [w, h] = img_size;
+RectifyResult rotate_rectify(cv::Mat* project_matrix, const cv::Mat& R_cam2world, const cv::Mat& img) {
+  auto [w, h] = img.size();
   if(w < 5 || h < 5) {
     throw std::runtime_error("Image size is too small");
   }
@@ -47,11 +44,13 @@ RectifyResult rotate_rectify(const cv::Size img_size, const cv::Mat& R_cam2world
             });
   auto          rect1  = boundingRect(v2);
   Points<float> dst(v2.begin(), v2.end());
-  const cv::Mat M = cv::getPerspectiveTransform(src, dst);
+  cv::Mat       M = cv::getPerspectiveTransform(src, dst);
   cv::Mat       img_res, mask_res;
   cv::Size      size = cv::Size(std::ceil(rect1.width), std::ceil(rect1.height));
   cv::warpPerspective(img, img_res, M, size, cv::INTER_CUBIC);
   cv::warpPerspective(mask, mask_res, M, size, cv::INTER_NEAREST);
+  M.convertTo(M, CV_32F);
+  *project_matrix = M * *project_matrix;
   return {
       .img  = std::move(img_res),
       .mask = std::move(mask_res),

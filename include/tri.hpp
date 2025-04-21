@@ -2,6 +2,7 @@
 #define ORTHO_TRI_HPP
 
 #include <array>
+#include <mutex>
 #include <vector>
 
 #include <ceres/ceres.h>
@@ -13,17 +14,17 @@
 #include "imgdata.hpp"
 #include "log.hpp"
 #include "matchpair.hpp"
+#include "progress.hpp"
 #include "tracks.hpp"
 #include "types.hpp"
 #include "utility.hpp"
 
 namespace Ortho {
 
-namespace Tri {
-struct ReprojectionError {
+struct TriReprojectionError {
 public:
 
-  ReprojectionError(Point<double> img_pnt, const RotateQArray& q, const IntrinsicArray& c, const TransposeArray& t) :
+  TriReprojectionError(Point<double> img_pnt, const RotateQArray& q, const CameraArray& c, const TranslateArray& t) :
       pnt2d(std::move(img_pnt)), q(std::move(q)), c(std::move(c)), t(std::move(t)) {}
 
   template <typename T>
@@ -36,43 +37,45 @@ public:
     for(size_t i = 0; i < 4; ++i) {
       q[i] = T(this->q[i]);
     }
-    ceres::rotate2qarrayRotatePoint(q, p0, p1);
+    ceres::QuaternionRotatePoint(q, p0, p1);
     residuals[0] = T(c[0]) * p1[0] / p1[2] + T(c[2]) - T(pnt2d.x);
     residuals[1] = T(c[1]) * p1[1] / p1[2] + T(c[3]) - T(pnt2d.y);
     return true;
   }
 
-  static ceres::CostFunction* create(const Point<float>& img_pnt, RotateQArray q, IntrinsicArray c, TransposeArray t) {
-    return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 3>(
-        new ReprojectionError(Point<double>(img_pnt), std::move(q), std::move(c), std::move(t)));
+  static ceres::CostFunction* create(const Point<float>& img_pnt, RotateQArray q, CameraArray c, TranslateArray t) {
+    return new ceres::AutoDiffCostFunction<TriReprojectionError, 2, 3>(
+        new TriReprojectionError(Point<double>(img_pnt), std::move(q), std::move(c), std::move(t)));
   }
 
 private:
 
   Point<double>  pnt2d;
   RotateQArray   q;
-  IntrinsicArray c;
-  TransposeArray t;
+  CameraArray    c;
+  TranslateArray t;
 };
 
 struct TriRes {
-  Point3<float> pnt3d;
-  PointIdxs     pnt2d_idx_vec;
+  std::array<double, 3> pnt3d;
+  PointIdxs             pnt2d_idx_vec;
 };
 
-std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data) {
-  TracksMaintainer tracks_maintainer;
-  for(const auto& match_img_pair : match_img_pairs) {
-    for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
-      tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
+std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data, Progress& progress) {
+  TracksMaintainer       tracks_maintainer;
+  std::vector<PointIdxs> pntidx_vecs = time_function([&] {
+    for(const auto& match_img_pair : match_img_pairs) {
+      for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
+        tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
+      }
     }
-  }
-  std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
+    return tracks_maintainer.get_tracks();
+  });
 
   auto get_v_c2w = [&imgs_data](const PointIdx& idx) {
     const auto& [img_idx, pnt_idx] = idx;
     auto&   img                    = imgs_data[img_idx];
-    cv::Mat v_m                    = img.R().t() * img.K().inv() * img.kpnts.get(pnt_idx);
+    cv::Mat v_m                    = img.R_bproj() * img.K_bproj() * img.get_kpnts().get(pnt_idx);
     v_m.convertTo(v_m, CV_64F);
     Eigen::Vector3d v;
     cv::cv2eigen(v_m, v);
@@ -81,49 +84,58 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
   auto get_t_c2w = [&imgs_data](const PointIdx& idx) {
     const auto& [img_idx, _] = idx;
     auto&   img              = imgs_data[img_idx];
-    cv::Mat t_m              = -img.t();
+    cv::Mat t_m              = img.t_bproj();
     t_m.convertTo(t_m, CV_64F);
     Eigen::Vector3d t;
     cv::cv2eigen(t_m, t);
     return t;
   };
   std::vector<TriRes> res;
-  for(auto& pntidx_vec : pntidx_vecs) {
-    size_t n = pntidx_vec.size();
-    assert(n > 1);
-    size_t          rows = 3 * n, cols = n + 3;
-    Eigen::MatrixXd A = Eigen::MatrixXd::Zero(rows, cols);
-    Eigen::VectorXd b(rows);
-    for(size_t i = 0; i < n; ++i) {
-      Eigen::Vector3d v = get_v_c2w(pntidx_vec[i]), t = get_t_c2w(pntidx_vec[i]);
-      A.block<3, 3>(i * 3, 0) = -Eigen::Matrix3d::Identity();
-      A.block<3, 1>(i * 3, 3) = v;
-      b.segment<3>(i * 3)     = t;
-    }
-    Eigen::VectorXd       x = A.colPivHouseholderQr().solve(b);
-    std::array<double, 3> wp{x(0), x(1), x(2)};
-    ceres::Problem        problem;
-    problem.AddParameterBlock(wp.data(), wp.size());
-    for(const auto& pntidx : pntidx_vec) {
-      ImgData&             img  = imgs_data[pntidx.img_idx];
-      ceres::CostFunction* cost = ReprojectionError::create(
-          img.kpnts[pntidx.pnt_idx], rotate2qarray(img.R()), intrinsic2array(img.K()), transpose2array(img.t()));
-      problem.AddResidualBlock(cost, new ceres::HuberLoss(1.0), wp.data());
-    }
-    ceres::Solver::Options options;
-    options.linear_solver_type           = ceres::DENSE_QR;
-    options.check_gradients              = false;
-    options.minimizer_progress_to_stdout = false;
-    options.max_num_iterations           = 1000;
-    ceres::Solver::Summary summary;
-    ceres::Solve(options, &problem, &summary);
-    std::cout << summary.BriefReport() << std::endl;
-    if(summary.IsSolutionUsable()) {
-      res.emplace_back(Point3<float>(wp[0], wp[1], wp[2]), std::move(pntidx_vec));
-    }
-  }
+  std::mutex          mtx;
+  run(
+      pntidx_vecs.size(),
+      [&res, &pntidx_vecs, &get_v_c2w, &get_t_c2w, &imgs_data, &mtx](int idx) {
+        auto&  pntidx_vec = pntidx_vecs[idx];
+        size_t n          = pntidx_vec.size();
+        assert(n > 1);
+        size_t          rows = 3 * n, cols = n + 3;
+        Eigen::MatrixXd A = Eigen::MatrixXd::Zero(rows, cols);
+        Eigen::VectorXd b(rows);
+        for(size_t i = 0; i < n; ++i) {
+          Eigen::Vector3d v = get_v_c2w(pntidx_vec[i]), t = get_t_c2w(pntidx_vec[i]);
+          A.block<3, 3>(i * 3, 0) = -Eigen::Matrix3d::Identity();
+          A.block<3, 1>(i * 3, 3) = v;
+          b.segment<3>(i * 3)     = t;
+        }
+        Eigen::VectorXd       x = A.colPivHouseholderQr().solve(b);
+        std::array<double, 3> wp{x(0), x(1), x(2)};
+        ceres::Problem        problem;
+        problem.AddParameterBlock(wp.data(), wp.size());
+        for(const auto& pntidx : pntidx_vec) {
+          ImgData&             img  = imgs_data[pntidx.img_idx];
+          ceres::CostFunction* cost = TriReprojectionError::create(
+              img.get_kpnts().get(pntidx.pnt_idx),
+              rotate2qarray(img.R_proj()),
+              camera2array(img.K_proj()),
+              translate2array(img.t_proj()));
+          problem.AddResidualBlock(cost, new ceres::HuberLoss(1.0), wp.data());
+        }
+        ceres::Solver::Options options;
+        options.linear_solver_type           = ceres::DENSE_QR;
+        options.check_gradients              = false;
+        options.minimizer_progress_to_stdout = false;
+        options.max_num_iterations           = 1000;
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+        std::cout << summary.BriefReport() << std::endl;
+        if(summary.IsSolutionUsable()) {
+          std::lock_guard _{mtx};
+          res.emplace_back(std::array<double, 3>{wp[0], wp[1], wp[2]}, std::move(pntidx_vec));
+        }
+      },
+      progress);
+  return res;
 }
-} // namespace Tri
 } // namespace Ortho
 
 #endif

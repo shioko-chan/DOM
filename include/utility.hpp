@@ -1,10 +1,14 @@
 #ifndef ORTHO_UTILITY_HPP
 #define ORTHO_UTILITY_HPP
 
+#include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cmath>
+#include <execution>
 #include <filesystem>
+#include <functional>
 #include <ranges>
 #include <set>
 #include <string_view>
@@ -13,26 +17,109 @@
 #include <Eigen/Dense>
 #include <opencv2/opencv.hpp>
 
+#include "progress.hpp"
 #include "types.hpp"
 
 namespace Ortho {
-RotateQArray rotate2qarray(const cv::InputArray& R_) {
-  cv::Mat         R = R_.getMat();
+
+namespace {
+void print_run_time(const auto& start) {
+  auto end      = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  std::cout << "Function run time: " << duration.count() << " ns\n";
+}
+} // namespace
+
+template <typename F>
+auto make_timed(F&& f) {
+  return [f = std::forward<F>(f)](auto&&... args) {
+    auto start = std::chrono::high_resolution_clock::now();
+    if constexpr(std::is_same_v<void, std::invoke_result_t<F, decltype(args)...>>) {
+      std::invoke(f, std::forward<decltype(args)>(args)...);
+      print_run_time(start);
+    } else {
+      auto result = std::invoke(f, std::forward<decltype(args)>(args)...);
+      print_run_time(start);
+      return result;
+    }
+  };
+}
+
+template <typename Func, typename... Args>
+auto time_function(Func&& func, Args&&... args) {
+  auto start = std::chrono::high_resolution_clock::now();
+  if constexpr(std::is_same_v<void, std::invoke_result_t<Func, Args...>>) {
+    std::invoke(std::forward<Func>(func), std::forward<Args>(args)...);
+    print_run_time(start);
+  } else {
+    auto result = std::invoke(std::forward<Func>(func), std::forward<Args>(args)...);
+    print_run_time(start);
+    return result;
+  }
+}
+
+void run(size_t tasks, std::function<void(int)> process, Progress& progress) {
+  progress.reset(tasks);
+  auto indices = std::views::iota(0, static_cast<int>(tasks));
+  std::for_each(std::execution::par_unseq, indices.begin(), indices.end(), [&process, &progress](int i) {
+    process(i);
+    progress.update();
+  });
+}
+
+RotateQArray rotate2qarray(cv::InputArray R_) {
+  cv::Mat R = R_.getMat();
+  R.convertTo(R, CV_64F);
   Eigen::Matrix3d m;
   cv::cv2eigen(R, m);
   Eigen::Quaterniond q(m);
+  q.normalize();
   return {q.w(), q.x(), q.y(), q.z()};
 }
 
-IntrinsicArray intrinsic2array(const cv::InputArray& K_) {
-  cv::Mat K = K_.getMat();
-  return {K.at<float>(0, 0), K.at<float>(1, 1), K.at<float>(0, 2), K.at<float>(1, 2)};
+cv::Mat qarray2rotate(const RotateQArray& q) {
+  Eigen::Quaterniond quaternion{q[0], q[1], q[2], q[3]};
+  quaternion.normalize();
+  Eigen::Matrix3d m = quaternion.toRotationMatrix();
+  cv::Mat         R;
+  cv::eigen2cv(m, R);
+  R.convertTo(R, CV_32F);
+  return R;
 }
 
-TransposeArray transpose2array(const cv::InputArray&& t_) {
+TranslateArray translate2array(cv::InputArray t_) {
   cv::Mat t = t_.getMat();
-  return {t.at<float>(0), t.at<float>(1), t.at<float>(2)};
+  if(t.type() != CV_64F) {
+    t.convertTo(t, CV_64F);
+  }
+  return {t.at<double>(0), t.at<double>(1), t.at<double>(2)};
 }
+
+cv::Mat array2translate(const TranslateArray& t) { return (cv::Mat_<float>(3, 1) << t[0], t[1], t[2]); }
+
+CameraArray camera2array(cv::InputArray K_) {
+  cv::Mat K = K_.getMat();
+  if(K.type() != CV_64F) {
+    K.convertTo(K, CV_64F);
+  }
+  return {K.at<double>(0, 0), K.at<double>(1, 1), K.at<double>(0, 2), K.at<double>(1, 2)};
+}
+
+cv::Mat array2camera(const CameraArray& k) {
+  // clang-format off
+  return (cv::Mat_<float>(3, 3) << 
+    k[0], 0,    k[2],
+    0,    k[1], k[3], 
+    0,    0,    1);
+  // clang-format on
+}
+
+DistortArray distort2array(cv::InputArray d_) {
+  cv::Mat d = d_.getMat();
+  return {d.at<float>(0), d.at<float>(1), d.at<float>(2), d.at<float>(3), d.at<float>(4), d.at<float>(5)};
+}
+
+cv::Mat array2distort(const DistortArray& d) { return (cv::Mat_<float>(6, 1) << d[0], d[1], d[2], d[3], d[4], d[5]); }
 
 template <std::ranges::range Range>
 auto min_x(const Range& points) {
@@ -200,7 +287,7 @@ constexpr int cv_type_of() {
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator*(const InputArray& lhs_, const Point_<T>& rhs) {
+Mat operator*(InputArray lhs_, const Point_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 2 || lhs.cols == 3) && lhs.type() == cv_type_of<T>());
@@ -213,7 +300,7 @@ Mat operator*(const InputArray& lhs_, const Point_<T>& rhs) {
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator*(const InputArray& lhs_, const Point3_<T>& rhs) {
+Mat operator*(InputArray lhs_, const Point3_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 3 || lhs.cols == 4) && lhs.type() == cv_type_of<T>());
@@ -226,7 +313,7 @@ Mat operator*(const InputArray& lhs_, const Point3_<T>& rhs) {
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator+(const InputArray& lhs_, const Point_<T>& rhs) {
+Mat operator+(InputArray lhs_, const Point_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 2 && lhs.rows == 1 || lhs.cols == 1 && lhs.rows == 2) && lhs.type() == cv_type_of<T>());
@@ -239,7 +326,7 @@ Mat operator+(const InputArray& lhs_, const Point_<T>& rhs) {
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator+(const InputArray& lhs_, const Point3_<T>& rhs) {
+Mat operator+(InputArray lhs_, const Point3_<T>& rhs) {
   Mat lhs = lhs_.getMat();
   assert(lhs.channels() == 1);
   assert((lhs.cols == 3 && lhs.rows == 1 || lhs.cols == 1 && lhs.rows == 3) && lhs.type() == cv_type_of<T>());
@@ -252,39 +339,39 @@ Mat operator+(const InputArray& lhs_, const Point3_<T>& rhs) {
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator+(const Point_<T>& lhs, const InputArray& rhs_) {
+Mat operator+(const Point_<T>& lhs, InputArray rhs_) {
   return rhs_ + lhs;
 }
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator+(const Point3_<T>& lhs, const InputArray& rhs_) {
+Mat operator+(const Point3_<T>& lhs, InputArray rhs_) {
   return rhs_ + lhs;
 }
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator-(const InputArray& lhs_, const Point_<T>& rhs) {
+Mat operator-(InputArray lhs_, const Point_<T>& rhs) {
   Point_<T> p(-rhs.x, -rhs.y);
   return lhs_ + p;
 }
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator-(const InputArray& lhs_, const Point3_<T>& rhs) {
+Mat operator-(InputArray lhs_, const Point3_<T>& rhs) {
   Point3_<T> p(-rhs.x, -rhs.y, -rhs.z);
   return lhs_ + p;
 }
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator-(const Point_<T>& lhs, const InputArray& rhs) {
+Mat operator-(const Point_<T>& lhs, InputArray rhs) {
   return -(rhs - lhs);
 }
 
 template <typename T>
   requires std::is_arithmetic_v<T>
-Mat operator-(const Point3_<T>& lhs, const InputArray& rhs) {
+Mat operator-(const Point3_<T>& lhs, InputArray rhs) {
   return -(rhs - lhs);
 }
 

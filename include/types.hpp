@@ -19,8 +19,9 @@ namespace Ortho {
 namespace fs = std::filesystem;
 
 using RotateQArray   = std::array<double, 4>;
-using IntrinsicArray = std::array<double, 4>;
-using TransposeArray = std::array<double, 3>;
+using CameraArray    = std::array<double, 4>;
+using DistortArray   = std::array<double, 6>;
+using TranslateArray = std::array<double, 3>;
 template <typename T>
 using USets = std::vector<std::unordered_set<T>>;
 
@@ -42,6 +43,10 @@ struct PointIdx {
   int    img_idx;
   size_t pnt_idx;
   auto   operator<=>(const PointIdx&) const = default;
+
+  friend std::ostream& operator<<(std::ostream& os, const PointIdx& idx) {
+    return os << "{" << idx.img_idx << ", " << idx.pnt_idx << "}";
+  }
 };
 
 template <typename T>
