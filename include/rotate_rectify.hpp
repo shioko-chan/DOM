@@ -10,8 +10,6 @@
 
 namespace Ortho {
 
-constexpr float square_size{4096};
-
 struct RectifyResult {
   cv::Mat img, mask;
 };
@@ -38,7 +36,7 @@ RectifyResult rotate_rectify(cv::Mat* project_matrix, const cv::Mat& R_cam2world
   if(max_side < 1e-6f) {
     max_side = 1.0f;
   }
-  float         factor = square_size / max_side;
+  float         factor = IMG_SIZE / max_side;
   auto          v2     = v1 | std::views::transform([factor](const auto& point) {
               return Point<float>(point.x * factor, point.y * factor);
             });

@@ -160,18 +160,22 @@ public:
       throw std::runtime_error("Reference coordinate not set!");
     }
     cv::Mat img = cv::imread(img_path.string());
+    decimate_keep_aspect_ratio(&img, {2048, 2048});
     if(img.empty()) {
       throw std::runtime_error(img_path.string() + " could not be read");
     }
     const auto [w, h] = img.size();
     set_by_camera_params(w, h, focal_35mm);
-    cv::Mat proj_mat          = get_projection_matrix(R_proj(), t_proj(), K_proj());
-    auto&& [rotate_img, mask] = Ortho::rotate_rectify(&proj_mat, R_bproj(), img);
+    cv::Mat proj_mat        = get_projection_matrix(R_proj(), t_proj(), K_proj());
+    auto [rotate_img, mask] = Ortho::rotate_rectify(&proj_mat, R_bproj(), img);
     cv::Mat c_m, r_m, t_m;
     cv::decomposeProjectionMatrix(proj_mat, c_m, r_m, t_m);
+    assert(c_m.type() == CV_32F && r_m.type() == CV_32F && t_m.type() == CV_32F);
     set_by_K_proj(c_m);
     set_by_R_proj(r_m);
-    t_m = r_m.t() * (t_m.rowRange(0, 3) / t_m.at<double>(3, 0));
+    t_m = r_m.t() * (t_m.rowRange(0, 3) / t_m.at<float>(3, 0));
+    assert(
+        std::isfinite(t_m.at<float>(0, 0)) && std::isfinite(t_m.at<float>(1, 0)) && std::isfinite(t_m.at<float>(2, 0)));
     set_by_t_proj(t_m);
     img_size = rotate_img.size();
     this->img_rotated.delay_initialize(
@@ -249,6 +253,8 @@ public:
   void set_by_t_proj(cv::InputArray t) { t_proj_array = translate2array(t); }
 
   void set_by_t_bproj(cv::InputArray t) { t_proj_array = translate2array(-t.getMat()); }
+
+  const Kpnts& get_kpnts() const { return kpnts; }
 
   Kpnts& get_kpnts() { return kpnts; }
 
