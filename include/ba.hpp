@@ -85,7 +85,7 @@ void ba(ImgsData& imgs_data, auto& res) {
   options.max_num_iterations           = 2000;
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
-  std::cout << summary.BriefReport() << std::endl;
+  // std::cout << summary.BriefReport() << std::endl;
 }
 } // namespace Ortho
 #endif

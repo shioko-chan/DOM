@@ -62,15 +62,13 @@ struct TriRes {
 };
 
 std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data, Progress& progress) {
-  TracksMaintainer       tracks_maintainer;
-  std::vector<PointIdxs> pntidx_vecs = time_function([&] {
-    for(const auto& match_img_pair : match_img_pairs) {
-      for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
-        tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
-      }
+  TracksMaintainer tracks_maintainer;
+  for(const auto& match_img_pair : match_img_pairs) {
+    for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
+      tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
     }
-    return tracks_maintainer.get_tracks();
-  });
+  }
+  std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
 
   auto get_v_c2w = [&imgs_data](const PointIdx& idx) {
     const auto& [img_idx, pnt_idx] = idx;
@@ -127,7 +125,7 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
         options.max_num_iterations           = 1000;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
-        std::cout << summary.BriefReport() << std::endl;
+        // std::cout << summary.BriefReport() << std::endl;
         if(summary.IsSolutionUsable()) {
           std::lock_guard _{mtx};
           res.emplace_back(std::array<double, 3>{wp[0], wp[1], wp[2]}, std::move(pntidx_vec));

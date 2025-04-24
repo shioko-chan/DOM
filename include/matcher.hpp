@@ -229,6 +229,12 @@ public:
                            return Match{i0, i1, score};
                          });
         pair.matches.assign(matches_v.begin(), matches_v.end());
+        cv::Mat       M;
+        Points<float> kpnt_lhs_f, kpnt_rhs_f;
+        std::ranges::copy(kpnt_lhs, std::back_inserter(kpnt_lhs_f));
+        std::ranges::copy(kpnt_rhs, std::back_inserter(kpnt_rhs_f));
+        cv::findHomography(kpnt_lhs_f, kpnt_rhs_f, cv::RANSAC);
+        pair.M     = M;
         pair.valid = true;
       }
       progress.update(batch_cnt);

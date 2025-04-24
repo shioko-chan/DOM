@@ -34,6 +34,7 @@ int main(int argc, char* const argv[]) {
   MESSAGE("[3/5] Matching neighbor images");
   process.match(NEIGHBOR_PROPOSAL);
   MESSAGE("[4/5] Triangulate");
-  process.triangulate();
+  process.stitch();
+  // process.triangulate();
   return 0;
 }

@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <execution>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <queue>
@@ -20,13 +22,10 @@ public:
 
   void append_match(PointIdx idx0, PointIdx idx1, float score) {
     assert(idx0.img_idx != idx1.img_idx);
-    if(pnt_map.contains(idx0) && pnt_map[idx0].contains(idx1) && pnt_map[idx0][idx1] < score) {
-      pnt_map[idx0][idx1] = score;
-      pnt_map[idx1][idx0] = score;
-      return;
-    }
-    pnt_map[idx0].emplace(idx1, score);
-    pnt_map[idx1].emplace(idx0, score);
+    float weight        = score2weight(score);
+    float max_weight    = std::max(pnt_map[idx0][idx1], weight);
+    pnt_map[idx0][idx1] = max_weight;
+    pnt_map[idx1][idx0] = max_weight;
     check_and_remove_weak_match(idx0);
   }
 
@@ -46,49 +45,32 @@ public:
 
 private:
 
-  template <typename T>
-    requires std::is_same_v<T, std::queue<PointIdx>> || std::is_same_v<T, std::stack<PointIdx>>
-  struct Container {
-    T container;
+  float score2weight(float score) { return -std::log(std::max(1e-6f, 1.0f - score)); }
 
-    void push(const PointIdx& idx) { container.push(idx); }
+  using WeightMap     = PointIdxUMap<PointIdxUMap<float>>;
+  using Edge          = std::pair<PointIdx, PointIdx>;
+  using Edges         = std::vector<Edge>;
+  using PointIdxPair  = std::pair<PointIdx, PointIdx>;
+  using PointIdxPairs = std::vector<PointIdxPair>;
+  WeightMap pnt_map;
 
-    PointIdx pop() {
-      PointIdx first;
-      if constexpr(std::is_same_v<T, std::queue<PointIdx>>) {
-        first = container.front();
-      } else {
-        first = container.top();
-      }
-      container.pop();
-      return first;
+  void bfs(const PointIdx& start, std::function<void(const PointIdx&)> visit, PointIdxUSet* arranged = nullptr) {
+    bool arranged_owned = !arranged;
+    if(arranged_owned) {
+      arranged = new PointIdxUSet;
     }
-
-    bool empty() const { return container.empty(); }
-  };
-
-  using Queue = Container<std::queue<PointIdx>>;
-  using Stack = Container<std::stack<PointIdx>>;
-
-  template <typename C>
-    requires std::is_same_v<C, Queue> || std::is_same_v<C, Stack>
-  void dfs_bfs(const PointIdx& start, std::function<void(const PointIdx&)> visit, PointIdxUSet* arranged = nullptr) {
-    bool arranged_owned = false;
-    if(!arranged) {
-      arranged       = new PointIdxUSet;
-      arranged_owned = true;
-    }
-    C    container;
-    auto add = [&arranged, &container](const PointIdx& idx) {
+    std::queue<PointIdx> queue;
+    auto                 add = [&arranged, &queue](const PointIdx& idx) {
       if(arranged->contains(idx)) {
         return;
       }
-      container.push(idx);
+      queue.push(idx);
       arranged->insert(idx);
     };
     add(start);
-    while(!container.empty()) {
-      PointIdx current = container.pop();
+    while(!queue.empty()) {
+      PointIdx current = queue.front();
+      queue.pop();
       visit(current);
       for(const auto& [next, _] : pnt_map[current]) {
         add(next);
@@ -99,63 +81,56 @@ private:
     }
   }
 
-  void dfs(const PointIdx& start, std::function<void(const PointIdx&)> visit, PointIdxUSet* arranged = nullptr) {
-    dfs_bfs<Stack>(start, visit, arranged);
-  }
+  static constexpr int N = 1e4 + 5, M = 2e5 + 5;
+  int                  n, m, s, t, tot = 1, lnk[N], ter[M], nxt[M], val[M], dep[N], cur[N];
 
-  void bfs(const PointIdx& start, std::function<void(const PointIdx&)> visit, PointIdxUSet* arranged = nullptr) {
-    dfs_bfs<Queue>(start, visit, arranged);
-  }
+  void add(int u, int v, int w) { ter[++tot] = v, nxt[tot] = lnk[u], lnk[u] = tot, val[tot] = w; }
 
-  using WeightMap = PointIdxUMap<PointIdxUMap<float>>;
-  WeightMap pnt_map;
+  void addedge(int u, int v, int w) { add(u, v, w), add(v, u, 0); }
 
-  using Edge  = std::pair<PointIdx, PointIdx>;
-  using Edges = std::vector<Edge>;
-
-  struct PathInfo {
-    float               min_score;
-    std::optional<Edge> min_edge;
-    PointIdx            current;
-    PointIdxUSet        visited;
-  };
-
-  std::optional<Edge> find_weak_match(const PointIdx& start, const PointIdx& end) {
-    auto cmp = [](const PathInfo& a, const PathInfo& b) { return a.min_score > b.min_score; };
-    std::priority_queue<PathInfo, std::vector<PathInfo>, decltype(cmp)> pq{cmp};
-    pq.emplace(std::numeric_limits<float>::max(), std::nullopt, start, PointIdxUSet{start});
-    std::optional<Edge> global_min_edge;
-    float               global_min_score = std::numeric_limits<float>::max();
-    while(!pq.empty()) {
-      auto current_state = pq.top();
-      pq.pop();
-      if(current_state.min_score >= global_min_score) {
-        continue;
-      }
-      if(current_state.current == end) {
-        global_min_edge  = current_state.min_edge;
-        global_min_score = current_state.min_score;
-        continue;
-      }
-      for(const auto& [neighbor, score] : pnt_map[current_state.current]) {
-        if(current_state.visited.count(neighbor)) {
-          continue;
-        }
-        float new_min_score = std::min(current_state.min_score, score);
-        if(new_min_score >= global_min_score) {
-          continue;
-        }
-        auto new_min_edge = (new_min_score == score ? Edge{current_state.current, neighbor} : current_state.min_edge);
-        auto new_visited  = current_state.visited;
-        new_visited.insert(neighbor);
-        pq.emplace(new_min_score, new_min_edge, neighbor, std::move(new_visited));
+  int bfs(int s, int t) {
+    memset(dep, 0, sizeof(dep));
+    memcpy(cur, lnk, sizeof(lnk));
+    std::queue<int> q;
+    q.push(s), dep[s] = 1;
+    while(!q.empty()) {
+      int u = q.front();
+      q.pop();
+      for(int i = lnk[u]; i; i = nxt[i]) {
+        int v = ter[i];
+        if(val[i] && !dep[v])
+          q.push(v), dep[v] = dep[u] + 1;
       }
     }
-    return global_min_edge;
+    return dep[t];
   }
 
-  using PointIdxPair  = std::pair<PointIdx, PointIdx>;
-  using PointIdxPairs = std::vector<PointIdxPair>;
+  int dfs(int u, int t, int flow) {
+    if(u == t)
+      return flow;
+    int ans = 0;
+    for(int& i = cur[u]; i && ans < flow; i = nxt[i]) {
+      int v = ter[i];
+      if(val[i] && dep[v] == dep[u] + 1) {
+        int x = dfs(v, t, std::min(val[i], flow - ans));
+        if(x)
+          val[i] -= x, val[i ^ 1] += x, ans += x;
+      }
+    }
+    if(ans < flow)
+      dep[u] = -1;
+    return ans;
+  }
+
+  int dinic(int s, int t) {
+    int ans = 0;
+    while(bfs(s, t)) {
+      int x;
+      while((x = dfs(s, t, 1 << 30)))
+        ans += x;
+    }
+    return ans;
+  }
 
   PointIdxPairs find_conflicts(const PointIdx& start) {
     std::unordered_map<int, PointIdx> img_pnt_match;
@@ -175,16 +150,7 @@ private:
     if(conflicts.empty()) {
       return;
     }
-    for(const auto& [start, end] : conflicts) {
-      while(true) {
-        auto weak_edge = find_weak_match(start, end);
-        if(!weak_edge) {
-          break;
-        }
-        const auto& [from, to] = *weak_edge;
-        pnt_map[from].erase(to);
-        pnt_map[to].erase(from);
-      }
+    for(const auto& [s, t] : conflicts) {
     }
   }
 };

@@ -24,6 +24,73 @@
 
 namespace Ortho {
 class Stitcher {
+public:
+
+  Stitcher() = delete;
+
+  Stitcher(MatchPairs& match_pairs, ImgsData& imgs_data, fs::path temporary_save_path) :
+      temporary_save_path(temporary_save_path) {
+    auto v = imgs_data | std::views::transform([](auto&& data) { return Node{data.img(), data.mask()}; });
+    nodes.assign(v.begin(), v.end());
+    for(const auto& match_pair : match_pairs) {
+      std::cout << cv::typeToString(match_pair.M.type()) << std::endl;
+      adjacent[match_pair.second][match_pair.first].M = match_pair.M.inv();
+      // cv::invertAffineTransform(match_pair.M, adjacent[match_pair.second][match_pair.first].M);
+      adjacent[match_pair.first].emplace(match_pair.second, std::move(match_pair.M));
+    }
+  }
+
+  cv::Mat stitch() {
+    if(nodes.empty()) {
+      throw std::runtime_error("No image!");
+    }
+    std::erase_if(adjacent, [](const auto& pair) { return pair.second.size() == 0; });
+    int  priority = 0;
+    auto i_       = find_max_out_degree(priority);
+    while(adjacent.size() > 1 && i_) {
+      int i                 = *i_;
+      auto [stitched, rect] = stitch_adjacent_images(i, priority);
+      cv::imwrite(stitched.img.get_img_path().string(), stitched.img.get().get());
+      cv::Mat M_p_i         = cv::Mat::eye(3, 3, CV_32FC1);
+      M_p_i.at<float>(0, 2) = rect.x;
+      M_p_i.at<float>(1, 2) = rect.y;
+      int p                 = nodes.size();
+      nodes.push_back(std::move(stitched));
+      std::vector<int> to_erase;
+      for(const auto& [j, edge_i_j] : adjacent[i]) {
+        if(j == i) {
+          continue;
+        }
+        for(auto& [l, edge_j_l] : adjacent[j]) {
+          if(l == i || l == j || adjacent[i].contains(l)) {
+            continue;
+          }
+          cv::Mat M_i_j = edge_i_j.M;
+          // cv::vconcat(M_i_j, cv::Mat{(cv::Mat_<float>(1, 3) << 0, 0, 1)}, M_i_j);
+          cv::Mat M_p_l = edge_j_l.M * M_i_j * M_p_i;
+          // cv::invertAffineTransform(M_p_l, adjacent[l][p].M);
+          adjacent[l][p].M        = M_p_l.inv();
+          adjacent[l][p].priority = edge_j_l.priority + 1;
+          adjacent[p][l].M        = M_p_l;
+          adjacent[p][l].priority = edge_j_l.priority + 1;
+          adjacent[l].erase(j);
+        }
+        to_erase.push_back(j);
+      }
+      adjacent.erase(i);
+      for(const auto& j : to_erase) {
+        adjacent.erase(j);
+      }
+      i_ = find_max_out_degree(priority);
+      if(!i_) {
+        i_ = find_max_out_degree(++priority);
+      }
+    }
+    cv::Mat stitched_img;
+    nodes.back().img.get().get().copyTo(stitched_img);
+    return stitched_img;
+  }
+
 private:
 
   struct Node {
@@ -112,72 +179,6 @@ private:
             Image(temporary_save_path / std::format("p{}-i{}{}", priority, idx0, extension), std::move(result)),
             Image(temporary_save_path / std::format("p{}-i{}_mask{}", priority, idx0, extension), std::move(mask_result))},
         rect);
-  }
-
-public:
-
-  Stitcher() = delete;
-
-  Stitcher(MatchPairs& match_pairs, ImgsData& imgs_data, fs::path temporary_save_path) :
-      temporary_save_path(temporary_save_path) {
-    auto v = imgs_data | std::views::transform([](auto&& data) { return Node{data.img(), data.mask()}; });
-    nodes.assign(v.begin(), v.end());
-    for(const auto& match_pair : match_pairs) {
-      adjacent[match_pair.second][match_pair.first].M = match_pair.M.inv();
-      // cv::invertAffineTransform(match_pair.M, adjacent[match_pair.second][match_pair.first].M);
-      adjacent[match_pair.first].emplace(match_pair.second, std::move(match_pair.M));
-    }
-  }
-
-  cv::Mat stitch() {
-    if(nodes.empty()) {
-      throw std::runtime_error("No image!");
-    }
-    std::erase_if(adjacent, [](const auto& pair) { return pair.second.size() == 0; });
-    int  priority = 0;
-    auto i_       = find_max_out_degree(priority);
-    while(adjacent.size() > 1 && i_) {
-      int i                 = *i_;
-      auto [stitched, rect] = stitch_adjacent_images(i, priority);
-      cv::imwrite(stitched.img.get_img_path().string(), stitched.img.get().get());
-      cv::Mat M_p_i         = cv::Mat::eye(3, 3, CV_32FC1);
-      M_p_i.at<float>(0, 2) = rect.x;
-      M_p_i.at<float>(1, 2) = rect.y;
-      int p                 = nodes.size();
-      nodes.push_back(std::move(stitched));
-      std::vector<int> to_erase;
-      for(const auto& [j, edge_i_j] : adjacent[i]) {
-        if(j == i) {
-          continue;
-        }
-        for(auto& [l, edge_j_l] : adjacent[j]) {
-          if(l == i || l == j || adjacent[i].contains(l)) {
-            continue;
-          }
-          cv::Mat M_i_j = edge_i_j.M;
-          // cv::vconcat(M_i_j, cv::Mat{(cv::Mat_<float>(1, 3) << 0, 0, 1)}, M_i_j);
-          cv::Mat M_p_l = edge_j_l.M * M_i_j * M_p_i;
-          // cv::invertAffineTransform(M_p_l, adjacent[l][p].M);
-          adjacent[l][p].M        = M_p_l.inv();
-          adjacent[l][p].priority = edge_j_l.priority + 1;
-          adjacent[p][l].M        = M_p_l;
-          adjacent[p][l].priority = edge_j_l.priority + 1;
-          adjacent[l].erase(j);
-        }
-        to_erase.push_back(j);
-      }
-      adjacent.erase(i);
-      for(const auto& j : to_erase) {
-        adjacent.erase(j);
-      }
-      i_ = find_max_out_degree(priority);
-      if(!i_) {
-        i_ = find_max_out_degree(++priority);
-      }
-    }
-    cv::Mat stitched_img;
-    nodes.back().img.get().get().copyTo(stitched_img);
-    return stitched_img;
   }
 };
 
