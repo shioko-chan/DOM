@@ -166,7 +166,7 @@ public:
     }
     const auto [w, h] = img.size();
     set_by_camera_params(w, h, focal_35mm);
-    cv::Mat proj_mat        = get_projection_matrix(R_proj(), t_proj(), K_proj());
+    cv::Mat proj_mat        = proj();
     auto [rotate_img, mask] = Ortho::rotate_rectify(&proj_mat, R_bproj(), img);
     cv::Mat c_m, r_m, t_m;
     cv::decomposeProjectionMatrix(proj_mat, c_m, r_m, t_m);
@@ -194,6 +194,8 @@ public:
   fs::path get_img_stem() const { return img_path.stem(); }
 
   fs::path get_img_extension() const { return img_path.extension(); }
+
+  cv::Mat proj() const { return get_projection_matrix(R_proj(), t_proj(), K_proj()); }
 
   cv::Mat K_proj() const { return array2camera(camera_array); }
 

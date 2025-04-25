@@ -189,12 +189,56 @@ protected:
 public:
 
   Features get_features(ImgData& img_data) {
-    fs::path path = temporary_save_path / (img_data.get_img_stem().string() + ".desc");
-    auto     elem = mem.get_node(path.string());
+    fs::path path          = temporary_save_path / (img_data.get_img_stem().string() + ".desc");
+    auto     register_node = [&path](const Features& features) {
+      mem.register_node(
+          path.string(),
+          std::make_unique<FeaturesMem>(features),
+          SwapInFunc([path] {
+            std::ifstream ifs(path.string(), std::ios::binary);
+            if(!ifs.is_open()) {
+              throw std::runtime_error("Error: " + path.string() + " could not be opened");
+            }
+            Features features;
+            ifs >> features;
+            ifs.close();
+            if(ifs.fail()) {
+              throw std::runtime_error("Error: " + path.string() + " could not be read");
+            }
+            return new FeaturesMem(std::move(features));
+          }),
+          SwapOutFunc([path](ManageAblePtr ptr) {
+            if(ptr) {
+              std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
+              if(!ofs.is_open()) {
+                throw std::runtime_error("Error: " + path.string() + " could not be opened");
+              }
+              auto& features = dynamic_cast<FeaturesMem*>(ptr.get())->features;
+              ofs << features;
+              if(ofs.fail()) {
+                throw std::runtime_error("Error: " + path.string() + " could not be written");
+              }
+              ofs.close();
+            }
+          }));
+    };
+    auto elem = mem.get_node(path.string());
     if(elem) {
       auto&&   elem_guard = *elem;
       Features features(elem_guard.get<FeaturesMem>().features);
       return features;
+    }
+    if(fs::exists(path)) {
+      std::ifstream ifs(path.string(), std::ios::binary);
+      if(ifs.is_open()) {
+        Features features;
+        ifs >> features;
+        ifs.close();
+        if(!ifs.fail()) {
+          register_node(features);
+          return features;
+        }
+      }
     }
 
     auto    img_guard     = img_data.get_img();
@@ -250,36 +294,15 @@ public:
         });
     Features filtered_features(u.begin(), u.end());
     LOG_DEBUG("Image {} has {} keypoints after filter.", img_data.get_img_name().string(), filtered_features.size() / 2);
-    mem.register_node(
-        path.string(),
-        std::make_unique<FeaturesMem>(filtered_features),
-        SwapInFunc([path] {
-          std::ifstream ifs(path.string(), std::ios::binary);
-          if(!ifs.is_open()) {
-            throw std::runtime_error("Error: " + path.string() + " could not be opened");
-          }
-          Features features;
-          ifs >> features;
-          ifs.close();
-          if(ifs.fail()) {
-            throw std::runtime_error("Error: " + path.string() + " could not be read");
-          }
-          return new FeaturesMem(std::move(features));
-        }),
-        SwapOutFunc([path](ManageAblePtr ptr) {
-          if(ptr) {
-            std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
-            if(!ofs.is_open()) {
-              throw std::runtime_error("Error: " + path.string() + " could not be opened");
-            }
-            auto& features = dynamic_cast<FeaturesMem*>(ptr.get())->features;
-            ofs << features;
-            if(ofs.fail()) {
-              throw std::runtime_error("Error: " + path.string() + " could not be written");
-            }
-            ofs.close();
-          }
-        }));
+    register_node(filtered_features);
+
+    if(!fs::exists(path)) {
+      std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
+      if(ofs.is_open()) {
+        ofs << filtered_features;
+        ofs.close();
+      }
+    }
     return filtered_features;
   }
 };

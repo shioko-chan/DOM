@@ -38,8 +38,12 @@ public:
       q[i] = T(this->q[i]);
     }
     ceres::QuaternionRotatePoint(q, p0, p1);
-    residuals[0] = T(c[0]) * p1[0] / p1[2] + T(c[2]) - T(pnt2d.x);
-    residuals[1] = T(c[1]) * p1[1] / p1[2] + T(c[3]) - T(pnt2d.y);
+    T p1_z = p1[2];
+    if(ceres::abs(p1_z) < 1e-6) {
+      return false;
+    }
+    residuals[0] = T(c[0]) * p1[0] / p1_z + T(c[2]) - T(pnt2d.x);
+    residuals[1] = T(c[1]) * p1[1] / p1_z + T(c[3]) - T(pnt2d.y);
     return true;
   }
 
@@ -65,7 +69,9 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
   TracksMaintainer tracks_maintainer;
   for(const auto& match_img_pair : match_img_pairs) {
     for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
-      tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
+      time_function([&] {
+        tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
+      });
     }
   }
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
@@ -90,7 +96,7 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
 
           cv::Mat kpnt_mat = img.K_bproj() * kpnt;
           double  u = kpnt_mat.at<float>(0, 0), v = kpnt_mat.at<float>(1, 0);
-          std::cout << "u=" << u << ", v=" << v << std::endl;
+          // std::cout << "u=" << u << ", v=" << v << std::endl;
           cv::Mat R = img.R_proj();
           R.convertTo(R, CV_64F);
           Eigen::Matrix3d R_eigen;
@@ -123,7 +129,7 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
         options.max_num_iterations           = 1000;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
-        std::cout << summary.BriefReport() << std::endl;
+        // std::cout << summary.BriefReport() << std::endl;
         if(summary.IsSolutionUsable()) {
           std::lock_guard _{mtx};
           res.emplace_back(std::array<double, 3>{wp[0], wp[1], wp[2]}, std::move(pntidx_vec));

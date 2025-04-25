@@ -126,13 +126,27 @@ public:
   }
 
   void triangulate() {
-    auto res = triangulation(match_pairs, imgs_data, progress);
+    cv::Mat     r, t, k;
+    const auto& img = imgs_data[30];
+    r               = img.R_proj();
+    t               = img.t_proj();
+    k               = img.K_proj();
+    auto res        = triangulation(match_pairs, imgs_data, progress);
     ba(imgs_data, res);
+    std::cout << "R: " << r << std::endl;
+    std::cout << "t: " << t << std::endl;
+    std::cout << "K: " << k << std::endl;
+    r = img.R_proj();
+    t = img.t_proj();
+    k = img.K_proj();
+    std::cout << "R: " << r << std::endl;
+    std::cout << "t: " << t << std::endl;
+    std::cout << "K: " << k << std::endl;
   }
 
   void stitch() {
     MESSAGE("Stitching images");
-    Stitcher stitcher(match_pairs, imgs_data, temporary_save_path);
+    Stitcher stitcher(imgs_data, temporary_save_path, 0.125f);
     auto     stitched_img = stitcher.stitch();
     if(stitched_img.empty()) {
       LOG_ERROR("Stitching failed");
