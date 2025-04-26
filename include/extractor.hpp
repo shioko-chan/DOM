@@ -5,6 +5,7 @@
 #include <array>
 #include <concepts>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <ranges>
 #include <string>
@@ -186,10 +187,12 @@ protected:
 
   virtual constexpr int64_t get_keypoint_maxcnt() const noexcept = 0;
 
+  virtual constexpr std::string get_name() const noexcept = 0;
+
 public:
 
   Features get_features(ImgData& img_data) {
-    fs::path path          = temporary_save_path / (img_data.get_img_stem().string() + ".desc");
+    fs::path path = temporary_save_path / std::format("{}_{}.desc", img_data.get_img_stem().string(), get_name());
     auto     register_node = [&path](const Features& features) {
       mem.register_node(
           path.string(),
@@ -321,6 +324,8 @@ private:
 
   constexpr int64_t get_keypoint_maxcnt() const noexcept override { return SUPERPOINT_KEYPOINT_MAXCNT; }
 
+  constexpr std::string get_name() const noexcept override { return "superpoint"; }
+
 public:
 
   SuperPointExtractor(const fs::path& temporary_save_path) :
@@ -347,6 +352,8 @@ private:
   constexpr float get_threshold() const noexcept override { return DISK_THRESHOLD; }
 
   constexpr int64_t get_keypoint_maxcnt() const noexcept override { return DISK_KEYPOINT_MAXCNT; }
+
+  constexpr std::string get_name() const noexcept override { return "disk"; }
 
 public:
 

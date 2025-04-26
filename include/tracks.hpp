@@ -89,12 +89,12 @@ private:
       if(neighbors == pnt_map.end()) {
         continue;
       }
-      for(const auto& [next, _] : neighbors->second) {
+      for(const auto& [next, weight] : neighbors->second) {
         if(!add_new_node(next)) {
           continue;
         }
-        if constexpr(std::is_invocable_v<Func, const PointIdxPair&>) {
-          visit({current, next});
+        if constexpr(std::is_invocable_v<Func, const EdgeWithWeight&>) {
+          visit({current, next, weight});
         }
       }
     }
@@ -170,6 +170,7 @@ private:
       iter.clear();
       std::queue<PointIdx> q;
       level[s] = 1;
+      q.push(s);
       while(!q.empty()) {
         PointIdx u = q.front();
         q.pop();
@@ -190,12 +191,13 @@ private:
         iter.emplace(u, graph[u].begin());
       }
       for(Iter& i = iter[u]; i != graph[u].end(); ++i) {
-        float& cap = i->second;
-        if(cap > 0 && level[u] < level[i->first]) {
-          float d = augment(i->first, t, std::min(f, cap));
+        PointIdx v   = i->first;
+        float&   cap = i->second;
+        if(cap > 0 && level[u] < level[v]) {
+          float d = augment(v, t, std::min(f, cap));
           if(d > 0) {
             cap -= d;
-            graph[i->first][u] += d;
+            graph[v][u] += d;
             return d;
           }
         }

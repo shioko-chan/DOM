@@ -75,17 +75,18 @@ void ba(ImgsData& imgs_data, auto& res) {
     add_parameter_block(img_data.Q_proj_array_raw(), new ceres::QuaternionManifold);
     add_parameter_block(img_data.t_proj_array_raw());
     add_parameter_block(img_data.camera_array_raw());
-    set_bound_delta(img_data.t_proj_array_raw(), 0, 5);
-    set_bound_delta(img_data.t_proj_array_raw(), 1, 5);
-    set_bound_delta(img_data.t_proj_array_raw(), 2, 25);
-    set_bound_percentage(img_data.camera_array_raw(), 0, 5);
-    set_bound_percentage(img_data.camera_array_raw(), 1, 5);
-    set_bound_delta(img_data.camera_array_raw(), 2, 10);
-    set_bound_delta(img_data.camera_array_raw(), 3, 10);
 
-    // problem.SetParameterBlockConstant(img_data.Q_proj_array_raw().data());
-    // problem.SetParameterBlockConstant(img_data.t_proj_array_raw().data());
-    // problem.SetParameterBlockConstant(img_data.camera_array_raw().data());
+    // set_bound_delta(img_data.t_proj_array_raw(), 0, 5);
+    // set_bound_delta(img_data.t_proj_array_raw(), 1, 5);
+    // set_bound_delta(img_data.t_proj_array_raw(), 2, 25);
+    // set_bound_percentage(img_data.camera_array_raw(), 0, 5);
+    // set_bound_percentage(img_data.camera_array_raw(), 1, 5);
+    // set_bound_delta(img_data.camera_array_raw(), 2, 10);
+    // set_bound_delta(img_data.camera_array_raw(), 3, 10);
+
+    problem.SetParameterBlockConstant(img_data.Q_proj_array_raw().data());
+    problem.SetParameterBlockConstant(img_data.t_proj_array_raw().data());
+    problem.SetParameterBlockConstant(img_data.camera_array_raw().data());
   }
   for(auto& [pnt3d, pnt2d_idx_vec] : res) {
     if(pnt2d_idx_vec.empty()) {

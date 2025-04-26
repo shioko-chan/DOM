@@ -66,14 +66,18 @@ struct TriRes {
 };
 
 std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data, Progress& progress) {
+  MESSAGE("Build tracks.");
+  progress.reset(match_img_pairs.size());
   TracksMaintainer tracks_maintainer;
-  for(const auto& match_img_pair : match_img_pairs) {
-    for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
-      time_function([&] {
+  time_function([&] {
+    for(const auto& match_img_pair : match_img_pairs) {
+      for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
         tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
-      });
+      }
+      progress.update();
     }
-  }
+  });
+
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
   std::vector<TriRes>    res;
   std::mutex             mtx;
