@@ -3,45 +3,55 @@
 
 #include <array>
 #include <cassert>
+#include <memory>
 #include <thread>
-#include <vector>
+
+#include <Eigen/Dense>
 
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
-#include <Eigen/Dense>
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "imgdata.hpp"
-#include "types.hpp"
-#include "utility.hpp"
+#include "ds/imgdata.hpp"
+#include "types/common_types.hpp"
+#include "types/cv_alias.hpp"
 
 namespace Ortho {
-struct BaReprojectionError {
+struct alignas(16) BaReprojectionError {
 public:
 
-  BaReprojectionError(Point<double> img_pnt) : pnt2d(std::move(img_pnt)) {}
+  explicit BaReprojectionError(Point<double> img_pnt) : pnt2d(img_pnt) {}
 
   template <typename T>
-  bool operator()(const T* const q, const T* const t, const T* const c, const T* const pnt3d, T* residuals) const {
-    T p0[3];
+  auto operator()(
+      const T* const quaternion,
+      const T* const transpose,
+      const T* const camera,
+      const T* const pnt3d,
+      T*             residuals) const -> bool {
+    std::array<T, 3>   pnt0;
+    std::array<T, 3>   pnt1;
+    std::span<const T> pnt3d_span{pnt3d, 3};
+    std::span<const T> transpose_span{transpose, 3};
+    std::span<const T> camera_span{camera, 4};
+    std::span<T>       residuals_span{residuals, 2};
     for(size_t i = 0; i < 3; ++i) {
-      p0[i] = pnt3d[i] + t[i];
+      pnt0[i] = pnt3d_span[i] + transpose_span[i];
     }
-    T p1[3];
-    ceres::QuaternionRotatePoint(q, p0, p1);
-    T p1_z = p1[2];
+    ceres::QuaternionRotatePoint(quaternion, pnt0.data(), pnt1.data());
+    T p1_z = pnt1[2];
     if(ceres::abs(p1_z) < 1e-6) {
       return false;
     }
-    residuals[0] = c[0] * p1[0] / p1_z + c[2] - T(pnt2d.x);
-    residuals[1] = c[1] * p1[1] / p1_z + c[3] - T(pnt2d.y);
+    residuals_span[0] = camera_span[0] * pnt1[0] / p1_z + camera_span[2] - T(pnt2d.x);
+    residuals_span[1] = camera_span[1] * pnt1[1] / p1_z + camera_span[3] - T(pnt2d.y);
     return true;
   }
 
-  static ceres::CostFunction* create(const Point<float>& img_pnt) {
-    return new ceres::AutoDiffCostFunction<BaReprojectionError, 2, 4, 3, 4, 3>(
-        new BaReprojectionError(Point<double>(img_pnt)));
+  static auto create(Point<double> img_pnt) -> std::unique_ptr<ceres::CostFunction> {
+    auto error_ptr = std::make_unique<BaReprojectionError>(img_pnt);
+    return std::make_unique<ceres::AutoDiffCostFunction<BaReprojectionError, 2, 4, 3, 4, 3>>(error_ptr.release());
   }
 
 private:
@@ -94,10 +104,9 @@ void ba(ImgsData& imgs_data, auto& res) {
     }
     add_parameter_block(pnt3d);
     for(const auto& pnt2d_idx : pnt2d_idx_vec) {
-      auto&                img_data = imgs_data[pnt2d_idx.img_idx];
-      ceres::CostFunction* cost     = BaReprojectionError::create(img_data.get_kpnts().get(pnt2d_idx.pnt_idx));
+      auto& img_data = imgs_data[pnt2d_idx.img_idx];
       problem.AddResidualBlock(
-          cost,
+          BaReprojectionError::create(img_data.get_kpnts().get(pnt2d_idx.pnt_idx)).release(),
           new ceres::HuberLoss(1.0),
           img_data.Q_proj_array_raw().data(),
           img_data.t_proj_array_raw().data(),
@@ -106,14 +115,14 @@ void ba(ImgsData& imgs_data, auto& res) {
     }
   }
   ceres::Solver::Options options;
-  options.num_threads                  = std::thread::hardware_concurrency();
+  options.num_threads                  = static_cast<int>(std::thread::hardware_concurrency());
   options.linear_solver_type           = ceres::SPARSE_SCHUR;
   options.check_gradients              = false;
   options.minimizer_progress_to_stdout = false;
   options.max_num_iterations           = 2000;
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
-  std::cout << summary.BriefReport() << std::endl;
+  std::cout << summary.BriefReport() << '\n';
 
   // for(auto& img_data : imgs_data) {
   //   problem.SetParameterBlockVariable(img_data.Q_proj_array_raw().data());

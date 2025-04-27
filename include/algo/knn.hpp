@@ -1,0 +1,58 @@
+#ifndef ORTHO_KNN_ON_EUCLIDEAN_DISTANCE_HPP
+#define ORTHO_KNN_ON_EUCLIDEAN_DISTANCE_HPP
+
+#include <algorithm>
+#include <cmath>
+#include <concepts>
+#include <ranges>
+#include <utility>
+#include <vector>
+
+#include <opencv2/opencv.hpp>
+
+#include "types/cv_alias.hpp"
+
+namespace Ortho {
+
+template <typename T>
+  requires std::is_arithmetic_v<T>
+class KNN {
+public:
+
+  template <typename U>
+    requires std::same_as<std::decay_t<U>, Points<T>>
+  KNN(int k_num, U&& data) : k_num(k_num), dataset(std::forward<U>(data)) {}
+
+  template <std::ranges::range R>
+  KNN(int k_num, R view) : k_num(k_num), dataset(view.begin(), view.end()) {}
+
+  [[nodiscard]] auto find_nearest_neighbour(const int index) const -> std::vector<int> {
+    const auto& point0 = dataset[index];
+    auto        view0  = std::views::zip_transform(
+                     [&point0](const int index, const Point<T>& point1) noexcept {
+                       return std::make_pair(euclidean_distance(point0, point1), index);
+                     },
+                     std::views::iota(0),
+                     dataset)
+                 | std::views::filter([index](auto&& pair) noexcept { return pair.second != index; })
+                 | std::views::common;
+    std::vector<std::pair<double, int>> distances(view0.begin(), view0.end());
+    std::nth_element(distances.begin(), distances.begin() + k_num - 1, distances.end());
+    auto view1 = distances | std::views::take(k_num)
+                 | std::views::transform([](const auto& pair) noexcept { return pair.second; }) | std::views::common;
+    return std::vector<int>{view1.begin(), view1.end()};
+  }
+
+private:
+
+  int       k_num;
+  Points<T> dataset;
+
+  static auto euclidean_distance(const Point<T>& point0, const Point<T>& point1) -> double {
+    return std::sqrt(std::pow(point0.x - point1.x, 2) + std::pow(point0.y - point1.y, 2));
+  }
+};
+
+} // namespace Ortho
+
+#endif

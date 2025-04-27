@@ -9,31 +9,53 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <unordered_map>
 
 #include "config.hpp"
-#include "log.hpp"
-#include "types.hpp"
+#include "tools/log.hpp"
+#include "types/common_types.hpp"
 
 namespace Ortho {
 
 class ManageAble {
 public:
 
-  virtual inline size_t size() const noexcept = 0;
+  ManageAble() = default;
 
-  virtual ~ManageAble() = default;
+  ManageAble(const ManageAble&)                    = delete;
+  ManageAble(ManageAble&&)                         = delete;
+  auto operator=(const ManageAble&) -> ManageAble& = delete;
+  auto operator=(ManageAble&&) -> ManageAble&      = delete;
+  virtual ~ManageAble()                            = default;
+
+  [[nodiscard]] virtual inline auto size() const noexcept -> size_t = 0;
 };
 
-struct RefGuard {
+struct alignas(64) RefGuard {
 public:
 
-  RefGuard(ManageAble* ptr, Lock lock, std::atomic_uint64_t* available, std::condition_variable* cv) noexcept :
-      ptr(ptr), lock(std::move(lock)), available(available), cv(cv), valid(true) {}
+  RefGuard(ManageAble* ptr, Lock lock, std::atomic_uint64_t* available, std::condition_variable* condition_variable) noexcept
+      : ptr(ptr), lock(std::move(lock)), available(available), cv(condition_variable) {}
+
+  RefGuard(const RefGuard&) = delete;
 
   RefGuard(RefGuard&& other) noexcept :
       ptr(other.ptr), lock(std::move(other.lock)), available(other.available), cv(other.cv), valid(other.valid) {
     other.valid = false;
+  }
+
+  auto operator=(const RefGuard&) -> RefGuard& = delete;
+
+  auto operator=(RefGuard&& other) noexcept -> RefGuard& {
+    ptr         = other.ptr;
+    lock        = std::move(other.lock);
+    available   = other.available;
+    cv          = other.cv;
+    valid       = other.valid;
+    other.valid = false;
+    return *this;
   }
 
   ~RefGuard() {
@@ -44,7 +66,7 @@ public:
 
   template <typename T>
     requires std::derived_from<T, ManageAble>
-  T& get() {
+  auto get() -> T& {
     if(!valid) {
       throw std::runtime_error("Deref on a released ref!");
     }
@@ -71,17 +93,19 @@ private:
   Lock                     lock;
   std::atomic_uint64_t*    available;
   std::condition_variable* cv;
-  bool                     valid;
+  bool                     valid{true};
 };
 
 using ManageAblePtr = std::unique_ptr<ManageAble>;
-using SwapInFunc    = std::function<ManageAble*(void)>;
+using SwapInFunc    = std::function<ManageAblePtr(void)>;
 using SwapOutFunc   = std::function<void(ManageAblePtr)>;
 
 class LRU {
+  friend class Mem;
+
 private:
 
-  struct Unit {
+  struct alignas(128) Unit {
   public:
 
     Unit(ManageAblePtr ptr, SwapInFunc swap_in, SwapOutFunc swap_out) :
@@ -104,7 +128,7 @@ private:
   List                    lru_list;
   UMap                    k_v;
 
-  bool ensure_space(const size_t size) {
+  auto ensure_space(const size_t size) -> bool {
     for(auto iter = lru_list.rbegin(); occupied + size > capacity && iter != lru_list.rend(); ++iter) {
       if(iter->ptr) {
         std::unique_lock<std::mutex> lock(iter->mtx, std::try_to_lock);
@@ -118,22 +142,20 @@ private:
     return occupied + size <= capacity;
   }
 
-public:
-
-  LRU(const size_t capacity = 8ul * (1ul << 30)) : capacity(capacity), available(capacity) {}
+  explicit LRU(const size_t capacity = 8UL * (1UL << 30U)) noexcept : capacity(capacity), available(capacity) {}
 
   void register_node(std::string key, ManageAblePtr ptr, SwapInFunc swap_in, SwapOutFunc swap_out) {
     std::unique_lock<std::mutex> lock(lru_mtx);
-    auto                         it = k_v.find(key);
-    if(it != k_v.end()) {
-      LOG_WARN(
+    auto                         k_v_iter = k_v.find(key);
+    if(k_v_iter != k_v.end()) {
+      THIS_LOG_WARN(
           "register_node: node of name \"{}\" already been registered, if this is not intended, please check your program.",
           key);
       return;
     }
     if(ptr) {
       while(!ensure_space(ptr->size())) {
-        cv.wait(lock, [size_now = ptr->size(), this] { return size_now <= available; });
+        cv.wait(lock, [size_now = ptr->size(), this] noexcept { return size_now <= available; });
       }
       occupied += ptr->size();
     }
@@ -141,14 +163,14 @@ public:
     k_v.emplace(std::move(key), iter);
   }
 
-  std::optional<RefGuard> get_node(const std::string& key) {
+  auto get_node(const std::string& key) noexcept -> std::optional<RefGuard> {
     std::unique_lock<std::mutex> lock(lru_mtx);
     while(true) {
-      auto it = k_v.find(key);
-      if(it == k_v.end()) {
+      auto k_v_iter = k_v.find(key);
+      if(k_v_iter == k_v.end()) {
         return std::nullopt;
       }
-      auto                         iter = it->second;
+      auto                         iter = k_v_iter->second;
       std::unique_lock<std::mutex> unit_lock(iter->mtx, std::try_to_lock);
       if(!unit_lock.owns_lock()) {
         lock.unlock();
@@ -163,12 +185,12 @@ public:
         available.fetch_sub(iter->ptr->size());
         return std::make_optional<RefGuard>(iter->ptr.get(), std::move(unit_lock), &available, &cv);
       }
-      iter->ptr.reset(iter->swap_in());
+      iter->ptr = iter->swap_in();
       if(!ensure_space(iter->ptr->size())) {
         size_t size_required = iter->ptr->size();
         iter->ptr.reset();
         unit_lock.unlock();
-        cv.wait(lock, [size_required, this] { return size_required <= available; });
+        cv.wait(lock, [size_required, this] noexcept { return size_required <= available; });
       } else {
         occupied += iter->ptr->size();
         available.fetch_sub(iter->ptr->size());
@@ -179,7 +201,22 @@ public:
   }
 };
 
-static inline LRU mem{MEM_LIMIT};
+class Mem {
+public:
+
+  template <typename SwapInFuncT, typename SwapOutFuncT>
+    requires std::is_nothrow_invocable_r_v<ManageAblePtr, SwapInFuncT>
+             && std::is_nothrow_invocable_v<SwapOutFuncT, ManageAblePtr>
+  static void register_node(std::string_view key, ManageAblePtr ptr, SwapInFuncT swap_in, SwapOutFuncT swap_out) {
+    mem.register_node(std::string{key}, std::move(ptr), SwapInFunc{swap_in}, SwapOutFunc{swap_out});
+  }
+
+  static auto get_node(const std::string& key) noexcept -> std::optional<RefGuard> { return mem.get_node(key); }
+
+private:
+
+  static inline LRU mem{MEM_LIMIT};
+};
 
 } // namespace Ortho
 

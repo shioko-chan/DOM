@@ -7,10 +7,11 @@
 #include <iostream>
 #include <mutex>
 
-#include "log.hpp"
+#include "tools/ansi.hpp"
+#include "tools/log.hpp"
 
 namespace Ortho {
-struct Progress {
+struct alignas(64) Progress {
 private:
 
   static constexpr int bar_width{50};
@@ -18,22 +19,23 @@ private:
   std::mutex mtx;
   int        cnt{0}, total{0};
 
-  void print_bar() {
-    std::lock_guard<std::mutex> lock(stream_mtx);
-    float                       factor = 1.0f * cnt / total;
-    std::cout << BOLD "\r[" << std::fixed << std::setprecision(2) << factor * 100 << "%]";
+  void print_bar() const {
+    std::lock_guard<std::mutex> lock(stream_mtx());
+    double                      factor = 1. * cnt / total;
+    std::cout << ansi::BOLD << "\r[" << std::fixed << std::setprecision(2) << factor * 100 << "%]";
     int pos = static_cast<int>(std::round(bar_width * factor));
     for(int i = 0; i < bar_width; ++i) {
-      if(i < pos)
+      if(i < pos) {
         std::cout << "=";
-      else if(i == pos)
+      } else if(i == pos) {
         std::cout << ">";
-      else
+      } else {
         std::cout << "-";
+      }
     }
-    std::cout << "(" << cnt << "/" << total << ")" RESET;
+    std::cout << "(" << cnt << "/" << total << ")" << ansi::RESET;
     if(cnt == total) {
-      std::cout << std::endl;
+      std::cout << '\n';
     } else {
       std::cout << std::flush;
     }
@@ -43,7 +45,7 @@ public:
 
   Progress() = default;
 
-  Progress(int total) : total(total) {}
+  explicit Progress(int total) : total(total) {}
 
   void update(int inc = 1, int current = -1, bool countdown = false) {
     {
@@ -67,12 +69,12 @@ public:
     print_bar();
   }
 
-  inline void rerun() {
+  void rerun() {
     std::lock_guard<std::mutex> lock(mtx);
     cnt = 0;
   }
 
-  inline void reset(int total_) {
+  void reset(int total_) {
     std::lock_guard<std::mutex> lock(mtx);
     total = total_;
     cnt   = 0;

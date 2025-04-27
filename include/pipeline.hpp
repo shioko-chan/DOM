@@ -4,35 +4,38 @@
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
-#include <limits>
-#include <numeric>
 #include <ranges>
-#include <thread>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "ba.hpp"
+#include "algo/ba.hpp"
+#include "algo/knn.hpp"
+#include "algo/tri.hpp"
 #include "config.hpp"
-#include "imgdata.hpp"
-#include "knn.hpp"
-#include "log.hpp"
-#include "matcher.hpp"
-#include "matchpair.hpp"
-#include "progress.hpp"
+#include "ds/imgdata.hpp"
+#include "ds/matchpair.hpp"
+#include "nn/matcher.hpp"
 #include "stitcher.hpp"
-#include "tri.hpp"
-#include "types.hpp"
+#include "tools/log.hpp"
+#include "tools/progress.hpp"
 
 namespace Ortho {
+
+namespace fs = std::filesystem;
 
 class Pipeline {
 private:
 
   struct Exiv2XmpParserInitializer {
     Exiv2XmpParserInitializer() { Exiv2::XmpParser::initialize(); }
+
+    Exiv2XmpParserInitializer(const Exiv2XmpParserInitializer&)                    = delete;
+    Exiv2XmpParserInitializer(Exiv2XmpParserInitializer&&)                         = delete;
+    auto operator=(const Exiv2XmpParserInitializer&) -> Exiv2XmpParserInitializer& = delete;
+    auto operator=(Exiv2XmpParserInitializer&&) -> Exiv2XmpParserInitializer&      = delete;
 
     ~Exiv2XmpParserInitializer() { Exiv2::XmpParser::terminate(); }
   };
@@ -44,46 +47,46 @@ private:
   Exiv2XmpParserInitializer exiv2_xmp_parser_initializer;
   MatchPairs                match_pairs;
 
-  MatchPairs find_neighbors(const int k = 8) {
-    auto knn =
-        KNN(k,
-            imgs_data.get() | std::views::transform([](auto&& data) { return data.get_coord(); }) | std::views::common);
+  auto find_neighbors(const int k_neighbors = 8) -> MatchPairs {
+    auto knn = KNN<double>(k_neighbors, imgs_data.get() | std::views::transform([](auto&& data) noexcept {
+                                          return data.get_coord();
+                                        }) | std::views::common);
     std::vector<std::vector<MatchPair>> matches(imgs_data.size());
-    run(
+    run<int>(
         imgs_data.size(),
-        [this, &knn, &matches](int i) {
-          auto neighbors = knn.find_nearest_neighbour(i);
+        [this, &knn, &matches](int idx) noexcept {
+          auto neighbors = knn.find_nearest_neighbour(idx);
           for(auto&& neighbour : neighbors) {
-            if(i < neighbour) {
-              matches[i].emplace_back(i, neighbour);
+            if(idx < neighbour) {
+              matches[idx].emplace_back(idx, neighbour);
             } else {
-              matches[i].emplace_back(neighbour, i);
+              matches[idx].emplace_back(neighbour, idx);
             }
           }
         },
         progress);
-    auto                v = matches | std::views::join | std::views::common;
-    std::set<MatchPair> match_set(v.begin(), v.end());
-    return std::vector<MatchPair>(match_set.begin(), match_set.end());
+    auto                view = matches | std::views::join | std::views::common;
+    std::set<MatchPair> match_set(view.begin(), view.end());
+    return {match_set.begin(), match_set.end()};
   }
 
 public:
 
-  Pipeline(fs::path input_dir, fs::path output_dir, fs::path temporary_save_path) :
-      output_dir(output_dir), temporary_save_path(temporary_save_path) {
+  Pipeline(const fs::path& input_dir, fs::path output_dir, fs::path temporary_save_path) :
+      output_dir(std::move(output_dir)), temporary_save_path(std::move(temporary_save_path)) {
     std::transform(
         fs::directory_iterator(input_dir),
         fs::directory_iterator(),
         std::back_inserter(img_paths),
-        [](const auto& entry) { return entry.path(); });
-    progress.reset(img_paths.size());
+        [](const auto& entry) noexcept { return entry.path(); });
+    progress.reset(static_cast<int>(img_paths.size()));
   }
 
   void get_image_info() {
-    run(
+    run<int>(
         img_paths.size(),
-        [this](int i) {
-          auto&& img_path = img_paths[i];
+        [this](int idx) noexcept {
+          auto&& img_path = img_paths[idx];
           if(!ImgDataFactory::validate(img_path)) {
             return;
           }
@@ -94,10 +97,10 @@ public:
   }
 
   void rotate_rectify() {
-    run(
+    run<int>(
         imgs_data.size(),
-        [this](int i) {
-          imgs_data[i].rotate_rectify();
+        [this](int idx) noexcept {
+          imgs_data[idx].rotate_rectify();
 #ifdef ENABLE_MIDDLE_OUTPUT
           cv::imwrite(temporary_save_path / imgs_data[i].get_img_name().string(), imgs_data[i].img().get().get());
 #endif
@@ -106,55 +109,59 @@ public:
   }
 
   void match(int neighbor_proposal = 8) {
-    MESSAGE("Finding image pairs with neighbor proposal {}", neighbor_proposal);
+    THIS_MESSAGE("Finding image pairs with neighbor proposal {}", neighbor_proposal);
     auto match_pairs_ = find_neighbors(neighbor_proposal);
-    MESSAGE("Found {} image pairs", match_pairs_.size());
+    THIS_MESSAGE("Found {} image pairs", match_pairs_.size());
     if(FEATURE_EXTRACTION_METHOD == method_t::SUPERPOINT) {
-      MESSAGE("Using SuperPoint feature extraction");
+      THIS_MESSAGE("Using SuperPoint feature extraction");
       Matcher matcher = matcher_factory<SuperPointExtractor>(temporary_save_path);
       matcher.match(match_pairs_, imgs_data, progress);
     } else if(FEATURE_EXTRACTION_METHOD == method_t::DISK) {
-      MESSAGE("Using DISK feature extraction");
+      THIS_MESSAGE("Using DISK feature extraction");
       Matcher matcher = matcher_factory<DiskExtractor>(temporary_save_path);
       matcher.match(match_pairs_, imgs_data, progress);
     } else {
-      LOG_ERROR("Unknown feature extraction method");
+      THIS_LOG_ERROR("Unknown feature extraction method");
       return;
     }
+    match_pairs.clear();
     std::ranges::move(
-        match_pairs_ | std::views::filter([](auto&& pair) { return pair.valid; }), std::back_inserter(match_pairs));
+        match_pairs_ | std::views::filter([](auto&& pair) noexcept { return pair.valid; }),
+        std::back_inserter(match_pairs));
   }
 
   void triangulate() {
-    cv::Mat     r, t, k;
+    cv::Mat     r;
+    cv::Mat     t;
+    cv::Mat     k;
     const auto& img = imgs_data[30];
     r               = img.R_proj();
     t               = img.t_proj();
     k               = img.K_proj();
     auto res        = triangulation(match_pairs, imgs_data, progress);
     ba(imgs_data, res);
-    std::cout << "R: " << r << std::endl;
-    std::cout << "t: " << t << std::endl;
-    std::cout << "K: " << k << std::endl;
+    std::cout << "R: " << r << '\n';
+    std::cout << "t: " << t << '\n';
+    std::cout << "K: " << k << '\n';
     r = img.R_proj();
     t = img.t_proj();
     k = img.K_proj();
-    std::cout << "R: " << r << std::endl;
-    std::cout << "t: " << t << std::endl;
-    std::cout << "K: " << k << std::endl;
+    std::cout << "R: " << r << '\n';
+    std::cout << "t: " << t << '\n';
+    std::cout << "K: " << k << '\n';
   }
 
   void stitch() {
-    MESSAGE("Stitching images");
-    Stitcher stitcher(imgs_data, temporary_save_path, 0.125f);
-    auto     stitched_img = stitcher.stitch();
+    THIS_MESSAGE("Stitching images");
+    Stitcher stitcher(temporary_save_path);
+    auto     stitched_img = stitcher.stitch(imgs_data);
     if(stitched_img.empty()) {
-      LOG_ERROR("Stitching failed");
+      THIS_LOG_ERROR("Stitching failed");
       return;
     }
     fs::path stitched_img_path = output_dir / "stitched_image.jpg";
     cv::imwrite(stitched_img_path.string(), stitched_img);
-    MESSAGE("Stitched image saved to {}", stitched_img_path.string());
+    THIS_MESSAGE("Stitched image saved to {}", stitched_img_path.string());
   }
 };
 

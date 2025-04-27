@@ -11,29 +11,30 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "imgdata.hpp"
-#include "log.hpp"
-#include "matchpair.hpp"
-#include "progress.hpp"
-#include "tracks.hpp"
-#include "types.hpp"
-#include "utility.hpp"
+#include "algo/tracks.hpp"
+#include "ds/imgdata.hpp"
+#include "ds/matchpair.hpp"
+#include "tools/debug.hpp"
+#include "tools/log.hpp"
+#include "tools/progress.hpp"
+#include "tools/utility.hpp"
 
 namespace Ortho {
 
-struct TriReprojectionError {
+struct alignas(128) TriReprojectionError {
 public:
 
   TriReprojectionError(Point<double> img_pnt, const RotateQArray& q, const CameraArray& c, const TranslateArray& t) :
-      pnt2d(std::move(img_pnt)), q(std::move(q)), c(std::move(c)), t(std::move(t)) {}
+      pnt2d(img_pnt), q(q), c(c), t(t) {}
 
   template <typename T>
-  bool operator()(const T* const pnt3d, T* residuals) const {
+  auto operator()(const T* const pnt3d, T* residuals) const -> bool {
     T p0[3];
     for(size_t i = 0; i < 3; ++i) {
       p0[i] = pnt3d[i] + T(t[i]);
     }
-    T p1[3], q[4];
+    T p1[3];
+    T q[4];
     for(size_t i = 0; i < 4; ++i) {
       q[i] = T(this->q[i]);
     }
@@ -47,7 +48,8 @@ public:
     return true;
   }
 
-  static ceres::CostFunction* create(const Point<float>& img_pnt, RotateQArray q, CameraArray c, TranslateArray t) {
+  static auto create(const Point<double>& img_pnt, RotateQArray q, CameraArray c, TranslateArray t)
+      -> ceres::CostFunction* {
     return new ceres::AutoDiffCostFunction<TriReprojectionError, 2, 3>(
         new TriReprojectionError(Point<double>(img_pnt), std::move(q), std::move(c), std::move(t)));
   }
@@ -60,19 +62,23 @@ private:
   TranslateArray t;
 };
 
-struct TriRes {
+struct alignas(64) TriRes {
   std::array<double, 3> pnt3d;
   PointIdxs             pnt2d_idx_vec;
 };
 
-std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data, Progress& progress) {
-  MESSAGE("Build tracks.");
+inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data, Progress& progress)
+    -> std::vector<TriRes> {
+  THIS_MESSAGE("Build tracks");
   progress.reset(match_img_pairs.size());
   TracksMaintainer tracks_maintainer;
-  time_function([&] {
+  time_function([&] noexcept {
     for(const auto& match_img_pair : match_img_pairs) {
       for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
-        tracks_maintainer.append_match(PointIdx{match_img_pair.first, lhs}, PointIdx{match_img_pair.second, rhs}, score);
+        tracks_maintainer.append_match(
+            PointIdx{.img_idx = match_img_pair.first, .pnt_idx = lhs},
+            PointIdx{.img_idx = match_img_pair.second, .pnt_idx = rhs},
+            score);
       }
       progress.update();
     }
@@ -81,16 +87,19 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
   std::vector<TriRes>    res;
   std::mutex             mtx;
-  run(
+  run<int>(
       pntidx_vecs.size(),
-      [&res, &pntidx_vecs, &imgs_data, &mtx](int idx) {
-        auto&  pntidx_vec = pntidx_vecs[idx];
-        size_t n          = pntidx_vec.size();
-        assert(n > 1);
-        size_t          rows = 2 * n, cols = 3;
-        Eigen::MatrixXd A = Eigen::MatrixXd::Zero(rows, cols);
+      [&res, &pntidx_vecs, &imgs_data, &mtx](int idx) noexcept {
+        auto& pntidx_vec = pntidx_vecs[idx];
+        auto  len        = static_cast<int64_t>(pntidx_vec.size());
+        if(len <= 1) {
+          return;
+        }
+        int64_t         rows = 2 * len;
+        int64_t         cols = 3;
+        Eigen::MatrixXd A    = Eigen::MatrixXd::Zero(rows, cols);
         Eigen::VectorXd b(rows);
-        for(size_t i = 0; i < n; ++i) {
+        for(size_t i = 0; i < len; ++i) {
           const auto& [img_idx, pnt_idx] = pntidx_vec[i];
           const auto& img                = imgs_data[img_idx];
           const auto& kpnt               = img.get_kpnts().get(pnt_idx);
@@ -99,21 +108,24 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
           //           << "kpnt=[" << kpnt << "], R=" << img.R_proj() << ", t=" << img.t_proj() << std::endl;
 
           cv::Mat kpnt_mat = img.K_bproj() * kpnt;
-          double  u = kpnt_mat.at<float>(0, 0), v = kpnt_mat.at<float>(1, 0);
+          double  u        = kpnt_mat.at<double>(0, 0);
+          double  v        = kpnt_mat.at<double>(1, 0);
           // std::cout << "u=" << u << ", v=" << v << std::endl;
           cv::Mat R = img.R_proj();
           R.convertTo(R, CV_64F);
           Eigen::Matrix3d R_eigen;
           cv::cv2eigen(R, R_eigen);
-          cv::Mat t  = img.t_proj();
-          double  tx = t.at<float>(0, 0), ty = t.at<float>(1, 0), tz = t.at<float>(2, 0);
+          cv::Mat t                   = img.t_proj();
+          double  tx                  = t.at<double>(0, 0);
+          double  ty                  = t.at<double>(1, 0);
+          double  tz                  = t.at<double>(2, 0);
           A.block<1, 3>(i * 2, 0)     = u * R_eigen.row(2) - R_eigen.row(0);
           A.block<1, 3>(i * 2 + 1, 0) = v * R_eigen.row(2) - R_eigen.row(1);
           b(i * 2)                    = tx - u * tz;
           b(i * 2 + 1)                = ty - v * tz;
         }
         Eigen::VectorXd x = A.colPivHouseholderQr().solve(b);
-        assert(x.array().isFinite().all());
+        THIS_ASSERTION_SHOULD_TRUE(x.array().isFinite().all());
         std::array<double, 3> wp{x(0), x(1), x(2)};
         ceres::Problem        problem;
         problem.AddParameterBlock(wp.data(), wp.size());
@@ -133,7 +145,7 @@ std::vector<TriRes> triangulation(const MatchPairs& match_img_pairs, ImgsData& i
         options.max_num_iterations           = 1000;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
-        // std::cout << summary.BriefReport() << std::endl;
+        std::cout << summary.BriefReport() << '\n';
         if(summary.IsSolutionUsable()) {
           std::lock_guard _{mtx};
           res.emplace_back(std::array<double, 3>{wp[0], wp[1], wp[2]}, std::move(pntidx_vec));

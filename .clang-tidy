@@ -1,0 +1,20 @@
+Checks: >
+  *,                      
+  -boost-*,
+  -clang-analyzer-alpha.*, 
+  -llvmlibc-*,
+  -fuchsia-*,
+  -bugprone-easily-swappable-parameters,
+  -altera-unroll-loops,
+  -*-magic-numbers,
+  -misc-no-recursion,
+  -cppcoreguidelines-macro-usage,
+  llvm-include-order,      
+  readability-redundant-include 
+  modernize-deprecated-headers 
+FormatStyle: file          
+WarningsAsErrors: 'clang-analyzer-*,modernize-*,readability-*' 
+HeaderFilterRegex: '^(src|include|tests)/'
+CheckOptions:
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: 'true'

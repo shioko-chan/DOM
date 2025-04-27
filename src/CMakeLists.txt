@@ -1,5 +1,3 @@
-file(GLOB_RECURSE SOURCES *.cpp)
-
 find_package(OpenCV REQUIRED)
 find_package(onnxruntime REQUIRED)
 find_package(exiv2 REQUIRED)
@@ -7,9 +5,10 @@ find_package(Ceres REQUIRED)
 
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
-
 set(onnxruntime_INCLUDE_DIR ${onnxruntime_DIR}/../../../include)
 set(onnxruntime_LIB_DIR ${onnxruntime_DIR}/../..)
+
+file(GLOB_RECURSE SOURCES *.cpp)
 
 add_executable(orthophoto ${SOURCES})
 

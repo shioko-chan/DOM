@@ -2,3 +2,4 @@ build*
 res/
 core
 models
+.cache/

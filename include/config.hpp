@@ -1,27 +1,31 @@
 #ifndef ORTHO_CONFIG_HPP
 #define ORTHO_CONFIG_HPP
 
+#include <cstdint>
+
 namespace Ortho {
 
-constexpr float IMG_SIZE{1024.0f};
+constexpr double IMG_SIZE{1024.};
 
-constexpr float LIGHTGLUE_THRESHOLD{0.2f};
-constexpr int   MATCH_CNT_THRESHOLD{25};
+constexpr double LIGHTGLUE_THRESHOLD{0.2};
+constexpr int    MATCH_CNT_THRESHOLD{25};
 
-constexpr float SUPERPOINT_THRESHOLD{0.05f};
-constexpr int   SUPERPOINT_KEYPOINT_MAXCNT{1024};
+constexpr int FEATURE_EXTRACTOR_RESOLUTION_LIM{1024};
 
-constexpr float DISK_THRESHOLD{0.05f};
-constexpr int   DISK_KEYPOINT_MAXCNT{1024};
+constexpr double SUPERPOINT_THRESHOLD{0.05};
+constexpr int    SUPERPOINT_KEYPOINT_MAXCNT{1024};
+
+constexpr double DISK_THRESHOLD{0.05};
+constexpr int    DISK_KEYPOINT_MAXCNT{1024};
 
 constexpr int NEIGHBOR_PROPOSAL{8};
 
-constexpr unsigned long MEM_LIMIT{8ul * (1ul << 30) /* 8GB */};
+constexpr int64_t MEM_LIMIT{8UL * (1UL << 30U) /* 8GB */};
 
-constexpr float SPATIAL_RESOLUTION{0.01f}; // meters per pixel
-constexpr float HEIGHT{125.0f};            // meters
+constexpr double SPATIAL_RESOLUTION{0.01}; // meters per pixel
+constexpr double HEIGHT{125.};             // meters
 
-enum method_t { SUPERPOINT, DISK };
+enum method_t : uint8_t { SUPERPOINT, DISK };
 
 constexpr method_t FEATURE_EXTRACTION_METHOD{DISK};
 
