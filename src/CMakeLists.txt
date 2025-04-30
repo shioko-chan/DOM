@@ -2,6 +2,8 @@ find_package(OpenCV REQUIRED)
 find_package(onnxruntime REQUIRED)
 find_package(exiv2 REQUIRED)
 find_package(Ceres REQUIRED)
+find_package(TBB REQUIRED)
+
 
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
@@ -41,6 +43,7 @@ target_link_libraries(orthophoto PUBLIC
   ${OpenCV_LIBS}
   onnxruntime
   ceres
+  TBB::tbb
 )
 
 install(TARGETS orthophoto

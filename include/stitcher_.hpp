@@ -28,7 +28,8 @@ public:
 
   Stitcher(MatchPairs& match_pairs, ImgsData& imgs_data, fs::path temporary_save_path) :
       temporary_save_path(std::move(temporary_save_path)) {
-    auto v = imgs_data | std::views::transform([](auto&& data) noexcept { return Node{data.img(), data.mask()}; });
+    auto v = imgs_data
+             | std::views::transform([](auto&& data) noexcept { return Node{data.rotated_img(), data.rotated_mask()}; });
     nodes.assign(v.begin(), v.end());
     for(const auto& match_pair : match_pairs) {
       // adjacent[match_pair.second][match_pair.first].M = match_pair.M.inv();

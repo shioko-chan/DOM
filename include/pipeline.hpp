@@ -52,7 +52,7 @@ private:
                                           return data.get_coord();
                                         }) | std::views::common);
     std::vector<std::vector<MatchPair>> matches(imgs_data.size());
-    run<int>(
+    run(
         imgs_data.size(),
         [this, &knn, &matches](int idx) noexcept {
           auto neighbors = knn.find_nearest_neighbour(idx);
@@ -83,7 +83,7 @@ public:
   }
 
   void get_image_info() {
-    run<int>(
+    run(
         img_paths.size(),
         [this](int idx) noexcept {
           auto&& img_path = img_paths[idx];
@@ -97,12 +97,14 @@ public:
   }
 
   void rotate_rectify() {
-    run<int>(
+    run(
         imgs_data.size(),
         [this](int idx) noexcept {
           imgs_data[idx].rotate_rectify();
 #ifdef ENABLE_MIDDLE_OUTPUT
-          cv::imwrite(temporary_save_path / imgs_data[i].get_img_name().string(), imgs_data[i].img().get().get());
+          cv::imwrite(
+              temporary_save_path / imgs_data[idx].rotated_img().get_img_name().string(),
+              imgs_data[idx].rotated_img().get().get());
 #endif
         },
         progress);

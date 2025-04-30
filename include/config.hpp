@@ -5,10 +5,10 @@
 
 namespace Ortho {
 
-constexpr double IMG_SIZE{1024.};
-
 constexpr double LIGHTGLUE_THRESHOLD{0.2};
 constexpr int    MATCH_CNT_THRESHOLD{25};
+
+constexpr int ORIGIN_RESOLUTION_LIM{1024};
 
 constexpr int FEATURE_EXTRACTOR_RESOLUTION_LIM{1024};
 
@@ -20,7 +20,7 @@ constexpr int    DISK_KEYPOINT_MAXCNT{1024};
 
 constexpr int NEIGHBOR_PROPOSAL{8};
 
-constexpr int64_t MEM_LIMIT{8UL * (1UL << 30U) /* 8GB */};
+constexpr int64_t MEM_LIMIT{12UL * (1UL << 30U) /* 12GB */};
 
 constexpr double SPATIAL_RESOLUTION{0.01}; // meters per pixel
 constexpr double HEIGHT{125.};             // meters

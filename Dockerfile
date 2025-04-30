@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates apt-transport-https software-properties-common \
     build-essential gnupg pkg-config ninja-build \
     wget curl zip unzip tar git \
+    libtbb-dev \
     libgtest-dev \
     libopencv-dev \
     libgoogle-glog-dev libgflags-dev \

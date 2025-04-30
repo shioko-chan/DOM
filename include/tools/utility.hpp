@@ -5,14 +5,14 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
-#include <concepts>
-#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <numeric>
 #include <ranges>
-#include <thread>
 #include <type_traits>
+
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
 
 #include <Eigen/Dense>
 #include <opencv2/core.hpp>
@@ -122,67 +122,29 @@ auto time_function(Func&& func, Args&&... args) noexcept {
   }
 }
 
-static auto generate_start_end(size_t total, size_t divisor) noexcept {
-  size_t base      = total / divisor;
-  size_t remainder = total % divisor;
-  auto   sequence  = std::views::iota(0UL, divisor)
-                  | std::views::transform([=](size_t idx) noexcept { return idx < remainder ? base + 1 : base; });
-  std::vector<size_t> cumulative{0};
-  std::partial_sum(sequence.begin(), sequence.end(), std::back_inserter(cumulative));
-  return std::views::iota(0UL, divisor) | std::views::transform([cumulative](size_t idx) noexcept {
-           return std::make_pair(cumulative[idx], cumulative[idx + 1]);
-         });
-}
-
-using Threads = std::vector<std::thread>;
-
-template <typename T, typename Func>
-  requires(std::integral<T> || std::same_as<T, void>) && std::invocable<Func, T>
+template <typename Func>
+  requires std::is_nothrow_invocable_v<Func, size_t>
 void run(size_t tasks, Func&& process, Progress& progress) noexcept {
   progress.reset(static_cast<int>(tasks));
-  auto view = generate_start_end(tasks, std::thread::hardware_concurrency())
-              | std::views::transform([process = std::forward<Func>(process), &progress](auto&& start_end) noexcept {
-                  auto&& [start, end] = start_end;
-                  return std::thread([start, end, &process, &progress] noexcept {
-                    for(uint64_t i = start; i < end; i++, progress.update()) {
-                      if constexpr(std::integral<T>) {
-                        process(static_cast<T>(i));
-                      } else if constexpr(std::same_as<T, void>) {
-                        process();
-                      }
-                    }
-                  });
-                });
-  Threads threads{view.begin(), view.end()};
-  for(auto&& thread : threads) {
-    if(thread.joinable()) {
-      thread.join();
-    }
-  }
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, tasks),
+      [process = std::forward<Func>(process), &progress](const tbb::blocked_range<size_t>& range) noexcept {
+        for(size_t i = range.begin(); i < range.end(); ++i, progress.update()) {
+          process(i);
+        }
+      });
 }
 
 template <typename Func>
-  requires std::is_nothrow_invocable_v<Func, int8_t> || std::is_nothrow_invocable_v<Func, uint8_t>
-           || std::is_nothrow_invocable_v<Func, int16_t> || std::is_nothrow_invocable_v<Func, uint16_t>
-           || std::is_nothrow_invocable_v<Func, int> || std::is_nothrow_invocable_v<Func, unsigned int>
-           || std::is_nothrow_invocable_v<Func, int64_t> || std::is_nothrow_invocable_v<Func, uint64_t>
-           || std::is_nothrow_invocable_v<Func, size_t>
+  requires std::is_nothrow_invocable_v<Func, size_t>
 void run(size_t tasks, Func&& process) noexcept {
-  auto view = generate_start_end(tasks, std::thread::hardware_concurrency())
-              | std::views::transform([process = std::forward<Func>(process)](auto&& start_end) noexcept {
-                  auto&& [start, end] = start_end;
-                  return std::thread([start, end, &process] noexcept {
-                    for(size_t i = start; i < end; i++) {
-                      process(i);
-                    }
-                  });
-                });
-  Threads threads{view.begin(), view.end()};
-  for(auto&& thread : threads) {
-    if(thread.joinable()) {
-      thread.join();
-    }
-  }
+  tbb::parallel_for(
+      tbb::blocked_range<size_t>(0, tasks),
+      [process = std::forward<Func>(process)](const tbb::blocked_range<size_t>& range) noexcept {
+        for(size_t i = range.begin(); i < range.end(); ++i) {
+          process(i);
+        }
+      });
 }
 
 inline auto rotate2qarray(cv::InputArray R_mat_input) noexcept -> RotateQArray {

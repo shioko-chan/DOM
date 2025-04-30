@@ -3,7 +3,7 @@
 
 #include <array>
 #include <cassert>
-#include <memory>
+#include <exception>
 #include <thread>
 
 #include <Eigen/Dense>
@@ -14,6 +14,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "ds/imgdata.hpp"
+#include "tools/report_error.hpp"
 #include "types/common_types.hpp"
 #include "types/cv_alias.hpp"
 
@@ -21,7 +22,7 @@ namespace Ortho {
 struct alignas(16) BaReprojectionError {
 public:
 
-  explicit BaReprojectionError(Point<double> img_pnt) : pnt2d(img_pnt) {}
+  explicit BaReprojectionError(Point<double> img_pnt) noexcept : pnt2d(img_pnt) {}
 
   template <typename T>
   auto operator()(
@@ -29,7 +30,7 @@ public:
       const T* const transpose,
       const T* const camera,
       const T* const pnt3d,
-      T*             residuals) const -> bool {
+      T*             residuals) const noexcept -> bool {
     std::array<T, 3>   pnt0;
     std::array<T, 3>   pnt1;
     std::span<const T> pnt3d_span{pnt3d, 3};
@@ -49,9 +50,18 @@ public:
     return true;
   }
 
-  static auto create(Point<double> img_pnt) -> std::unique_ptr<ceres::CostFunction> {
-    auto error_ptr = std::make_unique<BaReprojectionError>(img_pnt);
-    return std::make_unique<ceres::AutoDiffCostFunction<BaReprojectionError, 2, 4, 3, 4, 3>>(error_ptr.release());
+  static auto create(Point<double> img_pnt) noexcept -> ceres::CostFunction* {
+    BaReprojectionError* error_ptr{};
+    try {
+      error_ptr = new BaReprojectionError(img_pnt);
+    } catch(const std::exception& e) {
+      report_error(e, "Bad allocation");
+    }
+    try {
+      return new ceres::AutoDiffCostFunction<BaReprojectionError, 2, 4, 3, 4, 3>(error_ptr);
+    } catch(const std::exception& e) {
+      report_error(e, "Bad allocation");
+    }
   }
 
 private:
@@ -59,7 +69,7 @@ private:
   Point<double> pnt2d;
 };
 
-void ba(ImgsData& imgs_data, auto& res) {
+void ba(ImgsData& imgs_data, auto& res) noexcept {
   ceres::Problem problem;
   auto           add_parameter_block = [&problem](auto& param, ceres::Manifold* manifold = nullptr) {
     if(manifold) {
@@ -82,7 +92,11 @@ void ba(ImgsData& imgs_data, auto& res) {
     set_bound(param, idx, (1.0 - percentage) * value, (1.0 + percentage) * value);
   };
   for(auto& img_data : imgs_data) {
-    add_parameter_block(img_data.Q_proj_array_raw(), new ceres::QuaternionManifold);
+    try {
+      add_parameter_block(img_data.Q_proj_array_raw(), new ceres::QuaternionManifold);
+    } catch(const std::exception& e) {
+      report_error(e, "Bad allocation");
+    }
     add_parameter_block(img_data.t_proj_array_raw());
     add_parameter_block(img_data.camera_array_raw());
 
@@ -105,13 +119,17 @@ void ba(ImgsData& imgs_data, auto& res) {
     add_parameter_block(pnt3d);
     for(const auto& pnt2d_idx : pnt2d_idx_vec) {
       auto& img_data = imgs_data[pnt2d_idx.img_idx];
-      problem.AddResidualBlock(
-          BaReprojectionError::create(img_data.get_kpnts().get(pnt2d_idx.pnt_idx)).release(),
-          new ceres::HuberLoss(1.0),
-          img_data.Q_proj_array_raw().data(),
-          img_data.t_proj_array_raw().data(),
-          img_data.camera_array_raw().data(),
-          pnt3d.data());
+      try {
+        problem.AddResidualBlock(
+            BaReprojectionError::create(img_data.get_kpnts().get(pnt2d_idx.pnt_idx)),
+            new ceres::HuberLoss(1.0),
+            img_data.Q_proj_array_raw().data(),
+            img_data.t_proj_array_raw().data(),
+            img_data.camera_array_raw().data(),
+            pnt3d.data());
+      } catch(const std::exception& e) {
+        report_error(e, "Bad allocation");
+      }
     }
   }
   ceres::Solver::Options options;

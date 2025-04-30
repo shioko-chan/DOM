@@ -244,8 +244,9 @@ public:
   }
 
   auto get_features(ImgData& img_data) -> Features {
-    fs::path path = temporary_save_path / std::format("{}_{}.desc", img_data.get_img_stem().string(), get_name());
-    auto     elem = Mem::get_node(path.string());
+    fs::path path =
+        temporary_save_path / std::format("{}_{}.desc", img_data.rotated_img().get_img_stem().string(), get_name());
+    auto elem = Mem::get_node(path.string());
     if(elem) {
       auto&&   elem_guard = *elem;
       Features features{elem_guard.get<FeaturesMem>().features()};
@@ -263,17 +264,13 @@ public:
         }
       }
     }
-    auto    img_guard     = img_data.get_img();
+    auto&   img_rotated   = img_data.rotated_img();
+    auto    img_guard     = img_rotated.get();
     cv::Mat img_processed = img_guard.get().clone();
     img_guard.unlock();
     reshape(&img_processed);
     preprocess(&img_processed);
-    auto    mask_guard     = img_data.get_mask();
-    cv::Mat mask_processed = mask_guard.get().clone();
-    mask_guard.unlock();
-    reshape(&mask_processed);
-    const int          height = mask_processed.rows;
-    const int          width  = mask_processed.cols;
+    const auto [width, height] = img_rotated.get_size();
     std::vector<float> img_vec(img_processed.begin<float>(), img_processed.end<float>());
     env.set_input("image", img_vec, std::vector<int64_t>{1, get_channels(), height, width});
     if(img_vec.empty()) {
@@ -290,11 +287,12 @@ public:
     const std::span<const float>
         descs_span{res[env.get_output_index("descriptors")].GetTensorData<float>(), cnt * descriptor_size};
     THIS_LOG_DEBUG("Image {} has {} keypoints detected!", img_data.get_img_name().string(), cnt);
-    auto view0 = std::views::iota(0UL, cnt)
-                 | std::views::filter([this, &scores_span, &mask_processed, &kps_span](const auto& idx) {
-                     return scores_span[idx] >= get_threshold()
-                            && mask_processed.at<unsigned char>(kps_span[(idx * 2) + 1], kps_span[idx * 2]) != 0;
-                   });
+    auto view0 =
+        std::views::iota(0UL, cnt) | std::views::filter([this, &scores_span, &img_rotated, &kps_span](const auto& idx) {
+          return scores_span[idx] >= get_threshold()
+                 && img_rotated.check_valid_pixel(
+                     Point<double>{static_cast<double>(kps_span[idx * 2]), static_cast<double>(kps_span[(idx * 2) + 1])});
+        });
     std::vector<size_t> indices(view0.begin(), view0.end());
     if(indices.size() > get_keypoint_maxcnt()) {
       std::nth_element(

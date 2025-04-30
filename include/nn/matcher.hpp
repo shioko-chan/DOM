@@ -147,35 +147,28 @@ private:
       const Matches&  matches,
       const Features& features_lhs,
       const Features& features_rhs) -> cv::Mat {
-    auto           view_lhs = features_lhs | feature2point(img_lhs.get_size());
-    auto           view_rhs = features_rhs | feature2point(img_rhs.get_size());
-    auto           view     = matches | std::views::transform([](const auto& match) noexcept {
+    auto     view = matches | std::views::transform([](const auto& match) noexcept {
                   return DMatch(static_cast<int>(match.lhs), static_cast<int>(match.rhs), match.score);
                 });
-    Points<double> points_lhs{view_lhs.begin(), view_lhs.end()};
-    Points<double> points_rhs{view_rhs.begin(), view_rhs.end()};
-    DMatches       d_matches{view.begin(), view.end()};
-    cv::Mat        img0;
-    {
-      auto guard = img_lhs.img().get();
-      guard.get().copyTo(img0);
-    }
-    cv::Mat img1;
-    {
-      auto guard = img_rhs.img().get();
-      guard.get().copyTo(img1);
-    }
-    auto points2keypoints = [](const auto& points) noexcept {
-      return points
-             | std::views::transform([](const auto& point) noexcept { return cv::KeyPoint(point.x, point.y, 1.); });
-    };
-    auto      v1_lhs = points2keypoints(points_lhs);
-    auto      v1_rhs = points2keypoints(points_rhs);
+    DMatches d_matches{view.begin(), view.end()};
+    auto     view_lhs =
+        features_lhs | feature2point(img_lhs.rotated_img().get_size())
+        | std::views::transform([](const auto& point) noexcept { return cv::KeyPoint(point.x, point.y, 1.); });
+    auto view_rhs =
+        features_rhs | feature2point(img_rhs.rotated_img().get_size())
+        | std::views::transform([](const auto& point) noexcept { return cv::KeyPoint(point.x, point.y, 1.); });
     KeyPoints keypoints_lhs{view_lhs.begin(), view_lhs.end()};
-    KeyPoints keypoints_rhs{v1_rhs.begin(), v1_rhs.end()};
+    KeyPoints keypoints_rhs{view_rhs.begin(), view_rhs.end()};
     cv::Mat   res;
     cv::drawMatches(
-        img0, keypoints_lhs, img1, keypoints_rhs, d_matches, res, cv::Scalar::all(-1), cv::Scalar(255, 255, 255));
+        img_lhs.rotated_img().get().get(),
+        keypoints_lhs,
+        img_rhs.rotated_img().get().get(),
+        keypoints_rhs,
+        d_matches,
+        res,
+        cv::Scalar::all(-1),
+        cv::Scalar(255, 255, 255));
     return res;
   }
 
@@ -185,6 +178,13 @@ public:
       temporary_save_path(temporary_save_path), lightglue("[lightglue]", weight), extractor(temporary_save_path) {}
 
   void match(MatchPairs& pairs, ImgsData& imgs_data, Progress& progress) {
+    progress.reset(static_cast<int>(imgs_data.size()));
+    THIS_MESSAGE("Start extracting features.");
+    for(auto& img_data : imgs_data) {
+      extractor.get_features(img_data);
+      progress.update();
+    }
+    THIS_MESSAGE("Feature extraction finished.");
     progress.reset(static_cast<int>(pairs.size()));
     auto batches =
         pairs | std::views::chunk_by([](const auto& lhs, const auto& rhs) noexcept { return lhs.first == rhs.first; });
@@ -193,24 +193,27 @@ public:
       ImgData& lhs_img      = imgs_data[batch.front().first];
       Features lhs_features = std::move(extractor.get_features(lhs_img));
       if(!set_input(lhs_features, "kpts0", &kpts0, "desc0", &desc0)) {
-        THIS_LOG_INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
+        THIS_LOG_INFO("Image {} has no valid feature!", lhs_img.rotated_img().get_img_name().string());
         continue;
       }
-      auto [lhs_w, lhs_h] = lhs_img.get_size();
+      auto [lhs_w, lhs_h] = lhs_img.rotated_img().get_size();
       for(auto&& pair : batch) {
         batch_cnt += 1;
         ImgData& rhs_img      = imgs_data[pair.second];
         Features rhs_features = std::move(extractor.get_features(rhs_img));
         if(!set_input(rhs_features, "kpts1", &kpts1, "desc1", &desc1)) {
-          THIS_LOG_INFO("Image {} has no valid feature!", lhs_img.get_img_name().string());
+          THIS_LOG_INFO("Image {} has no valid feature!", lhs_img.rotated_img().get_img_name().string());
           continue;
         }
-        auto [rhs_w, rhs_h] = rhs_img.get_size();
+        auto [rhs_w, rhs_h] = rhs_img.rotated_img().get_size();
         auto matches        = infer_and_filter_by_score_precise();
 #ifdef ENABLE_MIDDLE_OUTPUT
         cv::imwrite(
             temporary_save_path
-                / std::format("{}_{}_matches.jpg", lhs_img.get_img_stem().string(), rhs_img.get_img_stem().string()),
+                / std::format(
+                    "{}_{}_matches.jpg",
+                    lhs_img.rotated_img().get_img_stem().string(),
+                    rhs_img.rotated_img().get_img_stem().string()),
             draw_matchlines(lhs_img, rhs_img, matches, lhs_features, rhs_features));
 #endif
         const uint64_t len = matches.size();
@@ -222,19 +225,19 @@ public:
         if(matches.size() < MATCH_CNT_THRESHOLD) {
           THIS_LOG_INFO(
               "Image {} and image {} have too few matches after threshold filter: {}",
-              lhs_img.get_img_name().string(),
-              rhs_img.get_img_name().string(),
+              lhs_img.rotated_img().get_img_name().string(),
+              rhs_img.rotated_img().get_img_name().string(),
               matches.size());
           continue;
         }
         auto kpnt_lhs =
             matches
             | std::views::transform([&lhs_features](const auto& match) noexcept { return lhs_features[match.lhs]; })
-            | feature2point(lhs_img.get_size());
+            | feature2point(lhs_img.rotated_img().get_size());
         auto kpnt_rhs =
             matches
             | std::views::transform([&rhs_features](const auto& match) noexcept { return rhs_features[match.rhs]; })
-            | feature2point(rhs_img.get_size());
+            | feature2point(rhs_img.rotated_img().get_size());
         auto score     = matches | std::views::transform([](const auto& match) noexcept { return match.score; });
         auto idx_lhs   = lhs_img.get_kpnts().append(kpnt_lhs);
         auto idx_rhs   = rhs_img.get_kpnts().append(kpnt_rhs);

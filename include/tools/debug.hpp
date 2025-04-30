@@ -14,8 +14,8 @@ namespace Ortho {
 
 #ifndef NDEBUG
 template <typename T>
-concept streamable = requires(const T& type, std::stringstream& sstream) {
-  { sstream << type } -> std::same_as<std::stringstream&>;
+concept streamable = requires(T&& type, std::ostream& ostream) {
+  { ostream << std::forward<T>(type) } -> std::convertible_to<std::ostream&>;
 };
 
 template <typename T>

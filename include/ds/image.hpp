@@ -11,9 +11,11 @@
 #include <opencv2/opencv.hpp>
 #include <utility>
 
-#include "tools/log.hpp"
+#include "config.hpp"
 #include "tools/mem.hpp"
 #include "tools/report_error.hpp"
+#include "tools/utility.hpp"
+#include "types/cv_alias.hpp"
 
 namespace Ortho {
 
@@ -63,11 +65,11 @@ public:
 
   Image() noexcept = default;
 
-  Image(const Image&) noexcept           = default;
-  Image(Image&&)                         = default;
-  auto operator=(const Image&) -> Image& = default;
-  auto operator=(Image&&) -> Image&      = default;
-  ~Image() noexcept                      = default;
+  Image(const Image&) noexcept                    = default;
+  Image(Image&&) noexcept                         = default;
+  auto operator=(const Image&) noexcept -> Image& = default;
+  auto operator=(Image&&) noexcept -> Image&      = default;
+  ~Image() noexcept                               = default;
 
   explicit Image(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) noexcept :
       path(std::move(img_read_path)), initialized(true) {
@@ -79,13 +81,19 @@ public:
         nullptr,
         [path = this->path, mode] noexcept {
           cv::Mat img = read(path, mode);
+          decimate_keep_aspect_ratio(&img, ORIGIN_RESOLUTION_LIM);
           return std::make_unique<ImageMem>(std::move(img));
         },
         [](ManageAblePtr ptr) noexcept {});
   }
 
-  explicit Image(fs::path temporary_save_path, cv::Mat&& img) noexcept :
-      path(std::move(temporary_save_path)), initialized(true) {
+  explicit Image(fs::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span = Points<double>{}) noexcept
+      : path(std::move(temporary_save_path)), initialized(true) {
+    img_size = img.size();
+    if(!pixel_span.empty()) {
+      auto view = convert_arithmetic_type<float>(pixel_span);
+      this->pixel_span.assign(view.begin(), view.end());
+    }
     Mem::register_node(
         path.string(),
         std::make_unique<ImageMem>(std::move(img)),
@@ -103,16 +111,21 @@ public:
         });
   }
 
-  void delay_initialize(fs::path temporary_save_path, cv::Mat&& img) noexcept {
+  void delay_initialize(
+      fs::path              temporary_save_path,
+      cv::Mat&&             img,
+      const Points<double>& pixel_span = Points<double>{}) noexcept {
     if(initialized) {
       return;
     }
-    *this = Image{std::move(temporary_save_path), std::move(img)};
+    *this = Image{std::move(temporary_save_path), std::move(img), pixel_span};
   }
 
-  [[nodiscard]] auto get() const noexcept -> ImgRefGuard {
+  [[nodiscard]] auto get() noexcept -> ImgRefGuard {
     check_init();
-    return ImgRefGuard{*Mem::get_node(path.string())};
+    auto guard = ImgRefGuard{*Mem::get_node(path.string())};
+    img_size   = guard.get().size();
+    return guard;
   }
 
   [[nodiscard]] auto get_img_path() const noexcept -> const fs::path& {
@@ -137,6 +150,24 @@ public:
 
   [[nodiscard]] auto is_initialized() const noexcept -> bool { return initialized; }
 
+  [[nodiscard]] auto get_size() noexcept -> cv::Size {
+    check_init();
+    if(img_size.empty()) {
+      auto guard = get();
+      img_size   = guard.get().size();
+    }
+    return img_size;
+  }
+
+  [[nodiscard]] auto check_valid_pixel(HasXY auto point) const noexcept -> bool {
+    if(pixel_span.empty()) {
+      std::cout << 12382194238467;
+      return true;
+    }
+    return cv::pointPolygonTest(pixel_span, Point<double>{static_cast<double>(point.x), static_cast<double>(point.y)}, false)
+           >= 0;
+  }
+
 private:
 
   void check_init() const noexcept {
@@ -145,7 +176,7 @@ private:
     }
   }
 
-  static auto read(const fs::path& path, cv::ImreadModes mode) noexcept -> cv::Mat {
+  [[nodiscard]] static auto read(const fs::path& path, cv::ImreadModes mode) noexcept -> cv::Mat {
     cv::Mat img;
     try {
       img = cv::imread(path.string(), mode);
@@ -173,9 +204,10 @@ private:
     }
   }
 
-  fs::path path;
-
-  bool initialized{false};
+  cv::Size      img_size;
+  Points<float> pixel_span;
+  fs::path      path;
+  bool          initialized{false};
 };
 
 class ExifXmp {
@@ -185,12 +217,12 @@ public:
 
   explicit ExifXmp(fs::path img_read_path) noexcept : path(std::move(img_read_path)) {}
 
-  auto exif_data() noexcept -> Exiv2::ExifData& {
+  [[nodiscard]] auto exif_data() noexcept -> Exiv2::ExifData& {
     check_and_load_exif_xmp();
     return exif_;
   }
 
-  auto xmp_data() noexcept -> Exiv2::XmpData& {
+  [[nodiscard]] auto xmp_data() noexcept -> Exiv2::XmpData& {
     check_and_load_exif_xmp();
     return xmp_;
   }

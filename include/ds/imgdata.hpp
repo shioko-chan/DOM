@@ -6,11 +6,12 @@
 #include <cmath>
 #include <concepts>
 #include <cstdint>
-#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <numbers>
+#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -64,12 +65,15 @@ private:
 struct alignas(128) Kpnts {
 public:
 
+  void set_perspective_matrix(cv::InputArray pers_mat_input) noexcept { this->pers_mat = pers_mat_input.getMat(); }
+
   auto append(const Point<double>& kpnt) noexcept -> size_t {
     auto kpnts_map_iter = kpnts_map.find(kpnt);
     if(kpnts_map_iter == kpnts_map.end()) {
-      size_t idx = kpnts_map.size();
-      kpnts_map.emplace(kpnt, idx);
-      kpnts_map_rev.emplace(idx, kpnt);
+      size_t idx    = kpnts_map.size();
+      auto   origin = mat2point(pers_mat * kpnt);
+      kpnts_map.emplace(origin, idx);
+      kpnts_map_rev.emplace(idx, origin);
       return idx;
     }
     return kpnts_map_iter->second;
@@ -92,6 +96,7 @@ public:
 
 private:
 
+  cv::Mat                      pers_mat;
   PointUMap<double, size_t>    kpnts_map;
   PointUMapRev<size_t, double> kpnts_map_rev;
 };
@@ -115,7 +120,7 @@ public:
       fs::path        img_path,
       const fs::path& temp_save_path) noexcept :
       latitude{latitude_}, longitude{longitude_}, altitude{altitude_}, focal_35mm{focal_35mm_},
-      img_path{std::move(img_path)}, temp_save_path{temp_save_path} {
+      temp_save_path{temp_save_path}, img_origin{std::move(img_path)} {
     check_or_create_path(temp_save_path);
     Angle   yaw{yaw_};
     Angle   pitch{pitch_};
@@ -124,70 +129,41 @@ public:
     Q_proj_array  = rotate2qarray(R_mat.t());
   }
 
-  auto img() const noexcept -> Image {
+  auto origin_img() const noexcept -> const Image& { return img_origin; }
+
+  auto origin_img() noexcept -> Image& { return img_origin; }
+
+  auto rotated_img() const noexcept -> const Image& {
     if(!rotated_rectified) {
       report_error("Not rectified yet!");
     }
     return img_rotated;
   }
 
-  auto mask() const noexcept -> Image {
+  auto rotated_img() noexcept -> Image& {
     if(!rotated_rectified) {
       report_error("Not rectified yet!");
     }
-    return img_rotated_mask;
-  }
-
-  auto get_img() const noexcept -> ImgRefGuard {
-    if(!rotated_rectified) {
-      report_error("Not rectified yet!");
-    }
-    return img_rotated.get();
-  }
-
-  auto get_mask() const noexcept -> ImgRefGuard {
-    if(!rotated_rectified) {
-      report_error("Not rectified yet!");
-    }
-    return img_rotated_mask.get();
-  }
-
-  auto get_size() const noexcept -> cv::Size {
-    if(!rotated_rectified) {
-      report_error("Not rectified yet!");
-    }
-    return img_size;
+    return img_rotated;
   }
 
   void rotate_rectify() noexcept {
     if(!reference_set) {
       report_error("Reference coordinate not set!");
     }
-    cv::Mat img = cv::imread(img_path.string());
-    decimate_keep_aspect_ratio(&img, 2048);
-    if(img.empty()) {
-      report_error("{} could not be read", img_path.string());
-    }
+    auto        guard          = img_origin.get();
+    const auto& img            = guard.get();
     const auto [width, height] = img.size();
     set_by_camera_params(width, height, focal_35mm);
-    auto [rotate_img, mask, pers_mat] = Ortho::rotate_rectify(R_bproj(), img);
-    img_size                          = rotate_img.size();
+    auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_bproj(), img);
+    kpnts.set_perspective_matrix(pers_mat.inv());
     this->img_rotated.delay_initialize(
-        temp_save_path / std::format("{}_r{}", img_path.stem().string(), img_path.extension().string()),
-        std::move(rotate_img));
-    this->img_rotated_mask.delay_initialize(
-        temp_save_path / std::format("{}_rm{}", img_path.stem().string(), img_path.extension().string()),
-        std::move(mask));
+        temp_save_path
+            / std::format("{}_r{}", img_origin.get_img_stem().string(), img_origin.get_img_extension().string()),
+        std::move(rotate_img),
+        pixel_span);
     rotated_rectified = true;
   }
-
-  auto get_img_path() const noexcept -> fs::path { return img_path; }
-
-  auto get_img_name() const noexcept -> fs::path { return img_path.filename(); }
-
-  auto get_img_stem() const noexcept -> fs::path { return img_path.stem(); }
-
-  auto get_img_extension() const noexcept -> fs::path { return img_path.extension(); }
 
   auto proj() const noexcept -> cv::Mat { return get_projection_matrix(R_proj(), t_proj(), K_proj()); }
 
@@ -216,17 +192,20 @@ public:
     const auto latitude_r  = Angle(latitude_ref_degree);
     const auto longitude_r = Angle(longitude_ref_degree);
     // WGS84
-    const double a          = 6378137.0;
-    const double f          = 1 / 298.257223563;
-    const double e_sq       = (2 * f) - (f * f);
-    const double sin_phi_sq = std::pow(std::sin(latitude_r.radians()), 2);
-    const double M          = a * (1 - e_sq) / std::pow(1 - (e_sq * sin_phi_sq), 1.5);
-    const double N          = a / std::sqrt(1 - (e_sq * sin_phi_sq));
-    const double x          = N * (longitude.radians() - longitude_r.radians()) * std::cos(latitude_r.radians());
-    const double y          = M * (latitude.radians() - latitude_r.radians());
-    coord                   = Point<double>(x, y);
-    t_proj_array            = {-coord.x, -coord.y, altitude};
-    reference_set           = true;
+    const double semi_major_axis = 6378137.0;
+    const double flattening      = 1.0 / 298.257223563;
+    const double eccentricity_sq = (2.0 * flattening) - (flattening * flattening);
+    const double sin_lat_ref_sq  = std::pow(std::sin(latitude_r.radians()), 2);
+    const double meridional_radius =
+        semi_major_axis * (1.0 - eccentricity_sq) / std::pow(1.0 - (eccentricity_sq * sin_lat_ref_sq), 1.5);
+    const double prime_vert_radius   = semi_major_axis / std::sqrt(1.0 - (eccentricity_sq * sin_lat_ref_sq));
+    const double delta_longitude_rad = longitude.radians() - longitude_r.radians();
+    const double delta_latitude_rad  = latitude.radians() - latitude_r.radians();
+    const double projected_x         = prime_vert_radius * delta_longitude_rad * std::cos(latitude_r.radians());
+    const double projected_y         = meridional_radius * delta_latitude_rad;
+    coord                            = Point<double>(projected_x, projected_y);
+    t_proj_array                     = {-coord.x, -coord.y, altitude};
+    reference_set                    = true;
   }
 
   auto R_proj() const noexcept -> cv::Mat { return qarray2rotate(Q_proj_array); }
@@ -294,9 +273,8 @@ private:
 
   bool reference_set{false}, rotated_rectified{false};
 
-  cv::Size img_size;
-  fs::path temp_save_path, img_path;
-  Image    img_rotated, img_rotated_mask;
+  fs::path temp_save_path;
+  Image    img_rotated, img_origin;
 
   Angle         latitude, longitude;
   double        altitude{};

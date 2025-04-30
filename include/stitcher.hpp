@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 
+#include <opencv2/core.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/stitching/detail/blenders.hpp>
 
@@ -20,7 +21,7 @@ public:
 
   Stitcher() = delete;
 
-  explicit Stitcher(const fs::path& temporary_save_path, double scale = 4.) :
+  explicit Stitcher(const fs::path& temporary_save_path, double scale = 4.0) :
       temporary_save_path(temporary_save_path), scale(scale) {
     check_or_create_path(temporary_save_path);
   }
@@ -36,8 +37,8 @@ public:
     // cv::detail::MultiBandBlender blender(false, 5);
     // blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
     for(auto& img_data : imgs_data) {
-      cv::Mat srcImg  = img_data.get_img().get();
-      cv::Mat srcMask = img_data.get_mask().get();
+      cv::Mat srcImg  = img_data.origin_img().get().get();
+      cv::Mat srcMask = cv::Mat::ones(srcImg.size(), CV_8UC1) * 255;
       cv::flip(srcImg, srcImg, -1);
       cv::flip(srcMask, srcMask, -1);
       cv::Mat transformMatrix = calculateTransformMatrix(img_data);
@@ -66,8 +67,8 @@ private:
   double world_max_x{0.}, world_max_y{0.};
   double world_width{0.}, world_height{0.};
 
-  static auto img_corners(const ImgData& img_data) -> Points<double> {
-    cv::Size img_size = img_data.get_size();
+  static auto img_corners(ImgData& img_data) -> Points<double> {
+    cv::Size img_size = img_data.origin_img().get_size();
     double   width{static_cast<double>(img_size.width)};
     double   height{static_cast<double>(img_size.height)};
     return {
@@ -77,7 +78,7 @@ private:
         Point<double>{0., height - 1}};
   }
 
-  static auto ground_corners(const ImgData& img_data) -> Points<double> {
+  static auto ground_corners(ImgData& img_data) -> Points<double> {
     auto corners = img_corners(img_data);
     auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept {
                   cv::Mat world_dir = img_data.R_bproj() * img_data.K_bproj() * pnt;
@@ -95,7 +96,7 @@ private:
     }
     world_min_x = std::numeric_limits<double>::max(), world_min_y = std::numeric_limits<double>::max();
     world_max_x = std::numeric_limits<double>::lowest(), world_max_y = std::numeric_limits<double>::lowest();
-    for(const auto& img_data : imgs_data) {
+    for(auto& img_data : imgs_data) {
       auto world_corners = ground_corners(img_data);
       world_min_x        = std::min(world_min_x, min_x(world_corners));
       world_min_y        = std::min(world_min_y, min_y(world_corners));
@@ -108,8 +109,8 @@ private:
     THIS_LOG_INFO("世界坐标系尺寸: {} x {}", world_width, world_height);
   }
 
-  [[nodiscard]] auto calculateTransformMatrix(const ImgData& img_data) const -> cv::Mat {
-    cv::Size       img_size      = img_data.get_size();
+  [[nodiscard]] auto calculateTransformMatrix(ImgData& img_data) const -> cv::Mat {
+    cv::Size       img_size      = img_data.origin_img().get_size();
     auto           src_corners   = img_corners(img_data);
     auto           world_corners = ground_corners(img_data);
     Points<double> dst_corners;
