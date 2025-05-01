@@ -25,6 +25,7 @@
 
 #include "algo/rotate_rectify.hpp"
 #include "ds/image.hpp"
+#include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
@@ -134,23 +135,17 @@ public:
   auto origin_img() noexcept -> OriginImage& { return img_origin; }
 
   auto rotated_img() const noexcept -> const Image& {
-    if(!rotated_rectified) {
-      report_error("Not rectified yet!");
-    }
+    THIS_ASSERTION_SHOULD_TRUE(rotated_rectified, "Not rectified yet!");
     return img_rotated;
   }
 
   auto rotated_img() noexcept -> Image& {
-    if(!rotated_rectified) {
-      report_error("Not rectified yet!");
-    }
+    THIS_ASSERTION_SHOULD_TRUE(rotated_rectified, "Not rectified yet!");
     return img_rotated;
   }
 
   void rotate_rectify() noexcept {
-    if(!reference_set) {
-      report_error("Reference coordinate not set!");
-    }
+    THIS_ASSERTION_SHOULD_TRUE(reference_set, "Reference coordinate not set!");
     auto img                   = img_origin.get();
     const auto [width, height] = img.size();
     set_by_camera_params(width, height, focal_35mm);
@@ -165,18 +160,23 @@ public:
   }
 
   auto K_proj() const noexcept -> cv::Mat {
-    return (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1) * array2camera(camera_array);
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
+    return array2camera(camera_array) * (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1);
   }
 
   auto K_bproj() const noexcept -> cv::Mat {
-    return array2camera(camera_array).inv() * (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1);
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
+    return (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1) * array2camera(camera_array).inv();
   }
 
   auto D() const noexcept -> cv::Mat { return array2distort(distort_array); }
 
   auto camera_array_raw() noexcept -> CameraArray& { return camera_array; }
 
-  auto camera_array_raw() const noexcept -> const CameraArray& { return camera_array; }
+  auto camera_array_raw() const noexcept -> const CameraArray& {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
+    return camera_array;
+  }
 
   auto distort_array_raw() noexcept -> DistortArray& { return distort_array; }
 
@@ -211,27 +211,48 @@ public:
     reference_set = true;
   }
 
-  auto R_proj() const noexcept -> cv::Mat { return qarray2rotate(Q_proj_array); }
+  auto R_proj() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_proj_array[0]), "R not initialized yet!");
+    return qarray2rotate(Q_proj_array);
+  }
 
-  auto t_proj() const noexcept -> cv::Mat { return array2translate(t_proj_array); }
-
-  auto R_bproj() const noexcept -> cv::Mat { return qarray2rotate(Q_proj_array).t(); }
-
-  auto t_bproj() const noexcept -> cv::Mat { return -R_bproj() * array2translate(t_proj_array); }
+  auto R_bproj() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_proj_array[0]), "R not initialized yet!");
+    return qarray2rotate(Q_proj_array).t();
+  }
 
   auto Q_proj_array_raw() noexcept -> RotateQArray& { return Q_proj_array; }
 
-  auto Q_proj_array_raw() const noexcept -> const RotateQArray& { return Q_proj_array; }
+  auto Q_proj_array_raw() const noexcept -> const RotateQArray& {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_proj_array[0]), "R not initialized yet!");
+    return Q_proj_array;
+  }
+
+  auto t_proj() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_proj_array[0]), "t not initialized yet!");
+    return array2translate(t_proj_array);
+  }
+
+  auto t_bproj() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_proj_array[0]), "t not initialized yet!");
+    return -R_bproj() * array2translate(t_proj_array);
+  }
 
   auto t_proj_array_raw() noexcept -> TranslateArray& { return t_proj_array; }
 
-  auto t_proj_array_raw() const noexcept -> const TranslateArray& { return t_proj_array; }
+  auto t_proj_array_raw() const noexcept -> const TranslateArray& {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_proj_array[0]), "t not initialized yet!");
+    return t_proj_array;
+  }
 
   auto get_kpnts() const noexcept -> const Kpnts& { return kpnts; }
 
   auto get_kpnts() noexcept -> Kpnts& { return kpnts; }
 
-  auto get_coord() noexcept -> const Point<double>& { return coord; }
+  auto get_coord() noexcept -> const Point<double>& {
+    THIS_ASSERTION_SHOULD_TRUE(reference_set, "reference not set!");
+    return coord;
+  }
 
 private:
 
@@ -280,11 +301,10 @@ private:
   double        altitude{};
   Point<double> coord;
 
-  RotateQArray   Q_proj_array{};
-  TranslateArray t_proj_array{};
-
-  CameraArray  camera_array{};
-  DistortArray distort_array{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  RotateQArray   Q_proj_array{std::numeric_limits<double>::quiet_NaN()};
+  TranslateArray t_proj_array{std::numeric_limits<double>::quiet_NaN()};
+  CameraArray    camera_array{std::numeric_limits<double>::quiet_NaN()};
+  DistortArray   distort_array{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
   double focal_35mm{};
 };

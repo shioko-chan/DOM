@@ -6,7 +6,7 @@
 namespace Ortho {
 
 constexpr double LIGHTGLUE_THRESHOLD{0.2};
-constexpr int    MATCH_CNT_THRESHOLD{25};
+constexpr int    MATCH_CNT_THRESHOLD{100};
 
 constexpr int ORIGIN_RESOLUTION_LIM{2048};
 
@@ -18,7 +18,7 @@ constexpr int    SUPERPOINT_KEYPOINT_MAXCNT{1024};
 constexpr double DISK_THRESHOLD{0.05};
 constexpr int    DISK_KEYPOINT_MAXCNT{1024};
 
-constexpr int NEIGHBOR_PROPOSAL{8};
+constexpr int NEIGHBOR_PROPOSAL{10};
 
 constexpr int64_t MEM_LIMIT{12UL * (1UL << 30U) /* 12GB */};
 

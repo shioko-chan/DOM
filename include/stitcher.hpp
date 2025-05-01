@@ -81,8 +81,7 @@ private:
   static auto ground_corners(ImgData& img_data) -> Points<double> {
     auto corners = img_corners(img_data);
     auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
-                  cv::Mat normalize_dir = img_data.K_bproj() * pnt;
-                  cv::Mat world_dir     = img_data.R_bproj() * normalize_dir;
+                  cv::Mat world_dir = img_data.R_bproj() * img_data.K_bproj() * pnt;
                   cv::normalize(world_dir, world_dir);
                   double  lambda    = -img_data.t_bproj().at<double>(2, 0) / world_dir.at<double>(2, 0);
                   cv::Mat intersect = lambda * world_dir + img_data.t_bproj();
