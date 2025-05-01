@@ -9,10 +9,11 @@
 
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
+#include <ceres/types.h>
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "algo/reproj.hpp"
+#include "algo/cost.hpp"
 #include "ds/imgdata.hpp"
 #include "tools/report_error.hpp"
 
@@ -49,9 +50,9 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
     // set_bound_percentage(img_data.camera_array_raw(), 1, 5);
     // set_bound_delta(img_data.camera_array_raw(), 2, 10);
     // set_bound_delta(img_data.camera_array_raw(), 3, 10);
-    // set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
-    // set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
-    // set_parameter_block_constant(problem, img_data.camera_array_raw());
+    set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
+    set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
+    set_parameter_block_constant(problem, img_data.camera_array_raw());
   }
   for(auto& [pnt3d, pnt2d_idx_vec] : res) {
     if(pnt2d_idx_vec.empty()) {
@@ -76,30 +77,12 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
   ceres::Solver::Options options;
   options.num_threads                  = static_cast<int>(std::thread::hardware_concurrency());
   options.linear_solver_type           = ceres::SPARSE_SCHUR;
-  options.check_gradients              = false;
-  options.minimizer_progress_to_stdout = false;
+  options.check_gradients              = true;
+  options.minimizer_progress_to_stdout = true;
   options.max_num_iterations           = 2000;
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
   std::cout << summary.BriefReport() << '\n';
-
-  // for(auto& img_data : imgs_data) {
-  //   problem.SetParameterBlockVariable(img_data.Q_w2c_array_raw().data());
-  //   problem.SetParameterBlockVariable(img_data.t_w2c_array_raw().data());
-  //   problem.SetParameterBlockVariable(img_data.camera_array_raw().data());
-  //   set_percentage_bounds(img_data.t_w2c_array_raw(), 10);
-  //   set_percentage_bounds(img_data.camera_array_raw(), 10);
-  // }
-
-  // for(auto& [pnt3d, pnt2d_idx_vec] : res) {
-  //   if(pnt2d_idx_vec.empty()) {
-  //     continue;
-  //   }
-  //   problem.SetParameterBlockConstant(pnt3d.data());
-  // }
-
-  // ceres::Solve(options, &problem, &summary);
-  // std::cout << summary.BriefReport() << std::endl;
 }
 } // namespace Ortho
 #endif

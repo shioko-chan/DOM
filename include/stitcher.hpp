@@ -79,9 +79,11 @@ private:
   }
 
   static auto ground_corners(ImgData& img_data) -> Points<double> {
-    auto corners = img_corners(img_data);
-    auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
-                  cv::Mat world_dir = img_data.R_c2w() * img_data.K_c2w() * pnt;
+    auto     corners  = img_corners(img_data);
+    cv::Size img_size = img_data.origin_img().get_size();
+    double   height{static_cast<double>(img_size.height)};
+    auto     view = corners | std::views::transform([&img_data, height](const auto& pnt) noexcept -> Point<double> {
+                  cv::Mat world_dir = img_data.R_c2w() * img_data.K_c2w() * toggle_topleft_bottomleft(pnt, height);
                   cv::normalize(world_dir, world_dir);
                   double  lambda    = -img_data.t_c2w().at<double>(2, 0) / world_dir.at<double>(2, 0);
                   cv::Mat intersect = lambda * world_dir + img_data.t_c2w();
@@ -116,7 +118,9 @@ private:
     auto           world_corners = ground_corners(img_data);
     Points<double> dst_corners;
     for(const auto& corner : world_corners) {
-      dst_corners.emplace_back((corner.x - world_min_x) * scale, (world_max_y - corner.y) * scale);
+      auto point = toggle_topleft_bottomleft(
+          Point<double>{corner.x - world_min_x, corner.y - world_min_y}, static_cast<int>(std::ceil(world_height)));
+      dst_corners.emplace_back(point.x * scale, point.y * scale);
     }
     Points<float> src_float;
     Points<float> dst_float;

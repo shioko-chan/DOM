@@ -14,6 +14,54 @@
 
 namespace Ortho {
 
+// struct alignas(64) SoftRotationConstraint {
+//   explicit SoftRotationConstraint(Eigen::Quaterniond prior_q, double weight) :
+//       prior_q_(std::move(prior_q)), weight_(weight) {}
+
+//   template <typename T>
+//   auto operator()(const T* const q_raw, T* residuals) const noexcept -> bool {
+//     std::span<T>         q_span{q_raw, 4};
+//     Eigen::Quaternion<T> q_curr(q_span[0], q_span[1], q_span[2], q_span[3]);
+//     q_curr.normalize();
+
+//     // prior 四元数转换为模板类型
+//     Eigen::Quaternion<T> q_prior(T(prior_q_.w()), T(prior_q_.x()), T(prior_q_.y()), T(prior_q_.z()));
+
+//     // 误差四元数：从当前变换到 prior
+//     Eigen::Quaternion<T> delta_q = q_prior * q_curr.conjugate();
+
+//     // 转换为旋转向量（李代数）表示
+//     Eigen::Matrix<T, 3, 1> angle_axis;
+//     ceres::QuaternionToAngleAxis(delta_q.coeffs().data(), angle_axis.data());
+
+//     residuals[0] = weight_ * angle_axis[0];
+//     residuals[1] = weight_ * angle_axis[1];
+//     residuals[2] = weight_ * angle_axis[2];
+
+//     return true;
+//   }
+
+// private:
+
+//   Eigen::Quaterniond prior_q_;
+//   double             weight_;
+// };
+
+// struct SoftConstraint {
+//   SoftConstraint(const double* prior, double weight) : prior_{prior[0], prior[1], prior[2]}, weight_{weight} {}
+
+//   template <typename T>
+//   bool operator()(const T* const param, T* residuals) const noexcept {
+//     for(int i = 0; i < 3; ++i) {
+//       residuals[i] = T(weight_) * (param[i] - T(prior_[i]));
+//     }
+//     return true;
+//   }
+
+//   double prior_[3];
+//   double weight_;
+// };
+
 struct alignas(128) SimpReprojectionError {
 public:
 

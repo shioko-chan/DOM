@@ -141,10 +141,10 @@ public:
     t               = img.t_w2c();
     k               = img.K_w2c();
     auto res        = triangulation(match_pairs, imgs_data, progress);
-    ba(imgs_data, res);
     std::cout << "R: " << r << '\n';
     std::cout << "t: " << t << '\n';
     std::cout << "K: " << k << '\n';
+    ba(imgs_data, res);
     r = img.R_w2c();
     t = img.t_w2c();
     k = img.K_w2c();

@@ -249,6 +249,10 @@ inline auto z_rotate_matrix(double radians) noexcept -> cv::Mat {
   return R_mat;
 }
 
+auto toggle_topleft_bottomleft(HasXY auto point, int height) noexcept -> Point<double> {
+  return {point.x, height - point.y};
+}
+
 template <std::ranges::range Range>
   requires HasXY<std::ranges::range_value_t<Range>> || HasXYZ<std::ranges::range_value_t<Range>>
 auto min_x(const Range& points) noexcept {
@@ -404,40 +408,42 @@ auto convert_arithmetic_type(const Range& points) noexcept {
   return points | std::views::transform([](const auto& point) noexcept { return NewType{point}; });
 }
 
-inline auto mat2point(const cv::Mat& mat) noexcept -> Point<double> {
+inline auto mat2point(cv::InputArray mat_input) noexcept -> Point<double> {
+  cv::Mat mat = mat_input.getMat();
   THIS_ASSERTION_SHOULD_EQ(mat.cols, 1);
   THIS_ASSERTION_SHOULD_EQ(mat.channels(), 1);
   THIS_ASSERTION_SHOULD_LEQ(2, mat.rows);
   THIS_ASSERTION_SHOULD_LEQ(mat.rows, 3);
-  if(mat.type() != CV_64F) {
+  if(mat.depth() != CV_64F) {
     mat.convertTo(mat, CV_64F);
   }
   switch(mat.rows) {
     case 2:
-      return {mat.at<double>(0), mat.at<double>(1)};
+      return {mat.at<double>(0, 0), mat.at<double>(1, 0)};
     case 3:
-      return {mat.at<double>(0) / mat.at<double>(2), mat.at<double>(1) / mat.at<double>(2)};
+      return {mat.at<double>(0, 0) / mat.at<double>(2, 0), mat.at<double>(1, 0) / mat.at<double>(2, 0)};
     default:
       return {};
   }
 }
 
-inline auto mat2point3(const cv::Mat& mat) noexcept -> Point3<double> {
+inline auto mat2point3(cv::InputArray mat_input) noexcept -> Point3<double> {
+  cv::Mat mat = mat_input.getMat();
   THIS_ASSERTION_SHOULD_EQ(mat.cols, 1);
   THIS_ASSERTION_SHOULD_EQ(mat.channels(), 1);
   THIS_ASSERTION_SHOULD_LEQ(3, mat.rows);
   THIS_ASSERTION_SHOULD_LEQ(mat.rows, 4);
-  if(mat.type() != CV_64F) {
+  if(mat.depth() != CV_64F) {
     mat.convertTo(mat, CV_64F);
   }
   switch(mat.rows) {
     case 3:
-      return {mat.at<double>(0), mat.at<double>(1), mat.at<double>(2)};
+      return {mat.at<double>(0, 0), mat.at<double>(1, 0), mat.at<double>(2, 0)};
     case 4:
       return {
-          mat.at<double>(0) / mat.at<double>(3),
-          mat.at<double>(1) / mat.at<double>(3),
-          mat.at<double>(2) / mat.at<double>(3)};
+          mat.at<double>(0, 0) / mat.at<double>(3, 0),
+          mat.at<double>(1, 0) / mat.at<double>(3, 0),
+          mat.at<double>(2, 0) / mat.at<double>(3, 0)};
     default:
       return {};
   }

@@ -12,7 +12,7 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "algo/reproj.hpp"
+#include "algo/cost.hpp"
 #include "algo/tracks.hpp"
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
@@ -116,6 +116,8 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           std::lock_guard lock{mtx};
           all_res
               .emplace_back(std::array<double, 3>{world_point[0], world_point[1], world_point[2]}, std::move(pntidx_vec));
+        } else {
+          THIS_LOG_WARN("Triangulation solution is unusable.");
         }
       },
       progress);

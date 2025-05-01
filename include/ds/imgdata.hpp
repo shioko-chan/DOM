@@ -7,6 +7,7 @@
 #include <concepts>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <numbers>
@@ -15,6 +16,7 @@
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -66,13 +68,17 @@ private:
 struct alignas(128) Kpnts {
 public:
 
-  void set_perspective_matrix(cv::InputArray pers_mat_input) noexcept { this->pers_mat = pers_mat_input.getMat(); }
+  template <typename Func>
+    requires std::is_nothrow_invocable_r_v<Point<double>, Func, Point<double>>
+  void set_convert_function(Func&& convert_func) noexcept {
+    this->convert_func = std::forward<Func>(convert_func);
+  }
 
   auto append(const Point<double>& kpnt) noexcept -> size_t {
     auto kpnts_map_iter = kpnts_map.find(kpnt);
     if(kpnts_map_iter == kpnts_map.end()) {
       size_t idx    = kpnts_map.size();
-      auto   origin = mat2point(pers_mat * kpnt);
+      auto   origin = convert_func(kpnt);
       kpnts_map.emplace(origin, idx);
       kpnts_map_rev.emplace(idx, origin);
       return idx;
@@ -97,9 +103,9 @@ public:
 
 private:
 
-  cv::Mat                      pers_mat;
-  PointUMap<double, size_t>    kpnts_map;
-  PointUMapRev<size_t, double> kpnts_map_rev;
+  std::function<Point<double>(Point<double>)> convert_func;
+  PointUMap<double, size_t>                   kpnts_map;
+  PointUMapRev<size_t, double>                kpnts_map_rev;
 };
 
 class ImgData {
@@ -151,7 +157,11 @@ public:
     const auto [width, height] = img.size();
     set_by_camera_params(width, height, focal_35mm);
     auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_c2w(), img);
-    kpnts.set_perspective_matrix(pers_mat.inv());
+    cv::Mat pers_mat_inv                    = pers_mat.inv();
+    kpnts.set_convert_function([pers = pers_mat_inv, height](Point<double> point) noexcept -> Point<double> {
+      auto pixel = mat2point(pers * point);
+      return toggle_topleft_bottomleft(pixel, height);
+    });
     this->img_rotated.delay_initialize(
         temp_save_path
             / std::format("{}_r{}", img_origin.get_img_stem().string(), img_origin.get_img_extension().string()),
@@ -162,12 +172,12 @@ public:
 
   auto K_w2c() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
-    return array2camera(camera_array) * (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1);
+    return array2camera(camera_array);
   }
 
   auto K_c2w() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
-    return (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1) * array2camera(camera_array).inv();
+    return array2camera(camera_array).inv();
   }
 
   auto D() const noexcept -> cv::Mat { return array2distort(distort_array); }
