@@ -35,23 +35,23 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
   };
   for(auto& img_data : imgs_data) {
     try {
-      add_parameter_block(problem, img_data.Q_proj_array_raw(), new ceres::QuaternionManifold);
+      add_parameter_block(problem, img_data.Q_w2c_array_raw(), new ceres::QuaternionManifold);
     } catch(const std::exception& e) {
       report_error(e, "Bad allocation");
     }
-    add_parameter_block(problem, img_data.t_proj_array_raw());
+    add_parameter_block(problem, img_data.t_w2c_array_raw());
     add_parameter_block(problem, img_data.camera_array_raw());
 
-    // set_bound_delta(img_data.t_proj_array_raw(), 0, 5);
-    // set_bound_delta(img_data.t_proj_array_raw(), 1, 5);
-    // set_bound_delta(img_data.t_proj_array_raw(), 2, 25);
+    // set_bound_delta(img_data.t_w2c_array_raw(), 0, 5);
+    // set_bound_delta(img_data.t_w2c_array_raw(), 1, 5);
+    // set_bound_delta(img_data.t_w2c_array_raw(), 2, 25);
     // set_bound_percentage(img_data.camera_array_raw(), 0, 5);
     // set_bound_percentage(img_data.camera_array_raw(), 1, 5);
     // set_bound_delta(img_data.camera_array_raw(), 2, 10);
     // set_bound_delta(img_data.camera_array_raw(), 3, 10);
-    set_parameter_block_constant(problem, img_data.Q_proj_array_raw());
-    set_parameter_block_constant(problem, img_data.t_proj_array_raw());
-    set_parameter_block_constant(problem, img_data.camera_array_raw());
+    // set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
+    // set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
+    // set_parameter_block_constant(problem, img_data.camera_array_raw());
   }
   for(auto& [pnt3d, pnt2d_idx_vec] : res) {
     if(pnt2d_idx_vec.empty()) {
@@ -64,8 +64,8 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
         problem.AddResidualBlock(
             ReprojectionError::create(img_data.get_kpnts().get(pnt2d_idx.pnt_idx)),
             new ceres::HuberLoss(1.0),
-            img_data.Q_proj_array_raw().data(),
-            img_data.t_proj_array_raw().data(),
+            img_data.Q_w2c_array_raw().data(),
+            img_data.t_w2c_array_raw().data(),
             img_data.camera_array_raw().data(),
             pnt3d.data());
       } catch(const std::exception& e) {
@@ -84,10 +84,10 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
   std::cout << summary.BriefReport() << '\n';
 
   // for(auto& img_data : imgs_data) {
-  //   problem.SetParameterBlockVariable(img_data.Q_proj_array_raw().data());
-  //   problem.SetParameterBlockVariable(img_data.t_proj_array_raw().data());
+  //   problem.SetParameterBlockVariable(img_data.Q_w2c_array_raw().data());
+  //   problem.SetParameterBlockVariable(img_data.t_w2c_array_raw().data());
   //   problem.SetParameterBlockVariable(img_data.camera_array_raw().data());
-  //   set_percentage_bounds(img_data.t_proj_array_raw(), 10);
+  //   set_percentage_bounds(img_data.t_w2c_array_raw(), 10);
   //   set_percentage_bounds(img_data.camera_array_raw(), 10);
   // }
 

@@ -216,6 +216,39 @@ inline auto array2distort(const DistortArray& d_array) noexcept -> cv::Mat {
   return d_mat;
 }
 
+inline auto x_rotate_matrix(double radians) noexcept -> cv::Mat {
+  // clang-format off
+  cv::Mat R_mat = 
+  (cv::Mat_<double>(3, 3) <<
+    1, 0, 0,
+    0, std::cos(radians), std::sin(radians),
+    0, -std::sin(radians), std::cos(radians));
+  // clang-format on
+  return R_mat;
+}
+
+inline auto y_rotate_matrix(double radians) noexcept -> cv::Mat {
+  // clang-format off
+  cv::Mat R_mat = 
+  (cv::Mat_<double>(3, 3) <<
+    std::cos(radians), 0, -std::sin(radians),
+    0, 1, 0,
+    std::sin(radians), 0, std::cos(radians));
+  // clang-format on
+  return R_mat;
+}
+
+inline auto z_rotate_matrix(double radians) noexcept -> cv::Mat {
+  // clang-format off
+  cv::Mat R_mat = 
+  (cv::Mat_<double>(3, 3) <<
+    std::cos(radians), std::sin(radians), 0,
+  -std::sin(radians), std::cos(radians), 0,
+    0, 0, 1);
+  // clang-format on
+  return R_mat;
+}
+
 template <std::ranges::range Range>
   requires HasXY<std::ranges::range_value_t<Range>> || HasXYZ<std::ranges::range_value_t<Range>>
 auto min_x(const Range& points) noexcept {

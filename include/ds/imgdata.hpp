@@ -126,8 +126,9 @@ public:
     Angle   yaw{yaw_};
     Angle   pitch{pitch_};
     Angle   roll{roll_};
-    cv::Mat R_mat = Rz(-yaw.radians()) * Ry(-pitch.radians()) * Rx(-roll.radians()) * Ry(-std::numbers::pi / 2);
-    Q_proj_array  = rotate2qarray(R_mat.t());
+    cv::Mat R_mat = z_rotate_matrix(-yaw.radians()) * y_rotate_matrix(-pitch.radians())
+                    * x_rotate_matrix(-roll.radians()) * y_rotate_matrix(-std::numbers::pi / 2);
+    Q_w2c_array = rotate2qarray(R_mat.t());
   }
 
   auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
@@ -149,7 +150,7 @@ public:
     auto img                   = img_origin.get();
     const auto [width, height] = img.size();
     set_by_camera_params(width, height, focal_35mm);
-    auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_bproj(), img);
+    auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_c2w(), img);
     kpnts.set_perspective_matrix(pers_mat.inv());
     this->img_rotated.delay_initialize(
         temp_save_path
@@ -159,12 +160,12 @@ public:
     rotated_rectified = true;
   }
 
-  auto K_proj() const noexcept -> cv::Mat {
+  auto K_w2c() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
     return array2camera(camera_array) * (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1);
   }
 
-  auto K_bproj() const noexcept -> cv::Mat {
+  auto K_c2w() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
     return (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1) * array2camera(camera_array).inv();
   }
@@ -206,43 +207,43 @@ public:
     const double projected_y         = meridional_radius * delta_latitude_rad;
     coord                            = Point<double>(projected_x, projected_y);
     cv::Mat t_c2w_mat                = (cv::Mat_<double>(3, 1) << coord.x, coord.y, -altitude);
-    cv::Mat t_w2c_mat                = -R_proj() * t_c2w_mat;
-    t_proj_array  = {t_w2c_mat.at<double>(0, 0), t_w2c_mat.at<double>(1, 0), t_w2c_mat.at<double>(2, 0)};
+    cv::Mat t_w2c_mat                = -R_w2c() * t_c2w_mat;
+    t_w2c_array   = {t_w2c_mat.at<double>(0, 0), t_w2c_mat.at<double>(1, 0), t_w2c_mat.at<double>(2, 0)};
     reference_set = true;
   }
 
-  auto R_proj() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_proj_array[0]), "R not initialized yet!");
-    return qarray2rotate(Q_proj_array);
+  auto R_w2c() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_w2c_array[0]), "R not initialized yet!");
+    return qarray2rotate(Q_w2c_array);
   }
 
-  auto R_bproj() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_proj_array[0]), "R not initialized yet!");
-    return qarray2rotate(Q_proj_array).t();
+  auto R_c2w() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_w2c_array[0]), "R not initialized yet!");
+    return qarray2rotate(Q_w2c_array).t();
   }
 
-  auto Q_proj_array_raw() noexcept -> RotateQArray& { return Q_proj_array; }
+  auto Q_w2c_array_raw() noexcept -> RotateQArray& { return Q_w2c_array; }
 
-  auto Q_proj_array_raw() const noexcept -> const RotateQArray& {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_proj_array[0]), "R not initialized yet!");
-    return Q_proj_array;
+  auto Q_w2c_array_raw() const noexcept -> const RotateQArray& {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_w2c_array[0]), "R not initialized yet!");
+    return Q_w2c_array;
   }
 
-  auto t_proj() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_proj_array[0]), "t not initialized yet!");
-    return array2translate(t_proj_array);
+  auto t_w2c() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_w2c_array[0]), "t not initialized yet!");
+    return array2translate(t_w2c_array);
   }
 
-  auto t_bproj() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_proj_array[0]), "t not initialized yet!");
-    return -R_bproj() * array2translate(t_proj_array);
+  auto t_c2w() const noexcept -> cv::Mat {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_w2c_array[0]), "t not initialized yet!");
+    return -R_c2w() * array2translate(t_w2c_array);
   }
 
-  auto t_proj_array_raw() noexcept -> TranslateArray& { return t_proj_array; }
+  auto t_w2c_array_raw() noexcept -> TranslateArray& { return t_w2c_array; }
 
-  auto t_proj_array_raw() const noexcept -> const TranslateArray& {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_proj_array[0]), "t not initialized yet!");
-    return t_proj_array;
+  auto t_w2c_array_raw() const noexcept -> const TranslateArray& {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_w2c_array[0]), "t not initialized yet!");
+    return t_w2c_array;
   }
 
   auto get_kpnts() const noexcept -> const Kpnts& { return kpnts; }
@@ -256,39 +257,6 @@ public:
 
 private:
 
-  static auto Rx(double radians) noexcept -> cv::Mat {
-    // clang-format off
-    cv::Mat R_mat = 
-    (cv::Mat_<double>(3, 3) <<
-      1, 0, 0,
-      0, std::cos(radians), std::sin(radians),
-      0, -std::sin(radians), std::cos(radians));
-    // clang-format on
-    return R_mat;
-  }
-
-  static auto Ry(double radians) noexcept -> cv::Mat {
-    // clang-format off
-    cv::Mat R_mat = 
-    (cv::Mat_<double>(3, 3) <<
-      std::cos(radians), 0, -std::sin(radians),
-      0, 1, 0,
-      std::sin(radians), 0, std::cos(radians));
-    // clang-format on
-    return R_mat;
-  }
-
-  static auto Rz(double radians) noexcept -> cv::Mat {
-    // clang-format off
-    cv::Mat R_mat = 
-    (cv::Mat_<double>(3, 3) <<
-      std::cos(radians), std::sin(radians), 0,
-    -std::sin(radians), std::cos(radians), 0,
-      0, 0, 1);
-    // clang-format on
-    return R_mat;
-  }
-
   Kpnts kpnts;
 
   bool reference_set{false}, rotated_rectified{false};
@@ -301,8 +269,8 @@ private:
   double        altitude{};
   Point<double> coord;
 
-  RotateQArray   Q_proj_array{std::numeric_limits<double>::quiet_NaN()};
-  TranslateArray t_proj_array{std::numeric_limits<double>::quiet_NaN()};
+  RotateQArray   Q_w2c_array{std::numeric_limits<double>::quiet_NaN()};
+  TranslateArray t_w2c_array{std::numeric_limits<double>::quiet_NaN()};
   CameraArray    camera_array{std::numeric_limits<double>::quiet_NaN()};
   DistortArray   distort_array{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 

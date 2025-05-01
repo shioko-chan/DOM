@@ -30,9 +30,9 @@ auto main(const int argc, const char* const argv[]) -> int {
   THIS_MESSAGE("[2/5] Rectifying images");
   process.rotate_rectify();
   THIS_MESSAGE("[3/5] Matching neighbor images");
-  // process.match(Ortho::NEIGHBOR_PROPOSAL);
+  process.match(Ortho::NEIGHBOR_PROPOSAL);
   THIS_MESSAGE("[4/5] Triangulate");
-  // process.triangulate();
+  process.triangulate();
   THIS_MESSAGE("[5/5] Stitching images");
   process.stitch();
   return 0;

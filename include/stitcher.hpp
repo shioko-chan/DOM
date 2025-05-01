@@ -81,10 +81,10 @@ private:
   static auto ground_corners(ImgData& img_data) -> Points<double> {
     auto corners = img_corners(img_data);
     auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
-                  cv::Mat world_dir = img_data.R_bproj() * img_data.K_bproj() * pnt;
+                  cv::Mat world_dir = img_data.R_c2w() * img_data.K_c2w() * pnt;
                   cv::normalize(world_dir, world_dir);
-                  double  lambda    = -img_data.t_bproj().at<double>(2, 0) / world_dir.at<double>(2, 0);
-                  cv::Mat intersect = lambda * world_dir + img_data.t_bproj();
+                  double  lambda    = -img_data.t_c2w().at<double>(2, 0) / world_dir.at<double>(2, 0);
+                  cv::Mat intersect = lambda * world_dir + img_data.t_c2w();
                   THIS_ASSERTION_SHOULD_LES(intersect.at<double>(2, 0), 1e-6);
                   return {intersect.at<double>(0, 0), intersect.at<double>(1, 0)};
                 });
@@ -116,7 +116,7 @@ private:
     auto           world_corners = ground_corners(img_data);
     Points<double> dst_corners;
     for(const auto& corner : world_corners) {
-      dst_corners.emplace_back((corner.x - world_min_x) * scale, (corner.y - world_min_y) * scale);
+      dst_corners.emplace_back((corner.x - world_min_x) * scale, (world_max_y - corner.y) * scale);
     }
     Points<float> src_float;
     Points<float> dst_float;

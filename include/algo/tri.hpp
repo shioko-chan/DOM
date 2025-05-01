@@ -66,16 +66,16 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           const auto& kpnt               = img.get_kpnts().get(pnt_idx);
 
           // std::cout << "Image " << img_idx << ", Point " << pnt_idx << ": "
-          //           << "kpnt=[" << kpnt << "], R=" << img.R_proj() << ", t=" << img.t_proj() << std::endl;
+          //           << "kpnt=[" << kpnt << "], R=" << img.R_w2c() << ", t=" << img.t_w2c() << std::endl;
 
-          cv::Mat kpnt_mat = img.K_bproj() * kpnt;
+          cv::Mat kpnt_mat = img.K_c2w() * kpnt;
           double  u_pix    = kpnt_mat.at<double>(0, 0);
           double  v_pix    = kpnt_mat.at<double>(1, 0);
           // std::cout << "u=" << u << ", v=" << v << std::endl;
-          cv::Mat         R_mat = img.R_proj();
+          cv::Mat         R_mat = img.R_w2c();
           Eigen::Matrix3d R_eigen;
           cv::cv2eigen(R_mat, R_eigen);
-          cv::Mat t_mat                        = img.t_proj();
+          cv::Mat t_mat                        = img.t_w2c();
           double  t_x                          = t_mat.at<double>(0, 0);
           double  t_y                          = t_mat.at<double>(1, 0);
           double  t_z                          = t_mat.at<double>(2, 0);
@@ -95,9 +95,9 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
             problem.AddResidualBlock(
                 SimpReprojectionError::create(
                     img_data.get_kpnts().get(pntidx.pnt_idx),
-                    img_data.Q_proj_array_raw(),
+                    img_data.Q_w2c_array_raw(),
                     img_data.camera_array_raw(),
-                    img_data.t_proj_array_raw()),
+                    img_data.t_w2c_array_raw()),
                 new ceres::HuberLoss(1.0),
                 world_point.data());
           } catch(const std::exception& e) {
