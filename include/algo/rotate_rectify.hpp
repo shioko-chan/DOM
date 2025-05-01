@@ -37,16 +37,13 @@ inline auto rotate_rectify(const cv::Mat& R_cam2world, const cv::Mat& img) noexc
         double  homo = ray.at<double>(2, 0);
         return {ray.at<double>(0, 0) / homo, ray.at<double>(1, 0) / homo};
       });
-  auto   rect     = bounding_rect(view0);
-  auto   view1    = view0 | std::views::transform([rect](const Point<double>& point) noexcept -> Point<double> {
+  auto           rect     = bounding_rect(view0);
+  auto           view1    = view0 | std::views::transform([rect](const Point<double>& point) noexcept -> Point<double> {
                  return {point.x - rect.x, point.y - rect.y};
                });
-  double max_side = std::max(rect.width, rect.height);
-  if(max_side < 1e-6F) {
-    max_side = 1.F;
-  }
-  double         factor = 1.0 * std::min(max_side, static_cast<double>(FEATURE_EXTRACTOR_RESOLUTION_LIM)) / max_side;
-  auto           view2  = view1 | std::views::transform([factor](const Point<double>& point) noexcept -> Point<double> {
+  double         max_side = std::max(rect.width, rect.height);
+  double         factor   = 1.0 * static_cast<double>(FEATURE_EXTRACTOR_RESOLUTION_LIM) / max_side;
+  auto           view2 = view1 | std::views::transform([factor](const Point<double>& point) noexcept -> Point<double> {
                  return {point.x * factor, point.y * factor};
                });
   Points<double> dst{view2.begin(), view2.end()};

@@ -10,7 +10,6 @@ Checks: >
   -misc-no-recursion,
   -cppcoreguidelines-macro-usage,
   -cppcoreguidelines-owning-memory,
-  -cppcoreguidelines-pro-bounds-constant-array-index,
   llvm-include-order,      
   readability-redundant-include 
   modernize-deprecated-headers 

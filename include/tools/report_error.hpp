@@ -11,6 +11,8 @@
 #include <onnxruntime_cxx_api.h>
 #include <opencv2/opencv.hpp>
 
+#include "tools/log.hpp"
+
 namespace std {
 template <>
 struct formatter<OrtErrorCode> : formatter<std::string_view> { // NOLINT

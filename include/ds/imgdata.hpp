@@ -129,9 +129,9 @@ public:
     Q_proj_array  = rotate2qarray(R_mat.t());
   }
 
-  auto origin_img() const noexcept -> const Image& { return img_origin; }
+  auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
 
-  auto origin_img() noexcept -> Image& { return img_origin; }
+  auto origin_img() noexcept -> OriginImage& { return img_origin; }
 
   auto rotated_img() const noexcept -> const Image& {
     if(!rotated_rectified) {
@@ -151,8 +151,7 @@ public:
     if(!reference_set) {
       report_error("Reference coordinate not set!");
     }
-    auto        guard          = img_origin.get();
-    const auto& img            = guard.get();
+    auto img                   = img_origin.get();
     const auto [width, height] = img.size();
     set_by_camera_params(width, height, focal_35mm);
     auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_bproj(), img);
@@ -165,17 +164,23 @@ public:
     rotated_rectified = true;
   }
 
-  auto proj() const noexcept -> cv::Mat { return get_projection_matrix(R_proj(), t_proj(), K_proj()); }
+  auto K_proj() const noexcept -> cv::Mat {
+    return (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1) * array2camera(camera_array);
+  }
 
-  auto K_proj() const noexcept -> cv::Mat { return array2camera(camera_array); }
-
-  auto K_bproj() const noexcept -> cv::Mat { return array2camera(camera_array).inv(); }
+  auto K_bproj() const noexcept -> cv::Mat {
+    return array2camera(camera_array).inv() * (cv::Mat_<double>(3, 3) << 1, 0, 0, 0, -1, 0, 0, 0, 1);
+  }
 
   auto D() const noexcept -> cv::Mat { return array2distort(distort_array); }
 
   auto camera_array_raw() noexcept -> CameraArray& { return camera_array; }
 
+  auto camera_array_raw() const noexcept -> const CameraArray& { return camera_array; }
+
   auto distort_array_raw() noexcept -> DistortArray& { return distort_array; }
+
+  auto distort_array_raw() const noexcept -> const DistortArray& { return distort_array; }
 
   void set_by_camera_params(double width, double height, double focal_35mm) noexcept {
     double aspect_ratio = width * 1. / height;
@@ -183,10 +188,6 @@ public:
     double focal_pix    = (ref_width == 36.) ? (width / 36. * focal_35mm) : (height / 24. * focal_35mm);
     camera_array        = {focal_pix, focal_pix, width / 2., height / 2.};
   }
-
-  void set_by_K_proj(cv::InputArray K_mat_input) noexcept { camera_array = camera2array(K_mat_input); }
-
-  void set_by_K_bproj(cv::InputArray K_mat_input) noexcept { camera_array = camera2array(K_mat_input.getMat().inv()); }
 
   void set_reference(double latitude_ref_degree, double longitude_ref_degree) noexcept {
     const auto latitude_r  = Angle(latitude_ref_degree);
@@ -204,8 +205,10 @@ public:
     const double projected_x         = prime_vert_radius * delta_longitude_rad * std::cos(latitude_r.radians());
     const double projected_y         = meridional_radius * delta_latitude_rad;
     coord                            = Point<double>(projected_x, projected_y);
-    t_proj_array                     = {-coord.x, -coord.y, altitude};
-    reference_set                    = true;
+    cv::Mat t_c2w_mat                = (cv::Mat_<double>(3, 1) << coord.x, coord.y, -altitude);
+    cv::Mat t_w2c_mat                = -R_proj() * t_c2w_mat;
+    t_proj_array  = {t_w2c_mat.at<double>(0, 0), t_w2c_mat.at<double>(1, 0), t_w2c_mat.at<double>(2, 0)};
+    reference_set = true;
   }
 
   auto R_proj() const noexcept -> cv::Mat { return qarray2rotate(Q_proj_array); }
@@ -214,19 +217,15 @@ public:
 
   auto R_bproj() const noexcept -> cv::Mat { return qarray2rotate(Q_proj_array).t(); }
 
-  auto t_bproj() const noexcept -> cv::Mat { return -array2translate(t_proj_array); }
+  auto t_bproj() const noexcept -> cv::Mat { return -R_bproj() * array2translate(t_proj_array); }
 
   auto Q_proj_array_raw() noexcept -> RotateQArray& { return Q_proj_array; }
 
+  auto Q_proj_array_raw() const noexcept -> const RotateQArray& { return Q_proj_array; }
+
   auto t_proj_array_raw() noexcept -> TranslateArray& { return t_proj_array; }
 
-  void set_by_R_proj(cv::InputArray R_mat_input) noexcept { Q_proj_array = rotate2qarray(R_mat_input); }
-
-  void set_by_R_bproj(cv::InputArray R_mat_input) noexcept { Q_proj_array = rotate2qarray(R_mat_input.getMat().t()); }
-
-  void set_by_t_proj(cv::InputArray t_mat_input) noexcept { t_proj_array = translate2array(t_mat_input); }
-
-  void set_by_t_bproj(cv::InputArray t_mat_input) noexcept { t_proj_array = translate2array(-t_mat_input.getMat()); }
+  auto t_proj_array_raw() const noexcept -> const TranslateArray& { return t_proj_array; }
 
   auto get_kpnts() const noexcept -> const Kpnts& { return kpnts; }
 
@@ -273,8 +272,9 @@ private:
 
   bool reference_set{false}, rotated_rectified{false};
 
-  fs::path temp_save_path;
-  Image    img_rotated, img_origin;
+  fs::path    temp_save_path;
+  Image       img_rotated;
+  OriginImage img_origin;
 
   Angle         latitude, longitude;
   double        altitude{};

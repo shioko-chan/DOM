@@ -4,11 +4,13 @@
 #include <algorithm>
 #include <filesystem>
 
+#include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/opencv.hpp>
-#include <opencv2/stitching/detail/blenders.hpp>
+// #include <opencv2/stitching/detail/blenders.hpp>
 
 #include "ds/imgdata.hpp"
+#include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/utility.hpp"
 
@@ -21,7 +23,7 @@ public:
 
   Stitcher() = delete;
 
-  explicit Stitcher(const fs::path& temporary_save_path, double scale = 4.0) :
+  explicit Stitcher(const fs::path& temporary_save_path, double scale = 10.0) :
       temporary_save_path(temporary_save_path), scale(scale) {
     check_or_create_path(temporary_save_path);
   }
@@ -37,16 +39,14 @@ public:
     // cv::detail::MultiBandBlender blender(false, 5);
     // blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
     for(auto& img_data : imgs_data) {
-      cv::Mat srcImg  = img_data.origin_img().get().get();
-      cv::Mat srcMask = cv::Mat::ones(srcImg.size(), CV_8UC1) * 255;
-      cv::flip(srcImg, srcImg, -1);
-      cv::flip(srcMask, srcMask, -1);
+      cv::Mat srcImg          = img_data.origin_img().get();
+      cv::Mat srcMask         = cv::Mat::ones(srcImg.size(), CV_8UC1) * 255;
       cv::Mat transformMatrix = calculateTransformMatrix(img_data);
       cv::Mat warped;
       cv::Mat warpedMask;
-      cv::warpAffine(
+      cv::warpPerspective(
           srcImg, warped, transformMatrix, result.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
-      cv::warpAffine(
+      cv::warpPerspective(
           srcMask, warpedMask, transformMatrix, result.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
       // blender.feed(warped, warpedMask, cv::Point(0, 0));
       cv::Mat tempMask;
@@ -80,14 +80,16 @@ private:
 
   static auto ground_corners(ImgData& img_data) -> Points<double> {
     auto corners = img_corners(img_data);
-    auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept {
-                  cv::Mat world_dir = img_data.R_bproj() * img_data.K_bproj() * pnt;
+    auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
+                  cv::Mat normalize_dir = img_data.K_bproj() * pnt;
+                  cv::Mat world_dir     = img_data.R_bproj() * normalize_dir;
                   cv::normalize(world_dir, world_dir);
-                  double  lambda    = img_data.t_proj().at<double>(2) / world_dir.at<double>(2);
+                  double  lambda    = -img_data.t_bproj().at<double>(2, 0) / world_dir.at<double>(2, 0);
                   cv::Mat intersect = lambda * world_dir + img_data.t_bproj();
-                  return Point<double>(intersect.at<double>(0), intersect.at<double>(1));
+                  THIS_ASSERTION_SHOULD_LES(intersect.at<double>(2, 0), 1e-6);
+                  return {intersect.at<double>(0, 0), intersect.at<double>(1, 0)};
                 });
-    return Points<double>{view.begin(), view.end()};
+    return {view.begin(), view.end()};
   }
 
   void computeWorldBounds(ImgsData& imgs_data) {
@@ -117,7 +119,17 @@ private:
     for(const auto& corner : world_corners) {
       dst_corners.emplace_back((corner.x - world_min_x) * scale, (corner.y - world_min_y) * scale);
     }
-    return cv::estimateAffinePartial2D(src_corners, dst_corners);
+    Points<float> src_float;
+    Points<float> dst_float;
+    {
+      auto view = convert_arithmetic_type<float>(src_corners);
+      src_float.assign(view.begin(), view.end());
+    }
+    {
+      auto view = convert_arithmetic_type<float>(dst_corners);
+      dst_float.assign(view.begin(), view.end());
+    }
+    return cv::getPerspectiveTransform(src_float, dst_float);
   }
 };
 

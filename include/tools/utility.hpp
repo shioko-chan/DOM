@@ -11,6 +11,7 @@
 #include <ranges>
 #include <type_traits>
 
+#include <opencv2/core/hal/interface.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 
@@ -149,7 +150,9 @@ void run(size_t tasks, Func&& process) noexcept {
 
 inline auto rotate2qarray(cv::InputArray R_mat_input) noexcept -> RotateQArray {
   cv::Mat R_mat = R_mat_input.getMat();
-  R_mat.convertTo(R_mat, CV_64F);
+  if(R_mat.type() != CV_64F) {
+    R_mat.convertTo(R_mat, CV_64F);
+  }
   Eigen::Matrix3d R_Eigen;
   cv::cv2eigen(R_mat, R_Eigen);
   Eigen::Quaterniond quaternion(R_Eigen);
@@ -366,17 +369,6 @@ auto convert_arithmetic_type(const Range& points) noexcept {
   static_assert(std::is_arithmetic_v<extract_arg_type_t<OldType>>);
   using NewType = rebind_template_t<OldType, T>;
   return points | std::views::transform([](const auto& point) noexcept { return NewType{point}; });
-}
-
-inline auto
-get_projection_matrix(cv::InputArray R_mat_input, cv::InputArray t_mat_input, cv::InputArray K_mat_input) noexcept
-    -> cv::Mat {
-  cv::Mat R_mat = R_mat_input.getMat();
-  cv::Mat t_mat = t_mat_input.getMat();
-  cv::Mat K_mat = K_mat_input.getMat();
-  cv::Mat Pose_mat;
-  cv::hconcat(R_mat, R_mat * t_mat, Pose_mat);
-  return K_mat * Pose_mat;
 }
 
 inline auto mat2point(const cv::Mat& mat) noexcept -> Point<double> {

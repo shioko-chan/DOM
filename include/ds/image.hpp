@@ -60,6 +60,68 @@ private:
   RefGuard refguard;
 };
 
+class OriginImage {
+public:
+
+  OriginImage() noexcept = default;
+
+  OriginImage(const OriginImage&) noexcept                    = default;
+  OriginImage(OriginImage&&) noexcept                         = default;
+  auto operator=(const OriginImage&) noexcept -> OriginImage& = default;
+  auto operator=(OriginImage&&) noexcept -> OriginImage&      = default;
+  ~OriginImage() noexcept                                     = default;
+
+  explicit OriginImage(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) noexcept :
+      path(std::move(img_read_path)), mode(mode) {
+    if(!fs::exists(path)) {
+      report_error("Image path \"{}\" is not exist.", img_read_path.string());
+    }
+  }
+
+  [[nodiscard]] auto get() noexcept -> cv::Mat {
+    cv::Mat img = read(path, mode);
+    decimate_keep_aspect_ratio(&img, ORIGIN_RESOLUTION_LIM);
+    img_size = img.size();
+    return img;
+  }
+
+  [[nodiscard]] auto get_img_path() const noexcept -> const fs::path& { return path; }
+
+  [[nodiscard]] auto get_img_name() const noexcept -> fs::path { return path.filename(); }
+
+  [[nodiscard]] auto get_img_stem() const noexcept -> fs::path { return path.stem(); }
+
+  [[nodiscard]] auto get_img_extension() const noexcept -> fs::path { return path.extension(); }
+
+  [[nodiscard]] auto get_size() noexcept -> cv::Size {
+    if(img_size.empty()) {
+      img_size = get().size();
+    }
+    return img_size;
+  }
+
+private:
+
+  [[nodiscard]] static auto read(const fs::path& path, cv::ImreadModes mode) noexcept -> cv::Mat {
+    cv::Mat img;
+    try {
+      img = cv::imread(path.string(), mode);
+    } catch(const cv::Exception& cv_exception) {
+      report_error(cv_exception, "{} could not be read.", path.string());
+    } catch(const std::exception& exception) {
+      report_error(exception, "{} could not be read.", path.string());
+    }
+    if(img.empty()) {
+      report_error("{} could not be read. Image is empty after cv::imread().", path.string());
+    }
+    return img;
+  }
+
+  cv::Size        img_size;
+  fs::path        path;
+  cv::ImreadModes mode{cv::IMREAD_COLOR};
+};
+
 class Image {
 public:
 
@@ -70,22 +132,6 @@ public:
   auto operator=(const Image&) noexcept -> Image& = default;
   auto operator=(Image&&) noexcept -> Image&      = default;
   ~Image() noexcept                               = default;
-
-  explicit Image(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) noexcept :
-      path(std::move(img_read_path)), initialized(true) {
-    if(!fs::exists(path)) {
-      report_error("Image path \"{}\" is not exist.", img_read_path.string());
-    }
-    Mem::register_node(
-        path.string(),
-        nullptr,
-        [path = this->path, mode] noexcept {
-          cv::Mat img = read(path, mode);
-          decimate_keep_aspect_ratio(&img, ORIGIN_RESOLUTION_LIM);
-          return std::make_unique<ImageMem>(std::move(img));
-        },
-        [](ManageAblePtr ptr) noexcept {});
-  }
 
   explicit Image(fs::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span = Points<double>{}) noexcept
       : path(std::move(temporary_save_path)), initialized(true) {

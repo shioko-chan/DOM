@@ -8,7 +8,7 @@ namespace Ortho {
 constexpr double LIGHTGLUE_THRESHOLD{0.2};
 constexpr int    MATCH_CNT_THRESHOLD{25};
 
-constexpr int ORIGIN_RESOLUTION_LIM{1024};
+constexpr int ORIGIN_RESOLUTION_LIM{2048};
 
 constexpr int FEATURE_EXTRACTOR_RESOLUTION_LIM{1024};
 

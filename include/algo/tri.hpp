@@ -12,6 +12,7 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "algo/reproj.hpp"
 #include "algo/tracks.hpp"
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
@@ -21,62 +22,6 @@
 #include "tools/utility.hpp"
 
 namespace Ortho {
-
-struct alignas(128) TriReprojectionError {
-public:
-
-  TriReprojectionError(
-      Point<double>         img_pnt,
-      const RotateQArray&   quaternion,
-      const CameraArray&    camera,
-      const TranslateArray& transpose) noexcept : pnt2d(img_pnt), q(quaternion), c(camera), t(transpose) {}
-
-  template <typename T>
-  auto operator()(const T* const pnt3d, T* residuals) const -> bool {
-    std::array<T, 3>   pnt0;
-    std::array<T, 3>   pnt1;
-    std::array<T, 4>   quaternion;
-    std::span<T>       residuals_span{residuals, 2};
-    std::span<const T> pnt3d_span{pnt3d, 3};
-    for(size_t i = 0; i < 3; ++i) {
-      pnt0[i] = pnt3d_span[i] + T(t[i]);
-    }
-    for(size_t i = 0; i < 4; ++i) {
-      quaternion[i] = T(q[i]);
-    }
-    ceres::QuaternionRotatePoint(quaternion.data(), pnt0.data(), pnt1.data());
-    T p1_z = pnt1[2];
-    if(ceres::abs(p1_z) < 1e-6) {
-      return false;
-    }
-    residuals_span[0] = T(c[0]) * pnt1[0] / p1_z + T(c[2]) - T(pnt2d.x);
-    residuals_span[1] = T(c[1]) * pnt1[1] / p1_z + T(c[3]) - T(pnt2d.y);
-    return true;
-  }
-
-  static auto create(Point<double> img_pnt, RotateQArray quaternion, CameraArray camera, TranslateArray transpose) noexcept
-      -> ceres::CostFunction* {
-    TriReprojectionError* error_ptr{};
-    try {
-      error_ptr = new TriReprojectionError(Point<double>(img_pnt), quaternion, camera, transpose);
-    } catch(const std::exception& e) {
-      report_error(e, "Bad allocation");
-    }
-    try {
-      return new ceres::AutoDiffCostFunction<TriReprojectionError, 2, 3>(error_ptr);
-    } catch(const std::exception& e) {
-      report_error(e, "Bad allocation");
-    }
-  }
-
-private:
-
-  Point<double> pnt2d;
-
-  RotateQArray   q;
-  CameraArray    c;
-  TranslateArray t;
-};
 
 struct alignas(64) TriRes {
   std::array<double, 3> pnt3d;
@@ -123,7 +68,7 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           // std::cout << "Image " << img_idx << ", Point " << pnt_idx << ": "
           //           << "kpnt=[" << kpnt << "], R=" << img.R_proj() << ", t=" << img.t_proj() << std::endl;
 
-          cv::Mat kpnt_mat = (img.K_bproj() * kpnt);
+          cv::Mat kpnt_mat = img.K_bproj() * kpnt;
           double  u_pix    = kpnt_mat.at<double>(0, 0);
           double  v_pix    = kpnt_mat.at<double>(1, 0);
           // std::cout << "u=" << u << ", v=" << v << std::endl;
@@ -143,16 +88,16 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
         THIS_ASSERTION_SHOULD_TRUE(x_vector.array().isFinite().all());
         std::array<double, 3> world_point{x_vector(0), x_vector(1), x_vector(2)};
         ceres::Problem        problem;
-        problem.AddParameterBlock(world_point.data(), world_point.size());
+        add_parameter_block(problem, world_point);
         for(const auto& pntidx : pntidx_vec) {
-          const auto& img = imgs_data[pntidx.img_idx];
+          auto& img_data = imgs_data[pntidx.img_idx];
           try {
             problem.AddResidualBlock(
-                TriReprojectionError::create(
-                    img.get_kpnts().get(pntidx.pnt_idx),
-                    rotate2qarray(img.R_proj()),
-                    camera2array(img.K_proj()),
-                    translate2array(img.t_proj())),
+                SimpReprojectionError::create(
+                    img_data.get_kpnts().get(pntidx.pnt_idx),
+                    img_data.Q_proj_array_raw(),
+                    img_data.camera_array_raw(),
+                    img_data.t_proj_array_raw()),
                 new ceres::HuberLoss(1.0),
                 world_point.data());
           } catch(const std::exception& e) {
