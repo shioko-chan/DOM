@@ -129,14 +129,11 @@ public:
       latitude{latitude_}, longitude{longitude_}, altitude{altitude_}, focal_35mm{focal_35mm_},
       temp_save_path{temp_save_path}, img_origin{std::move(img_path)} {
     check_or_create_path(temp_save_path);
-    Angle yaw{yaw_};
-    Angle pitch{(pitch_ + 90.0)}; // DJI to nadir
-    Angle roll{roll_};            // 反转roll角度以解决旋转方向问题
-    // 使用正确的旋转顺序：roll(X) -> pitch(Y) -> yaw(Z)
-    cv::Mat R_w2c = x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians())
-                    * z_rotate_matrix(yaw.radians()); // Extrinsic rotation
-    Q_w2c_array = rotate2qarray(R_w2c.t()); // Previously computed as a vector transformation; take the transpose here
-    // to get the coordinate frame transformation
+    Angle   yaw{yaw_};
+    Angle   pitch{(pitch_ + 90.0)}; // DJI to nadir
+    Angle   roll{roll_};
+    cv::Mat R_w2c = x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians()) * z_rotate_matrix(yaw.radians());
+    Q_w2c_array   = rotate2qarray(R_w2c.t());
   }
 
   auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
@@ -391,7 +388,7 @@ private:
   };
 
   struct XmpKey {
-    static constexpr std::string_view yaw = "Xmp.drone-dji.GimbalYawDegree", pitch = "Xmp.drone-dji.GimbalPitchDegree",
+    static constexpr std::string_view yaw = "Xmp.drone-dji.FlightYawDegree", pitch = "Xmp.drone-dji.GimbalPitchDegree",
                                       roll = "Xmp.drone-dji.GimbalRollDegree", latitude = "Xmp.drone-dji.GpsLatitude",
                                       longitude = "Xmp.drone-dji.GpsLongitude",
                                       altitude  = "Xmp.drone-dji.AbsoluteAltitude";

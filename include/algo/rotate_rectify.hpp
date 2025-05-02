@@ -25,12 +25,6 @@ inline auto rotate_rectify(const cv::Mat& R_cam2world, const cv::Mat& img) noexc
   Points<double> src{{0., 0.}, {1. * (width - 1), 0.}, {1. * (width - 1), 1. * (height - 1)}, {0., 1. * (height - 1)}};
   Points<double>
       pixel_span{{2., 2.}, {1. * (width - 3), 2.}, {1. * (width - 3), 1. * (height - 3)}, {2., 1. * (height - 3)}};
-  // auto view0 =
-  //     src | std::views::transform([&R_cam2world, width, height](const Point<double>& point) noexcept -> Point<double> {
-  //       Point3<double> point_{point.x - (width / 2.), point.y - (height / 2.), 1.0};
-  //       cv::Mat        ray = R_cam2world * point_;
-  //       return mat2point(ray);
-  //     });
 
   auto view0 =
       src | std::views::transform([&R_cam2world, width, height](const Point<double>& point) noexcept -> Point<double> {

@@ -58,14 +58,7 @@ public:
       warped.copyTo(result, tempMask);
       cv::bitwise_or(resultMask, warpedMask, resultMask);
       progress.update();
-      // {
-      //   cv::Mat show;
-      //   cv::resize(result, show, cv::Size{}, 0.2, 0.2);
-      //   cv::imshow("stitch", show);
-      //   cv::waitKey(0);
-      // }
     }
-
     // blender.blend(result, resultMask);
     return result;
   }
@@ -131,9 +124,7 @@ private:
     auto           world_corners = ground_corners(img_data);
     Points<double> dst_corners;
     for(const auto& corner : world_corners) {
-      dst_corners.emplace_back(
-          (corner.x - world_min_x) * scale,
-          (world_max_y - corner.y) * scale); // 反转y坐标以解决上下翻转问题
+      dst_corners.emplace_back((corner.x - world_min_x) * scale, (corner.y - world_min_y) * scale);
     }
     Points<float> src_float;
     Points<float> dst_float;
