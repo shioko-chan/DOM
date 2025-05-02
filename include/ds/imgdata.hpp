@@ -130,8 +130,8 @@ public:
       temp_save_path{temp_save_path}, img_origin{std::move(img_path)} {
     check_or_create_path(temp_save_path);
     Angle yaw{yaw_};
-    Angle pitch{pitch_ + 90.0}; // DJI to nadir
-    Angle roll{-roll_};         // 反转roll角度以解决旋转方向问题
+    Angle pitch{(pitch_ + 90.0)}; // DJI to nadir
+    Angle roll{roll_};            // 反转roll角度以解决旋转方向问题
     // 使用正确的旋转顺序：roll(X) -> pitch(Y) -> yaw(Z)
     cv::Mat R_w2c = x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians())
                     * z_rotate_matrix(yaw.radians()); // Extrinsic rotation
