@@ -14,6 +14,7 @@
 #include "ds/imgdata.hpp"
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
+#include "tools/progress.hpp"
 #include "tools/utility.hpp"
 
 namespace Ortho {
@@ -30,7 +31,8 @@ public:
     check_or_create_path(temporary_save_path);
   }
 
-  auto stitch(ImgsData& imgs_data) -> cv::Mat {
+  auto stitch(ImgsData& imgs_data, Progress& progress) -> cv::Mat {
+    progress.reset(static_cast<int>(imgs_data.size()));
     if(imgs_data.empty()) {
       return cv::Mat{};
     }
@@ -55,13 +57,13 @@ public:
       cv::bitwise_and(warpedMask, ~resultMask, tempMask);
       warped.copyTo(result, tempMask);
       cv::bitwise_or(resultMask, warpedMask, resultMask);
-
-      {
-        cv::Mat show;
-        cv::resize(result, show, cv::Size{}, 0.2, 0.2);
-        cv::imshow("stitch", show);
-        cv::waitKey(0);
-      }
+      progress.update();
+      // {
+      //   cv::Mat show;
+      //   cv::resize(result, show, cv::Size{}, 0.2, 0.2);
+      //   cv::imshow("stitch", show);
+      //   cv::waitKey(0);
+      // }
     }
 
     // blender.blend(result, resultMask);
@@ -92,7 +94,9 @@ private:
   static auto ground_corners(ImgData& img_data) -> Points<double> {
     auto corners = img_corners(img_data);
     auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
-                  cv::Mat world_dir = img_data.R_c2w() * mat2point(img_data.K().inv() * pnt);
+                  cv::Mat pnt_mat   = (cv::Mat_<double>(3, 1) << pnt.x, -pnt.y, 1.0);
+                  cv::Mat world_dir = img_data.R_c2w() * mat2point(img_data.K().inv() * pnt_mat);
+                  // cv::Mat world_dir = img_data.R_c2w() * mat2point(img_data.K().inv() * pnt);
                   cv::normalize(world_dir, world_dir);
                   double  lambda    = -img_data.t_c2w().at<double>(2, 0) / world_dir.at<double>(2, 0);
                   cv::Mat intersect = lambda * world_dir + img_data.t_c2w();
@@ -127,7 +131,8 @@ private:
     auto           world_corners = ground_corners(img_data);
     Points<double> dst_corners;
     for(const auto& corner : world_corners) {
-      dst_corners.emplace_back((corner.x - world_min_x) * scale, (corner.y - world_min_y) * scale);
+      // dst_corners.emplace_back((corner.x - world_min_x) * scale, (corner.y - world_min_y) * scale);
+      dst_corners.emplace_back((corner.x - world_min_x) * scale, (world_max_y - corner.y) * scale);
     }
     Points<float> src_float;
     Points<float> dst_float;

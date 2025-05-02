@@ -156,7 +156,7 @@ public:
   void stitch() {
     THIS_MESSAGE("Stitching images");
     Stitcher stitcher(temporary_save_path);
-    auto     stitched_img = stitcher.stitch(imgs_data);
+    auto     stitched_img = stitcher.stitch(imgs_data, progress);
     if(stitched_img.empty()) {
       THIS_LOG_ERROR("Stitching failed");
       return;
