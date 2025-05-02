@@ -132,8 +132,8 @@ public:
     Angle   yaw{yaw_};
     Angle   pitch{pitch_ + 90.0}; // DJI to nadir
     Angle   roll{roll_};
-    cv::Mat R_w2c = z_rotate_matrix(yaw.radians()) * y_rotate_matrix(pitch.radians())
-                    * x_rotate_matrix(roll.radians()); // Extrinsic rotation
+    cv::Mat R_w2c = x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians())
+                    * z_rotate_matrix(yaw.radians()); // Extrinsic rotation
     Q_w2c_array = rotate2qarray(R_w2c.t()); // Previously computed as a vector transformation; take the transpose here
                                             // to get the coordinate frame transformation
   }

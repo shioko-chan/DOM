@@ -94,11 +94,11 @@ private:
   static auto ground_corners(ImgData& img_data) -> Points<double> {
     auto corners = img_corners(img_data);
     auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
-                  cv::Mat pnt_mat   = (cv::Mat_<double>(3, 1) << pnt.x, -pnt.y, 1.0);
-                  cv::Mat world_dir = img_data.R_c2w() * mat2point(img_data.K().inv() * pnt_mat);
-                  // cv::Mat world_dir = img_data.R_c2w() * mat2point(img_data.K().inv() * pnt);
+                  cv::Mat pnt_mat = (cv::Mat_<double>(3, 1) << pnt.x, pnt.y, 1.0);
+                  cv::Mat cam_pnt = img_data.K().inv() * pnt_mat;
+                  cv::Mat world_dir = img_data.R_c2w() * cam_pnt;
                   cv::normalize(world_dir, world_dir);
-                  double  lambda    = -img_data.t_c2w().at<double>(2, 0) / world_dir.at<double>(2, 0);
+                  double lambda = -img_data.t_c2w().at<double>(2, 0) / world_dir.at<double>(2, 0);
                   cv::Mat intersect = lambda * world_dir + img_data.t_c2w();
                   THIS_ASSERTION_SHOULD_LES(intersect.at<double>(2, 0), 1e-6);
                   return {intersect.at<double>(0, 0), intersect.at<double>(1, 0)};
