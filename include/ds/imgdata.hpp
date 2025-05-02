@@ -76,8 +76,8 @@ public:
 
   auto append(const Point<double>& kpnt) noexcept -> size_t {
     auto kpnts_map_iter = kpnts_map.find(kpnt);
-    if(kpnts_map_iter == kpnts_map.end()) {
-      size_t idx    = kpnts_map.size();
+    if (kpnts_map_iter == kpnts_map.end()) {
+      size_t idx = kpnts_map.size();
       auto   origin = convert_func(kpnt);
       kpnts_map.emplace(origin, idx);
       kpnts_map_rev.emplace(idx, origin);
@@ -93,7 +93,7 @@ public:
 
   auto get(size_t idx) const noexcept -> Point<double> {
     auto kpnts_map_rev_iter = kpnts_map_rev.find(idx);
-    if(kpnts_map_rev_iter == kpnts_map_rev.end()) {
+    if (kpnts_map_rev_iter == kpnts_map_rev.end()) {
       report_error("Keypoint not found");
     }
     return kpnts_map_rev_iter->second;
@@ -126,16 +126,17 @@ public:
       double          focal_35mm_,
       fs::path        img_path,
       const fs::path& temp_save_path) noexcept :
-      latitude{latitude_}, longitude{longitude_}, altitude{altitude_}, focal_35mm{focal_35mm_},
-      temp_save_path{temp_save_path}, img_origin{std::move(img_path)} {
+    latitude { latitude_ }, longitude { longitude_ }, altitude { altitude_ }, focal_35mm { focal_35mm_ },
+    temp_save_path { temp_save_path }, img_origin { std::move(img_path) } {
     check_or_create_path(temp_save_path);
-    Angle   yaw{yaw_};
-    Angle   pitch{pitch_ + 90.0}; // DJI to nadir
-    Angle   roll{roll_};
+    Angle   yaw { yaw_ };
+    Angle   pitch { pitch_ + 90.0 }; // DJI to nadir
+    Angle   roll { -roll_ };  // 反转roll角度以解决旋转方向问题
+    // 使用正确的旋转顺序：roll(X) -> pitch(Y) -> yaw(Z)
     cv::Mat R_w2c = x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians())
-                    * z_rotate_matrix(yaw.radians()); // Extrinsic rotation
+      * z_rotate_matrix(yaw.radians()); // Extrinsic rotation
     Q_w2c_array = rotate2qarray(R_w2c.t()); // Previously computed as a vector transformation; take the transpose here
-                                            // to get the coordinate frame transformation
+    // to get the coordinate frame transformation
   }
 
   auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
@@ -154,11 +155,11 @@ public:
 
   void rotate_rectify() noexcept {
     THIS_ASSERTION_SHOULD_TRUE(reference_set, "Reference coordinate not set!");
-    auto img                   = img_origin.get();
+    auto img = img_origin.get();
     const auto [width, height] = img.size();
     set_by_camera_params(width, height, focal_35mm);
     auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_c2w(), img);
-    cv::Mat pers_mat_inv                    = pers_mat.inv();
+    cv::Mat pers_mat_inv = pers_mat.inv();
     kpnts.set_convert_function([pers = pers_mat_inv, height](Point<double> point) noexcept -> Point<double> {
       return mat2point(pers * point);
     });
@@ -190,19 +191,19 @@ public:
 
   void set_by_camera_params(double width, double height, double focal_35mm) noexcept {
     double aspect_ratio = width * 1. / height;
-    double ref_width    = (aspect_ratio >= 1.5) ? 36. : 24. * aspect_ratio;
-    double focal_pix    = (ref_width == 36.) ? (width / 36. * focal_35mm) : (height / 24. * focal_35mm);
-    camera_array        = {focal_pix, focal_pix, width / 2., height / 2.};
+    double ref_width = (aspect_ratio >= 1.5) ? 36. : 24. * aspect_ratio;
+    double focal_pix = (ref_width == 36.) ? (width / 36. * focal_35mm) : (height / 24. * focal_35mm);
+    camera_array = { focal_pix, focal_pix, width / 2., height / 2. };
   }
 
   void set_reference(double latitude_ref_degree, double longitude_ref_degree) noexcept {
-    const auto latitude_r  = Angle(latitude_ref_degree);
+    const auto latitude_r = Angle(latitude_ref_degree);
     const auto longitude_r = Angle(longitude_ref_degree);
     // WGS84
     const double semi_major_axis = 6378137.0;
-    const double flattening      = 1.0 / 298.257223563;
+    const double flattening = 1.0 / 298.257223563;
     const double eccentricity_sq = (2.0 * flattening) - (flattening * flattening);
-    const double sin_lat_ref_sq  = std::pow(std::sin(latitude_r.radians()), 2);
+    const double sin_lat_ref_sq = std::pow(std::sin(latitude_r.radians()), 2);
     const double meridional_radius =
         semi_major_axis * (1.0 - eccentricity_sq) / std::pow(1.0 - (eccentricity_sq * sin_lat_ref_sq), 1.5);
     const double prime_vert_radius   = semi_major_axis / std::sqrt(1.0 - (eccentricity_sq * sin_lat_ref_sq));
