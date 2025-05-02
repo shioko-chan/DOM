@@ -6,8 +6,10 @@
 
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
+#include <opencv2/core/types.hpp>
+#include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
-// #include <opencv2/stitching/detail/blenders.hpp>
+#include <opencv2/stitching/detail/blenders.hpp>
 
 #include "ds/imgdata.hpp"
 #include "tools/debug.hpp"
@@ -53,7 +55,15 @@ public:
       cv::bitwise_and(warpedMask, ~resultMask, tempMask);
       warped.copyTo(result, tempMask);
       cv::bitwise_or(resultMask, warpedMask, resultMask);
+
+      {
+        cv::Mat show;
+        cv::resize(result, show, cv::Size{}, 0.2, 0.2);
+        cv::imshow("stitch", show);
+        cv::waitKey(0);
+      }
     }
+
     // blender.blend(result, resultMask);
     return result;
   }
@@ -61,7 +71,8 @@ public:
 private:
 
   fs::path temporary_save_path;
-  double   scale;
+
+  double scale;
 
   double world_min_x{0.}, world_min_y{0.};
   double world_max_x{0.}, world_max_y{0.};
@@ -79,11 +90,9 @@ private:
   }
 
   static auto ground_corners(ImgData& img_data) -> Points<double> {
-    auto     corners  = img_corners(img_data);
-    cv::Size img_size = img_data.origin_img().get_size();
-    double   height{static_cast<double>(img_size.height)};
-    auto     view = corners | std::views::transform([&img_data, height](const auto& pnt) noexcept -> Point<double> {
-                  cv::Mat world_dir = img_data.R_c2w() * img_data.K_c2w() * toggle_topleft_bottomleft(pnt, height);
+    auto corners = img_corners(img_data);
+    auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
+                  cv::Mat world_dir = img_data.R_c2w() * mat2point(img_data.K().inv() * pnt);
                   cv::normalize(world_dir, world_dir);
                   double  lambda    = -img_data.t_c2w().at<double>(2, 0) / world_dir.at<double>(2, 0);
                   cv::Mat intersect = lambda * world_dir + img_data.t_c2w();
@@ -118,9 +127,7 @@ private:
     auto           world_corners = ground_corners(img_data);
     Points<double> dst_corners;
     for(const auto& corner : world_corners) {
-      auto point = toggle_topleft_bottomleft(
-          Point<double>{corner.x - world_min_x, corner.y - world_min_y}, static_cast<int>(std::ceil(world_height)));
-      dst_corners.emplace_back(point.x * scale, point.y * scale);
+      dst_corners.emplace_back((corner.x - world_min_x) * scale, (corner.y - world_min_y) * scale);
     }
     Points<float> src_float;
     Points<float> dst_float;
@@ -138,4 +145,4 @@ private:
 
 } // namespace Ortho
 
-#endif // ORTHO_STITCHER_HPP
+#endif

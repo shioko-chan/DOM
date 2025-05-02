@@ -68,7 +68,7 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           // std::cout << "Image " << img_idx << ", Point " << pnt_idx << ": "
           //           << "kpnt=[" << kpnt << "], R=" << img.R_w2c() << ", t=" << img.t_w2c() << std::endl;
 
-          cv::Mat kpnt_mat = img.K_c2w() * kpnt;
+          cv::Mat kpnt_mat = img.K().inv() * kpnt;
           double  u_pix    = kpnt_mat.at<double>(0, 0);
           double  v_pix    = kpnt_mat.at<double>(1, 0);
           // std::cout << "u=" << u << ", v=" << v << std::endl;

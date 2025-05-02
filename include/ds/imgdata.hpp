@@ -130,11 +130,12 @@ public:
       temp_save_path{temp_save_path}, img_origin{std::move(img_path)} {
     check_or_create_path(temp_save_path);
     Angle   yaw{yaw_};
-    Angle   pitch{pitch_};
+    Angle   pitch{pitch_ + 90.0}; // DJI to nadir
     Angle   roll{roll_};
-    cv::Mat R_mat = z_rotate_matrix(-yaw.radians()) * y_rotate_matrix(-pitch.radians())
-                    * x_rotate_matrix(-roll.radians()) * y_rotate_matrix(-std::numbers::pi / 2);
-    Q_w2c_array = rotate2qarray(R_mat.t());
+    cv::Mat R_w2c = z_rotate_matrix(yaw.radians()) * y_rotate_matrix(pitch.radians())
+                    * x_rotate_matrix(roll.radians()); // Extrinsic rotation
+    Q_w2c_array = rotate2qarray(R_w2c.t()); // Previously computed as a vector transformation; take the transpose here
+                                            // to get the coordinate frame transformation
   }
 
   auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
@@ -159,8 +160,7 @@ public:
     auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_c2w(), img);
     cv::Mat pers_mat_inv                    = pers_mat.inv();
     kpnts.set_convert_function([pers = pers_mat_inv, height](Point<double> point) noexcept -> Point<double> {
-      auto pixel = mat2point(pers * point);
-      return toggle_topleft_bottomleft(pixel, height);
+      return mat2point(pers * point);
     });
     this->img_rotated.delay_initialize(
         temp_save_path
@@ -170,14 +170,9 @@ public:
     rotated_rectified = true;
   }
 
-  auto K_w2c() const noexcept -> cv::Mat {
+  auto K() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
     return array2camera(camera_array);
-  }
-
-  auto K_c2w() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
-    return array2camera(camera_array).inv();
   }
 
   auto D() const noexcept -> cv::Mat { return array2distort(distort_array); }
