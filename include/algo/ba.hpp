@@ -43,9 +43,9 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
     add_parameter_block(problem, img_data.t_w2c_array_raw());
     add_parameter_block(problem, img_data.camera_array_raw());
 
-    // set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
+    set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
     // set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
-    set_parameter_block_constant(problem, img_data.camera_array_raw());
+    // set_parameter_block_constant(problem, img_data.camera_array_raw());
   }
   for(auto& [pnt3d, pnt2d_idx_vec] : res) {
     if(pnt2d_idx_vec.empty()) {
