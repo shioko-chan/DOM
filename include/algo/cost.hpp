@@ -80,12 +80,9 @@ public:
     point[0] += T(t[0]);
     point[1] += T(t[1]);
     point[2] += T(t[2]);
-    T point_z = point[2];
-    if(ceres::abs(point_z) < 1e-6) {
-      return false;
-    }
-    residuals_span[0] = T(c[0]) * point[0] / point_z + T(c[2]) - T(point_2d.x);
-    residuals_span[1] = T(c[1]) * point[1] / point_z + T(c[3]) - T(point_2d.y);
+    T point_z         = ceres::fmax(point[2], T(1e-6));
+    residuals_span[0] = T(c[0]) * point[1] / point_z + T(c[2]) - T(point_2d.x);
+    residuals_span[1] = -T(c[1]) * point[0] / point_z + T(c[3]) - T(point_2d.y);
     return true;
   }
 
@@ -133,12 +130,9 @@ public:
     point[0] += transpose_span[0];
     point[1] += transpose_span[1];
     point[2] += transpose_span[2];
-    T point_z = point[2];
-    if(ceres::abs(point_z) < 1e-6) {
-      return false;
-    }
-    residuals_span[0] = camera_span[0] * point[0] / point_z + camera_span[2] - T(point_2d.x);
-    residuals_span[1] = camera_span[1] * point[1] / point_z + camera_span[3] - T(point_2d.y);
+    T point_z         = ceres::fmax(point[2], T(1e-6));
+    residuals_span[0] = camera_span[0] * point[1] / point_z + camera_span[2] - T(point_2d.x);
+    residuals_span[1] = -camera_span[1] * point[0] / point_z + camera_span[3] - T(point_2d.y);
     return true;
   }
 

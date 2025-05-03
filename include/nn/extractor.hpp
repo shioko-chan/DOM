@@ -271,7 +271,7 @@ public:
     reshape(&img_processed);
     preprocess(&img_processed);
     const auto [width, height] = img_rotated.get_size();
-    std::vector<float> img_vec(img_processed.begin<float>(), img_processed.end<float>());
+    std::vector<float> img_vec{img_processed.begin<float>(), img_processed.end<float>()};
     env.set_input("image", img_vec, std::vector<int64_t>{1, get_channels(), height, width});
     if(img_vec.empty()) {
       throw std::runtime_error("Error: Image is empty");

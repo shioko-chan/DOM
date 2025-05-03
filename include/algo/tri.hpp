@@ -35,6 +35,9 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
   TracksMaintainer tracks_maintainer;
   time_function([&] noexcept {
     for(const auto& match_img_pair : match_img_pairs) {
+      if(!match_img_pair.valid) {
+        continue;
+      }
       for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
         tracks_maintainer.append_match(
             PointIdx{.img_idx = match_img_pair.first, .pnt_idx = lhs},
@@ -44,7 +47,6 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
       progress.update();
     }
   });
-
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
   std::vector<TriRes>    all_res;
   std::mutex             mtx;
@@ -62,20 +64,15 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
         Eigen::VectorXd b_vector(rows);
         for(int64_t i = 0; i < len; ++i) {
           const auto& [img_idx, pnt_idx] = pntidx_vec[i];
-          const auto& img                = imgs_data[img_idx];
-          const auto& kpnt               = img.get_kpnts().get(pnt_idx);
-
-          // std::cout << "Image " << img_idx << ", Point " << pnt_idx << ": "
-          //           << "kpnt=[" << kpnt << "], R=" << img.R_w2c() << ", t=" << img.t_w2c() << std::endl;
-
-          cv::Mat kpnt_mat = img.K().inv() * kpnt;
-          double  u_pix    = kpnt_mat.at<double>(0, 0);
-          double  v_pix    = kpnt_mat.at<double>(1, 0);
-          // std::cout << "u=" << u << ", v=" << v << std::endl;
-          cv::Mat         R_mat = img.R_w2c();
+          const auto&     img_data       = imgs_data[img_idx];
+          const auto&     kpnt           = img_data.get_kpnts().get(pnt_idx);
+          cv::Mat         kpnt_mat       = img_data.M().inv() * kpnt;
+          double          u_pix          = kpnt_mat.at<double>(0, 0);
+          double          v_pix          = kpnt_mat.at<double>(1, 0);
+          cv::Mat         R_mat          = img_data.R_w2c();
           Eigen::Matrix3d R_eigen;
           cv::cv2eigen(R_mat, R_eigen);
-          cv::Mat t_mat                        = img.t_w2c();
+          cv::Mat t_mat                        = img_data.t_w2c();
           double  t_x                          = t_mat.at<double>(0, 0);
           double  t_y                          = t_mat.at<double>(1, 0);
           double  t_z                          = t_mat.at<double>(2, 0);
@@ -90,7 +87,7 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
         ceres::Problem        problem;
         add_parameter_block(problem, world_point);
         for(const auto& pntidx : pntidx_vec) {
-          auto& img_data = imgs_data[pntidx.img_idx];
+          const auto& img_data = imgs_data[pntidx.img_idx];
           try {
             problem.AddResidualBlock(
                 SimpReprojectionError::create(
@@ -111,12 +108,12 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
         options.max_num_iterations           = 1000;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
-        std::cout << summary.BriefReport() << '\n';
         if(summary.IsSolutionUsable()) {
           std::lock_guard lock{mtx};
           all_res
               .emplace_back(std::array<double, 3>{world_point[0], world_point[1], world_point[2]}, std::move(pntidx_vec));
         } else {
+          std::cout << summary.BriefReport() << '\n';
           THIS_LOG_WARN("Triangulation solution is unusable.");
         }
       },

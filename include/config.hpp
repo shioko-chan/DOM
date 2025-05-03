@@ -23,7 +23,7 @@ constexpr int NEIGHBOR_PROPOSAL{10};
 constexpr int64_t MEM_LIMIT{12UL * (1UL << 30U) /* 12GB */};
 
 constexpr double SPATIAL_RESOLUTION{0.01}; // meters per pixel
-constexpr double HEIGHT{125.};             // meters
+constexpr double HEIGHT{125.0};            // meters
 
 enum method_t : uint8_t { SUPERPOINT, DISK };
 

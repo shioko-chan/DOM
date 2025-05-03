@@ -43,16 +43,9 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
     add_parameter_block(problem, img_data.t_w2c_array_raw());
     add_parameter_block(problem, img_data.camera_array_raw());
 
-    // set_bound_delta(img_data.t_w2c_array_raw(), 0, 5);
-    // set_bound_delta(img_data.t_w2c_array_raw(), 1, 5);
-    // set_bound_delta(img_data.t_w2c_array_raw(), 2, 25);
-    // set_bound_percentage(img_data.camera_array_raw(), 0, 5);
-    // set_bound_percentage(img_data.camera_array_raw(), 1, 5);
-    // set_bound_delta(img_data.camera_array_raw(), 2, 10);
-    // set_bound_delta(img_data.camera_array_raw(), 3, 10);
-    set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
-    set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
-    set_parameter_block_constant(problem, img_data.camera_array_raw());
+    // set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
+    // set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
+    // set_parameter_block_constant(problem, img_data.camera_array_raw());
   }
   for(auto& [pnt3d, pnt2d_idx_vec] : res) {
     if(pnt2d_idx_vec.empty()) {
@@ -77,7 +70,7 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
   ceres::Solver::Options options;
   options.num_threads                  = static_cast<int>(std::thread::hardware_concurrency());
   options.linear_solver_type           = ceres::SPARSE_SCHUR;
-  options.check_gradients              = true;
+  options.check_gradients              = false;
   options.minimizer_progress_to_stdout = true;
   options.max_num_iterations           = 2000;
   ceres::Solver::Summary summary;

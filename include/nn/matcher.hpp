@@ -23,6 +23,7 @@
 #include "tools/log.hpp"
 #include "tools/ort.hpp"
 #include "tools/progress.hpp"
+#include "tools/utility.hpp"
 
 namespace Ortho {
 
@@ -127,16 +128,6 @@ private:
     return filter_matches_by_score_precise(matches, scores, cnt);
   }
 
-  static auto feature2point(cv::Size size) {
-    auto [width, height] = size;
-    const double wf2     = width / 2.;
-    const double hf2     = height / 2.;
-    const double max2    = std::max(wf2, hf2);
-    return std::views::transform([wf2, hf2, max2](const Feature& feature) noexcept {
-      return Point<double>{(feature.x * max2) + wf2, (feature.y * max2) + hf2};
-    });
-  }
-
   using DMatch    = cv::DMatch;
   using DMatches  = std::vector<DMatch>;
   using KeyPoints = std::vector<cv::KeyPoint>;
@@ -152,10 +143,10 @@ private:
                 });
     DMatches d_matches{view.begin(), view.end()};
     auto     view_lhs =
-        features_lhs | feature2point(img_lhs.rotated_img().get_size())
+        features_lhs | normalized2pixel<Feature>(img_lhs.rotated_img().get_size())
         | std::views::transform([](const auto& point) noexcept { return cv::KeyPoint(point.x, point.y, 1.); });
     auto view_rhs =
-        features_rhs | feature2point(img_rhs.rotated_img().get_size())
+        features_rhs | normalized2pixel<Feature>(img_rhs.rotated_img().get_size())
         | std::views::transform([](const auto& point) noexcept { return cv::KeyPoint(point.x, point.y, 1.); });
     KeyPoints keypoints_lhs{view_lhs.begin(), view_lhs.end()};
     KeyPoints keypoints_rhs{view_rhs.begin(), view_rhs.end()};
@@ -233,11 +224,11 @@ public:
         auto kpnt_lhs =
             matches
             | std::views::transform([&lhs_features](const auto& match) noexcept { return lhs_features[match.lhs]; })
-            | feature2point(lhs_img.rotated_img().get_size());
+            | normalized2pixel<Feature>(lhs_img.rotated_img().get_size());
         auto kpnt_rhs =
             matches
             | std::views::transform([&rhs_features](const auto& match) noexcept { return rhs_features[match.rhs]; })
-            | feature2point(rhs_img.rotated_img().get_size());
+            | normalized2pixel<Feature>(rhs_img.rotated_img().get_size());
         auto score     = matches | std::views::transform([](const auto& match) noexcept { return match.score; });
         auto idx_lhs   = lhs_img.get_kpnts().append(kpnt_lhs);
         auto idx_rhs   = rhs_img.get_kpnts().append(kpnt_rhs);
@@ -246,11 +237,11 @@ public:
                            return Match{i0, i1, score};
                          });
         pair.matches.assign(matches_v.begin(), matches_v.end());
-        Points<double> kpnt_lhs_f;
-        Points<double> kpnt_rhs_f;
-        std::ranges::copy(kpnt_lhs, std::back_inserter(kpnt_lhs_f));
-        std::ranges::copy(kpnt_rhs, std::back_inserter(kpnt_rhs_f));
-        pair.M     = cv::estimateAffinePartial2D(kpnt_lhs_f, kpnt_rhs_f);
+        // Points<double> kpnt_lhs_f;
+        // Points<double> kpnt_rhs_f;
+        // std::ranges::copy(kpnt_lhs, std::back_inserter(kpnt_lhs_f));
+        // std::ranges::copy(kpnt_rhs, std::back_inserter(kpnt_rhs_f));
+        // pair.M     = cv::estimateAffinePartial2D(kpnt_lhs_f, kpnt_rhs_f);
         pair.valid = true;
       }
       progress.update(batch_cnt);

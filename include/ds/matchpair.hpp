@@ -4,20 +4,19 @@
 #include <iostream>
 #include <tuple>
 
+#include <opencv2/opencv.hpp>
+
 #include "types/common_types.hpp"
-#include "types/cv_alias.hpp"
 
 namespace Ortho {
 
 class MatchPair {
 public:
 
-  int            first{}, second{};
-  bool           valid = false;
-  cv::Mat        M;
-  Point<double>  lhs_pnts, rhs_pnts;
-  Point3<double> pnts3d;
-  Matches        matches;
+  int     first{}, second{};
+  bool    valid = false;
+  cv::Mat M;
+  Matches matches;
 
   MatchPair() = default;
 

@@ -38,7 +38,7 @@ public:
     }
     computeWorldBounds(imgs_data);
     cv::Mat result(
-        static_cast<int>(world_height * scale), static_cast<int>(world_width * scale), CV_8UC3, cv::Scalar(0, 0, 0));
+        static_cast<int>(world_width * scale), static_cast<int>(world_height * scale), CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Mat resultMask(result.size(), CV_8UC1, cv::Scalar(0));
     // cv::detail::MultiBandBlender blender(false, 5);
     // blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
@@ -58,6 +58,13 @@ public:
       warped.copyTo(result, tempMask);
       cv::bitwise_or(resultMask, warpedMask, resultMask);
       progress.update();
+      // {
+      //   std::cout << img_data.t_c2w() << std::endl;
+      //   cv::Mat show;
+      //   cv::resize(result, show, cv::Size{}, 0.2, 0.2);
+      //   cv::imshow("res", show);
+      //   cv::waitKey(0);
+      // }
     }
     // blender.blend(result, resultMask);
     return result;
@@ -88,7 +95,7 @@ private:
     auto corners = img_corners(img_data);
     auto view    = corners | std::views::transform([&img_data](const auto& pnt) noexcept -> Point<double> {
                   cv::Mat pnt_mat   = (cv::Mat_<double>(3, 1) << pnt.x, pnt.y, 1.0);
-                  cv::Mat cam_pnt   = img_data.K().inv() * pnt_mat;
+                  cv::Mat cam_pnt   = img_data.M().inv() * pnt_mat;
                   cv::Mat world_dir = img_data.R_c2w() * cam_pnt;
                   cv::normalize(world_dir, world_dir);
                   double  lambda    = -img_data.t_c2w().at<double>(2, 0) / world_dir.at<double>(2, 0);
@@ -124,7 +131,7 @@ private:
     auto           world_corners = ground_corners(img_data);
     Points<double> dst_corners;
     for(const auto& corner : world_corners) {
-      dst_corners.emplace_back((corner.x - world_min_x) * scale, (corner.y - world_min_y) * scale);
+      dst_corners.emplace_back((corner.y - world_min_y) * scale, (world_max_x - corner.x) * scale);
     }
     Points<float> src_float;
     Points<float> dst_float;

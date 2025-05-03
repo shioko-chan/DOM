@@ -8,11 +8,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <ios>
 #include <iostream>
 #include <mutex>
 #include <numbers>
-#include <opencv2/core.hpp>
-#include <opencv2/core/mat.hpp>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -20,9 +19,10 @@
 #include <utility>
 #include <vector>
 
-#include <exiv2/exif.hpp>
+#include <GeographicLib/Geocentric.hpp>
+#include <GeographicLib/LocalCartesian.hpp>
 #include <exiv2/exiv2.hpp>
-#include <exiv2/tags.hpp>
+#include <opencv2/core.hpp>
 #include <opencv2/opencv.hpp>
 
 #include "algo/rotate_rectify.hpp"
@@ -74,13 +74,15 @@ public:
     this->convert_func = std::forward<Func>(convert_func);
   }
 
-  auto append(const Point<double>& kpnt) noexcept -> size_t {
-    auto kpnts_map_iter = kpnts_map.find(kpnt);
+  template <typename T>
+    requires HasXY<T>
+  auto append(const T& kpnt_input) noexcept -> size_t {
+    Point<double> kpnt           = convert_func({kpnt_input.x, kpnt_input.y});
+    auto          kpnts_map_iter = kpnts_map.find(kpnt);
     if(kpnts_map_iter == kpnts_map.end()) {
-      size_t idx    = kpnts_map.size();
-      auto   origin = convert_func(kpnt);
-      kpnts_map.emplace(origin, idx);
-      kpnts_map_rev.emplace(idx, origin);
+      size_t idx = kpnts_map.size();
+      kpnts_map.emplace(kpnt, idx);
+      kpnts_map_rev.emplace(idx, kpnt);
       return idx;
     }
     return kpnts_map_iter->second;
@@ -173,6 +175,15 @@ public:
     return array2camera(camera_array);
   }
 
+  auto M() const noexcept -> cv::Mat {
+    // clang-format off
+    return K() * (cv::Mat_<double>(3, 3) << 
+     0, 1, 0,
+    -1, 0, 0, 
+     0, 0, 1);
+    // clang-format on
+  }
+
   auto D() const noexcept -> cv::Mat { return array2distort(distort_array); }
 
   auto camera_array_raw() noexcept -> CameraArray& { return camera_array; }
@@ -187,32 +198,24 @@ public:
   auto distort_array_raw() const noexcept -> const DistortArray& { return distort_array; }
 
   void set_by_camera_params(double width, double height, double focal_35mm) noexcept {
-    double aspect_ratio = width * 1. / height;
-    double ref_width    = (aspect_ratio >= 1.5) ? 36. : 24. * aspect_ratio;
-    double focal_pix    = (ref_width == 36.) ? (width / 36. * focal_35mm) : (height / 24. * focal_35mm);
-    camera_array        = {focal_pix, focal_pix, width / 2., height / 2.};
+    double aspect_ratio = width * 1.0 / height;
+    double ref_width    = (aspect_ratio >= 1.5) ? 36.0 : 24.0 * aspect_ratio;
+    double focal_pix    = (aspect_ratio >= 1.5) ? (width / 36.0 * focal_35mm) : (height / 24.0 * focal_35mm);
+    camera_array        = {focal_pix, focal_pix, width / 2.0, height / 2.0};
   }
 
   void set_reference(double latitude_ref_degree, double longitude_ref_degree) noexcept {
-    const auto latitude_r  = Angle(latitude_ref_degree);
-    const auto longitude_r = Angle(longitude_ref_degree);
-    // WGS84
-    const double semi_major_axis = 6378137.0;
-    const double flattening      = 1.0 / 298.257223563;
-    const double eccentricity_sq = (2.0 * flattening) - (flattening * flattening);
-    const double sin_lat_ref_sq  = std::pow(std::sin(latitude_r.radians()), 2);
-    const double meridional_radius =
-        semi_major_axis * (1.0 - eccentricity_sq) / std::pow(1.0 - (eccentricity_sq * sin_lat_ref_sq), 1.5);
-    const double prime_vert_radius   = semi_major_axis / std::sqrt(1.0 - (eccentricity_sq * sin_lat_ref_sq));
-    const double delta_longitude_rad = longitude.radians() - longitude_r.radians();
-    const double delta_latitude_rad  = latitude.radians() - latitude_r.radians();
-    const double projected_x         = prime_vert_radius * delta_longitude_rad * std::cos(latitude_r.radians());
-    const double projected_y         = meridional_radius * delta_latitude_rad;
-    coord                            = Point<double>(projected_x, projected_y);
-    cv::Mat t_c2w_mat                = (cv::Mat_<double>(3, 1) << coord.x, coord.y, -altitude);
-    cv::Mat t_w2c_mat                = -R_w2c() * t_c2w_mat;
-    t_w2c_array   = {t_w2c_mat.at<double>(0, 0), t_w2c_mat.at<double>(1, 0), t_w2c_mat.at<double>(2, 0)};
-    reference_set = true;
+    GeographicLib::LocalCartesian
+           local_cartesian{latitude_ref_degree, longitude_ref_degree, 0, GeographicLib::Geocentric::WGS84()};
+    double east{};
+    double north{};
+    double upward{};
+    local_cartesian.Forward(latitude, longitude, altitude, east, north, upward);
+    coord             = Point<double>{north, east};
+    cv::Mat t_c2w_mat = (cv::Mat_<double>(3, 1) << coord.x, coord.y, -upward);
+    cv::Mat t_w2c_mat = -R_w2c() * t_c2w_mat;
+    t_w2c_array       = {t_w2c_mat.at<double>(0, 0), t_w2c_mat.at<double>(1, 0), t_w2c_mat.at<double>(2, 0)};
+    reference_set     = true;
   }
 
   auto R_w2c() const noexcept -> cv::Mat {
@@ -268,8 +271,7 @@ private:
   Image       img_rotated;
   OriginImage img_origin;
 
-  Angle         latitude, longitude;
-  double        altitude{};
+  double        latitude{}, longitude{}, altitude{};
   Point<double> coord;
 
   RotateQArray   Q_w2c_array{std::numeric_limits<double>::quiet_NaN()};
@@ -358,8 +360,8 @@ public:
     std::vector<double>         latitudes;
     std::vector<double>         longitudes;
     for(auto&& data : imgs_data) {
-      latitudes.push_back(data.latitude.degrees());
-      longitudes.push_back(data.longitude.degrees());
+      latitudes.push_back(data.latitude);
+      longitudes.push_back(data.longitude);
     }
     auto nth = static_cast<int64_t>(latitudes.size()) / 2;
     std::nth_element(latitudes.begin(), latitudes.begin() + nth, latitudes.end());
@@ -388,10 +390,9 @@ private:
   };
 
   struct XmpKey {
-    static constexpr std::string_view yaw = "Xmp.drone-dji.FlightYawDegree", pitch = "Xmp.drone-dji.GimbalPitchDegree",
-                                      roll = "Xmp.drone-dji.GimbalRollDegree", latitude = "Xmp.drone-dji.GpsLatitude",
-                                      longitude = "Xmp.drone-dji.GpsLongitude",
-                                      altitude  = "Xmp.drone-dji.AbsoluteAltitude";
+    static constexpr std::string_view yaw{"Xmp.drone-dji.GimbalYawDegree"}, pitch{"Xmp.drone-dji.GimbalPitchDegree"},
+        roll{"Xmp.drone-dji.GimbalRollDegree"}, latitude{"Xmp.drone-dji.GpsLatitude"},
+        longitude{"Xmp.drone-dji.GpsLongitude"}, altitude{"Xmp.drone-dji.RelativeAltitude"};
   };
 
 public:
@@ -427,11 +428,9 @@ public:
   }
 
   static auto build(const fs::path& path, const fs::path& temp_save_path) noexcept -> ImgData {
-    ExifXmp exif_xmp(path);
-    auto&   xmp_data = exif_xmp.xmp_data();
-
-    auto& exif_data = exif_xmp.exif_data();
-
+    ExifXmp exif_xmp{path};
+    auto&   xmp_data  = exif_xmp.xmp_data();
+    auto&   exif_data = exif_xmp.exif_data();
     return ImgData{
         xmp_data[std::string{XmpKey::yaw}].toFloat(),
         xmp_data[std::string{XmpKey::pitch}].toFloat(),

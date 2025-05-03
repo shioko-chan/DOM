@@ -20,6 +20,7 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/opencv.hpp>
+#include <utility>
 
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
@@ -86,9 +87,8 @@ void print_run_time(const auto& start) noexcept {
   using namespace std::chrono_literals;
   auto end      = std::chrono::high_resolution_clock::now();
   auto duration = end - start;
-  std::cout << "Function run time: " << duration / 1s << " s";
   THIS_LOG_INFO(
-      "Function run time: {}s, {}ms, {}us, {}ns",
+      "Function run time: {}s {}ms {}us {}ns",
       duration / 1s,
       duration % 1s / 1ms,
       duration % 1ms / 1us,
@@ -127,6 +127,7 @@ template <typename Func>
   requires std::is_nothrow_invocable_v<Func, size_t>
 void run(size_t tasks, Func&& process, Progress& progress) noexcept {
   progress.reset(static_cast<int>(tasks));
+#ifdef ENABLE_PARALLEL
   tbb::parallel_for(
       tbb::blocked_range<size_t>(0, tasks),
       [process = std::forward<Func>(process), &progress](const tbb::blocked_range<size_t>& range) noexcept {
@@ -134,11 +135,17 @@ void run(size_t tasks, Func&& process, Progress& progress) noexcept {
           process(i);
         }
       });
+#else
+  for(size_t i = 0; i < tasks; ++i, progress.update()) {
+    std::forward<Func>(process)(i);
+  }
+#endif
 }
 
 template <typename Func>
   requires std::is_nothrow_invocable_v<Func, size_t>
 void run(size_t tasks, Func&& process) noexcept {
+#ifdef ENABLE_PARALLEL
   tbb::parallel_for(
       tbb::blocked_range<size_t>(0, tasks),
       [process = std::forward<Func>(process)](const tbb::blocked_range<size_t>& range) noexcept {
@@ -146,6 +153,33 @@ void run(size_t tasks, Func&& process) noexcept {
           process(i);
         }
       });
+#else
+  for(size_t i = 0; i < tasks; ++i) {
+    std::forward<Func>(process)(i);
+  }
+#endif
+}
+
+template <typename T>
+  requires HasXY<T>
+auto normalized2pixel(const cv::Size& size) {
+  const auto& [width, height] = size;
+  const double wf2            = width / 2.;
+  const double hf2            = height / 2.;
+  const double max2           = std::max(wf2, hf2);
+  return std::views::transform([wf2, hf2, max2](const T& normalized) noexcept {
+    return Point<double>{(normalized.x * max2) + wf2, (normalized.y * max2) + hf2};
+  });
+}
+
+template <typename T>
+  requires HasXY<T>
+auto normalized2pixel(const T& normalized, const cv::Size& size) {
+  const auto& [width, height] = size;
+  const double wf2            = width / 2.;
+  const double hf2            = height / 2.;
+  const double max2           = std::max(wf2, hf2);
+  return Point<double>{(normalized.x * max2) + wf2, (normalized.y * max2) + hf2};
 }
 
 inline auto rotate2qarray(cv::InputArray R_mat_input) noexcept -> RotateQArray {
