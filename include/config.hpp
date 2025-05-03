@@ -12,10 +12,10 @@ constexpr int ORIGIN_RESOLUTION_LIM{2048};
 
 constexpr int FEATURE_EXTRACTOR_RESOLUTION_LIM{1024};
 
-constexpr double SUPERPOINT_THRESHOLD{0.2};
+constexpr double SUPERPOINT_THRESHOLD{0.25};
 constexpr int    SUPERPOINT_KEYPOINT_MAXCNT{1024};
 
-constexpr double DISK_THRESHOLD{0.2};
+constexpr double DISK_THRESHOLD{0.25};
 constexpr int    DISK_KEYPOINT_MAXCNT{1024};
 
 constexpr int NEIGHBOR_PROPOSAL{16};

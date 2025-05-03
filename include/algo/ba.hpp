@@ -66,7 +66,10 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
 
   for(const auto& img_data : imgs_data) {
     set_parameter_block_constant(problem, img_data.camera_array_raw());
+    // set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
   }
+  ceres::Solve(options, &problem, &summary);
+  THIS_MESSAGE("Step 1: {}", summary.BriefReport());
 
   //
   // Firstly, optimize the camera extrinsic

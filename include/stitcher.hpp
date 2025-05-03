@@ -40,8 +40,9 @@ public:
     cv::Mat result(
         static_cast<int>(world_width * scale), static_cast<int>(world_height * scale), CV_8UC3, cv::Scalar(0, 0, 0));
     cv::Mat resultMask(result.size(), CV_8UC1, cv::Scalar(0));
-    // cv::detail::MultiBandBlender blender(false, 5);
-    // blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
+    // cv::detail::MultiBandBlender blender(true, 3);
+    cv::detail::FeatherBlender blender;
+    blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
     for(auto& img_data : imgs_data) {
       cv::Mat srcImg          = img_data.origin_img().get();
       cv::Mat srcMask         = cv::Mat::ones(srcImg.size(), CV_8UC1) * 255;
@@ -52,11 +53,13 @@ public:
           srcImg, warped, transformMatrix, result.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
       cv::warpPerspective(
           srcMask, warpedMask, transformMatrix, result.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
-      // blender.feed(warped, warpedMask, cv::Point(0, 0));
-      cv::Mat tempMask;
-      cv::bitwise_and(warpedMask, ~resultMask, tempMask);
-      warped.copyTo(result, tempMask);
-      cv::bitwise_or(resultMask, warpedMask, resultMask);
+      blender.feed(warped, warpedMask, cv::Point(0, 0));
+      // {
+      //   cv::Mat tempMask;
+      //   cv::bitwise_and(warpedMask, ~resultMask, tempMask);
+      //   warped.copyTo(result, tempMask);
+      //   cv::bitwise_or(resultMask, warpedMask, resultMask);
+      // }
       progress.update();
       // {
       //   std::cout << img_data.t_c2w() << std::endl;
@@ -66,7 +69,7 @@ public:
       //   cv::waitKey(0);
       // }
     }
-    // blender.blend(result, resultMask);
+    blender.blend(result, resultMask);
     return result;
   }
 
