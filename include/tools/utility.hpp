@@ -87,7 +87,7 @@ void print_run_time(const auto& start) noexcept {
   using namespace std::chrono_literals;
   auto end      = std::chrono::high_resolution_clock::now();
   auto duration = end - start;
-  THIS_LOG_INFO(
+  THIS_MESSAGE(
       "Function run time: {}s {}ms {}us {}ns",
       duration / 1s,
       duration % 1s / 1ms,
