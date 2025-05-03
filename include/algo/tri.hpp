@@ -36,20 +36,18 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
   THIS_MESSAGE("Build tracks");
   progress.reset(static_cast<int>(match_img_pairs.size()));
   TracksMaintainer tracks_maintainer;
-  time_function([&] noexcept {
-    for(const auto& match_img_pair : match_img_pairs) {
-      if(!match_img_pair.valid) {
-        continue;
-      }
-      for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
-        tracks_maintainer.append_match(
-            PointIdx{.img_idx = match_img_pair.first, .pnt_idx = lhs},
-            PointIdx{.img_idx = match_img_pair.second, .pnt_idx = rhs},
-            score);
-      }
-      progress.update();
+  for(const auto& match_img_pair : match_img_pairs) {
+    if(!match_img_pair.valid) {
+      continue;
     }
-  });
+    for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
+      tracks_maintainer.append_match(
+          PointIdx{.img_idx = match_img_pair.first, .pnt_idx = lhs},
+          PointIdx{.img_idx = match_img_pair.second, .pnt_idx = rhs},
+          score);
+    }
+    progress.update();
+  }
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
   std::vector<TriRes>    all_res;
   std::mutex             mtx;
@@ -105,11 +103,13 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           }
         }
         ceres::Solver::Options options;
-        options.linear_solver_type                = ceres::DENSE_QR;
-        options.check_gradients                   = true;
-        options.gradient_check_relative_precision = 1e-4;
-        options.minimizer_progress_to_stdout      = false;
-        options.max_num_iterations                = 1000;
+        options.linear_solver_type = ceres::DENSE_QR;
+
+        options.check_gradients                   = false;
+        options.gradient_check_relative_precision = 1e-2;
+
+        options.minimizer_progress_to_stdout = false;
+        options.max_num_iterations           = 1000;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
         if(summary.IsSolutionUsable()) {
