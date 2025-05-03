@@ -2,6 +2,7 @@
 #define ORTHO_DEBUG_HPP
 
 #ifdef ENABLE_ASSERTION
+
   #include <concepts>
   #include <exception>
   #include <format>

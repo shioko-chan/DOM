@@ -39,24 +39,25 @@ public:
     computeWorldBounds(imgs_data);
     cv::Mat result(
         static_cast<int>(world_width * scale), static_cast<int>(world_height * scale), CV_8UC3, cv::Scalar(0, 0, 0));
-    cv::Mat                      resultMask(result.size(), CV_8UC1, cv::Scalar(0));
-    cv::detail::MultiBandBlender blender(true, 7);
+    cv::Mat resultMask(result.size(), CV_8UC1, cv::Scalar(0));
+    // cv::detail::MultiBandBlender blender(true, 7);
     // cv::detail::FeatherBlender blender;
-    blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
+    // blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
+
     for(auto& img_data : imgs_data) {
       cv::Mat srcImg          = img_data.origin_img().get();
       cv::Mat srcMask         = cv::Mat::ones(srcImg.size(), CV_8UC1) * 255;
       cv::Mat transformMatrix = calculateTransformMatrix(img_data);
       cv::Mat warped;
       cv::Mat warpedMask;
-      cv::warpPerspective(
+      cv::warpAffine(
           srcImg, warped, transformMatrix, result.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
-      cv::warpPerspective(
+      cv::warpAffine(
           srcMask, warpedMask, transformMatrix, result.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
-      {
-        // srcImg.convertTo(srcImg, CV_16SC3);
-        blender.feed(warped, warpedMask, cv::Point(0, 0));
-      }
+      // {
+      //   // srcImg.convertTo(srcImg, CV_16SC3);
+      //   blender.feed(warped, warpedMask, cv::Point(0, 0));
+      // }
       {
         cv::Mat tempMask;
         cv::bitwise_and(warpedMask, ~resultMask, tempMask);
@@ -80,7 +81,7 @@ public:
       //   cv::waitKey(0);
       // }
     }
-    blender.blend(result, resultMask);
+    // blender.blend(result, resultMask);
     return result;
   }
 
@@ -157,7 +158,8 @@ private:
       auto view = convert_arithmetic_type<float>(dst_corners);
       dst_float.assign(view.begin(), view.end());
     }
-    return cv::getPerspectiveTransform(src_float, dst_float);
+    return cv::estimateAffine2D(src_corners, dst_corners);
+    // return cv::getPerspectiveTransform(src_float, dst_float);
   }
 };
 

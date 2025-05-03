@@ -38,8 +38,10 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
   options.trust_region_strategy_type        = ceres::LEVENBERG_MARQUARDT;
   options.linear_solver_type                = ceres::SPARSE_SCHUR;
   options.use_inner_iterations              = true;
+
   // options.linear_solver_type  = ceres::ITERATIVE_SCHUR;
   // options.preconditioner_type               = ceres::CLUSTER_TRIDIAGONAL;
+
   ceres::Solver::Summary summary;
 
   for(auto& img_data : imgs_data) {
@@ -75,99 +77,95 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
     }
   }
 
-  for(const auto& img_data : imgs_data) {
-    set_parameter_block_constant(problem, img_data.camera_array_raw());
-    // set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
-  }
-  ceres::Solve(options, &problem, &summary);
-  THIS_MESSAGE("Step 1: {}", summary.BriefReport());
-  THIS_MESSAGE("{}", summary.FullReport());
-  //
+  // for(const auto& img_data : imgs_data) {
+  //   set_parameter_block_constant(problem, img_data.camera_array_raw());
+  //   // set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
+  // }
+  // ceres::Solve(options, &problem, &summary);
+  // THIS_MESSAGE("Step 1: {}", summary.BriefReport());
+  // THIS_MESSAGE("{}", summary.FullReport());
+
   // Firstly, optimize the camera extrinsic
   // Make [K, pnt3d] constant
   //      [R, t] variable
-  // {
-  //   for(const auto& img_data : imgs_data) {
-  //     set_parameter_block_constant(problem, img_data.camera_array_raw());
-  //   }
-  //   for(const auto& [pnt3d, pnt2d_idx_vec] : res) {
-  //     if(pnt2d_idx_vec.empty()) {
-  //       continue;
-  //     }
-  //     set_parameter_block_constant(problem, pnt3d);
-  //   }
-  //   ceres::Solve(options, &problem, &summary);
-  //   THIS_MESSAGE("Step 1: {}", summary.BriefReport());
-  // }
+  {
+    for(const auto& img_data : imgs_data) {
+      set_parameter_block_constant(problem, img_data.camera_array_raw());
+    }
+    for(const auto& [pnt3d, pnt2d_idx_vec] : res) {
+      if(pnt2d_idx_vec.empty()) {
+        continue;
+      }
+      set_parameter_block_constant(problem, pnt3d);
+    }
+    ceres::Solve(options, &problem, &summary);
+    THIS_MESSAGE("Step 1: {}", summary.BriefReport());
+  }
 
-  //
   // Secondly, optimize the 3d points
   // Make [R, t, K] constant
   //      [pnt3d] variable
-  // {
-  //   for(const auto& img_data : imgs_data) {
-  //     set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
-  //     set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
-  //   }
-  //   for(auto& [pnt3d, pnt2d_idx_vec] : res) {
-  //     if(pnt2d_idx_vec.empty()) {
-  //       continue;
-  //     }
-  //     set_parameter_block_variable(problem, pnt3d);
-  //   }
-  //   ceres::Solve(options, &problem, &summary);
-  //   THIS_MESSAGE("Step 2: {}", summary.BriefReport());
-  // }
+  {
+    for(const auto& img_data : imgs_data) {
+      set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
+      set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
+    }
+    for(auto& [pnt3d, pnt2d_idx_vec] : res) {
+      if(pnt2d_idx_vec.empty()) {
+        continue;
+      }
+      set_parameter_block_variable(problem, pnt3d);
+    }
+    ceres::Solve(options, &problem, &summary);
+    THIS_MESSAGE("Step 2: {}", summary.BriefReport());
+  }
 
-  //
   // Thirdly, optimize the 3d points and extrinsic
   // Make [K] constant
   //      [pnt3d, R, t] variable
-  // {
-  //   for(auto& img_data : imgs_data) {
-  //     set_parameter_block_variable(problem, img_data.Q_w2c_array_raw());
-  //     set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
-  //   }
-  //   ceres::Solve(options, &problem, &summary);
-  //   THIS_MESSAGE("Step 3: {}", summary.BriefReport());
-  // }
+  {
+    for(auto& img_data : imgs_data) {
+      set_parameter_block_variable(problem, img_data.Q_w2c_array_raw());
+      set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
+    }
+    ceres::Solve(options, &problem, &summary);
+    THIS_MESSAGE("Step 3: {}", summary.BriefReport());
+  }
 
-  //
   // Fourthly, optimize the intrinsic
   // Make [R, t, pnt3d] constant
   //      [K] variable
-  // {
-  //   for(auto& img_data : imgs_data) {
-  //     set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
-  //     set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
-  //     set_parameter_block_variable(problem, img_data.camera_array_raw());
-  //   }
-  //   for(const auto& [pnt3d, pnt2d_idx_vec] : res) {
-  //     if(pnt2d_idx_vec.empty()) {
-  //       continue;
-  //     }
-  //     set_parameter_block_constant(problem, pnt3d);
-  //   }
-  //   ceres::Solve(options, &problem, &summary);
-  //   THIS_MESSAGE("Step 4: {}", summary.BriefReport());
-  // }
+  {
+    for(auto& img_data : imgs_data) {
+      set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
+      set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
+      set_parameter_block_variable(problem, img_data.camera_array_raw());
+    }
+    for(const auto& [pnt3d, pnt2d_idx_vec] : res) {
+      if(pnt2d_idx_vec.empty()) {
+        continue;
+      }
+      set_parameter_block_constant(problem, pnt3d);
+    }
+    ceres::Solve(options, &problem, &summary);
+    THIS_MESSAGE("Step 4: {}", summary.BriefReport());
+  }
 
-  //
   // Finally, optimize all together
-  // {
-  //   for(auto& img_data : imgs_data) {
-  //     set_parameter_block_variable(problem, img_data.Q_w2c_array_raw());
-  //     set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
-  //   }
-  //   for(auto& [pnt3d, pnt2d_idx_vec] : res) {
-  //     if(pnt2d_idx_vec.empty()) {
-  //       continue;
-  //     }
-  //     set_parameter_block_variable(problem, pnt3d);
-  //   }
-  //   ceres::Solve(options, &problem, &summary);
-  //   THIS_MESSAGE("Step 5: {}", summary.BriefReport());
-  // }
+  {
+    for(auto& img_data : imgs_data) {
+      set_parameter_block_variable(problem, img_data.Q_w2c_array_raw());
+      set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
+    }
+    for(auto& [pnt3d, pnt2d_idx_vec] : res) {
+      if(pnt2d_idx_vec.empty()) {
+        continue;
+      }
+      set_parameter_block_variable(problem, pnt3d);
+    }
+    ceres::Solve(options, &problem, &summary);
+    THIS_MESSAGE("Step 5: {}", summary.BriefReport());
+  }
 }
 } // namespace Ortho
 #endif
