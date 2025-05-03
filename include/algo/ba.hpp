@@ -68,11 +68,12 @@ void ba(ImgsData& imgs_data, auto& res) noexcept {
     }
   }
   ceres::Solver::Options options;
-  options.num_threads                  = static_cast<int>(std::thread::hardware_concurrency());
-  options.linear_solver_type           = ceres::SPARSE_SCHUR;
-  options.check_gradients              = false;
-  options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations           = 2000;
+  options.num_threads                       = static_cast<int>(std::thread::hardware_concurrency());
+  options.linear_solver_type                = ceres::SPARSE_SCHUR;
+  options.check_gradients                   = true;
+  options.gradient_check_relative_precision = 1e-4;
+  options.minimizer_progress_to_stdout      = true;
+  options.max_num_iterations                = 2000;
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
   std::cout << summary.BriefReport() << '\n';

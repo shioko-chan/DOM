@@ -3,6 +3,9 @@
 
 #include <array>
 #include <mutex>
+#include <opencv2/core/types.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/highgui.hpp>
 #include <vector>
 
 #include <Eigen/Dense>
@@ -102,10 +105,11 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           }
         }
         ceres::Solver::Options options;
-        options.linear_solver_type           = ceres::DENSE_QR;
-        options.check_gradients              = false;
-        options.minimizer_progress_to_stdout = false;
-        options.max_num_iterations           = 1000;
+        options.linear_solver_type                = ceres::DENSE_QR;
+        options.check_gradients                   = true;
+        options.gradient_check_relative_precision = 1e-4;
+        options.minimizer_progress_to_stdout      = false;
+        options.max_num_iterations                = 1000;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
         if(summary.IsSolutionUsable()) {
