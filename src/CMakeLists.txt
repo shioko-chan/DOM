@@ -36,8 +36,12 @@ target_compile_definitions(orthophoto PRIVATE DISK_WEIGHT="${MODEL_FILE_PREFIX}/
 target_compile_definitions(orthophoto PRIVATE DISK_LIGHTGLUE_WEIGHT="${MODEL_FILE_PREFIX}/disk_lightglue_fused.onnx")
 target_compile_definitions(orthophoto PRIVATE LOGLEVEL_${LOG_LEVEL})
 
-if(ENABLE_MIDDLE_OUTPUT)
-  target_compile_definitions(orthophoto PRIVATE ENABLE_MIDDLE_OUTPUT)
+if(ENABLE_VISUALIZE_OUTPUT)
+  target_compile_definitions(orthophoto PRIVATE ENABLE_VISUALIZE_OUTPUT)
+endif()
+
+if(ENABLE_ASSERTION)
+  target_compile_definitions(orthophoto PRIVATE ENABLE_ASSERTION)
 endif()
 
 target_link_libraries(orthophoto PUBLIC

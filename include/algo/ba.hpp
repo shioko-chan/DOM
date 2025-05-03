@@ -16,24 +16,35 @@
 #include "algo/cost.hpp"
 #include "algo/tri.hpp"
 #include "ds/imgdata.hpp"
+#include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/report_error.hpp"
 
 namespace Ortho {
 
 inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLINT
+  for(auto& [pnt3d, pnt2d_idx_vec] : res) {
+    if(pnt2d_idx_vec.size() < 2) {
+      std::cout << pnt2d_idx_vec.size() << std::endl;
+    }
+  }
   ceres::Problem         problem;
   ceres::Solver::Options options;
   options.num_threads                       = static_cast<int>(std::thread::hardware_concurrency());
   options.minimizer_progress_to_stdout      = true;
   options.max_num_iterations                = 2000;
-  options.linear_solver_type                = ceres::SPARSE_SCHUR;
   options.check_gradients                   = false;
   options.gradient_check_relative_precision = 1e-2;
   options.trust_region_strategy_type        = ceres::LEVENBERG_MARQUARDT;
+  options.linear_solver_type                = ceres::SPARSE_SCHUR;
+  options.use_inner_iterations              = true;
+  // options.linear_solver_type  = ceres::ITERATIVE_SCHUR;
+  // options.preconditioner_type               = ceres::CLUSTER_TRIDIAGONAL;
   ceres::Solver::Summary summary;
 
   for(auto& img_data : imgs_data) {
+    Eigen::Quaterniond q(img_data.Q_w2c_array_raw().data());
+    THIS_ASSERTION_SHOULD_LEQ(std::abs(q.norm() - 1.0), 1e-4, "Non - unit quaternion detected");
     try {
       add_parameter_block(problem, img_data.Q_w2c_array_raw(), new ceres::QuaternionManifold);
     } catch(const std::exception& e) {
@@ -70,7 +81,7 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
   }
   ceres::Solve(options, &problem, &summary);
   THIS_MESSAGE("Step 1: {}", summary.BriefReport());
-
+  THIS_MESSAGE("{}", summary.FullReport());
   //
   // Firstly, optimize the camera extrinsic
   // Make [K, pnt3d] constant

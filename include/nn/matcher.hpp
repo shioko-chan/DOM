@@ -198,7 +198,7 @@ public:
         }
         auto [rhs_w, rhs_h] = rhs_img.rotated_img().get_size();
         auto matches        = infer_and_filter_by_score_precise();
-#ifdef ENABLE_MIDDLE_OUTPUT
+#ifdef ENABLE_VISUALIZE_OUTPUT
         cv::imwrite(
             temporary_save_path
                 / std::format(

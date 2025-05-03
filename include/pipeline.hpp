@@ -101,7 +101,7 @@ public:
         imgs_data.size(),
         [this](int idx) noexcept {
           imgs_data[idx].rotate_rectify();
-#ifdef ENABLE_MIDDLE_OUTPUT
+#ifdef ENABLE_VISUALIZE_OUTPUT
           cv::imwrite(
               temporary_save_path / imgs_data[idx].rotated_img().get_img_name().string(),
               imgs_data[idx].rotated_img().get().get());

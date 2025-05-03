@@ -117,8 +117,8 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           all_res
               .emplace_back(std::array<double, 3>{world_point[0], world_point[1], world_point[2]}, std::move(pntidx_vec));
         } else {
-          std::cout << summary.BriefReport() << '\n';
-          THIS_LOG_WARN("Triangulation solution is unusable.");
+          std::cout << 12324982743 << std::endl;
+          THIS_LOG_WARN("Triangulation solution is unusable. The report is as below: \n{}", summary.FullReport());
         }
       },
       progress);

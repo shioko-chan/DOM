@@ -1,18 +1,17 @@
 #ifndef ORTHO_DEBUG_HPP
 #define ORTHO_DEBUG_HPP
 
-#include <concepts>
-#include <exception>
-#include <format>
-#include <source_location>
-#include <sstream>
-#include <string_view>
+#ifdef ENABLE_ASSERTION
+  #include <concepts>
+  #include <exception>
+  #include <format>
+  #include <source_location>
+  #include <sstream>
+  #include <string_view>
 
-#include "tools/log.hpp"
+  #include "tools/log.hpp"
 
 namespace Ortho {
-
-#ifndef NDEBUG
 template <typename T>
 concept streamable = requires(T&& type, std::ostream& ostream) {
   { ostream << std::forward<T>(type) } -> std::convertible_to<std::ostream&>;
@@ -156,6 +155,7 @@ inline void false_assertion(
     report_assertion_failure(custom_msg, "false", loc);
   }
 }
+} // namespace Ortho
 
   #define THIS_ASSERTION_SHOULD_EQ(lhs, rhs, ...) Ortho::eq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
   #define THIS_ASSERTION_SHOULD_NEQ(lhs, rhs, ...) Ortho::neq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
@@ -165,6 +165,7 @@ inline void false_assertion(
   #define THIS_ASSERTION_SHOULD_FALSE(exp, ...) Ortho::false_assertion(exp __VA_OPT__(, ) __VA_ARGS__)
 
 #else
+
   #define THIS_ASSERTION_SHOULD_EQ(...)
   #define THIS_ASSERTION_SHOULD_NEQ(...)
   #define THIS_ASSERTION_SHOULD_LES(...)
@@ -172,6 +173,5 @@ inline void false_assertion(
   #define THIS_ASSERTION_SHOULD_TRUE(...)
   #define THIS_ASSERTION_SHOULD_FALSE(...)
 #endif
-} // namespace Ortho
 
 #endif

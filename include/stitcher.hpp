@@ -39,9 +39,9 @@ public:
     computeWorldBounds(imgs_data);
     cv::Mat result(
         static_cast<int>(world_width * scale), static_cast<int>(world_height * scale), CV_8UC3, cv::Scalar(0, 0, 0));
-    cv::Mat resultMask(result.size(), CV_8UC1, cv::Scalar(0));
-    // cv::detail::MultiBandBlender blender(true, 3);
-    cv::detail::FeatherBlender blender;
+    cv::Mat                      resultMask(result.size(), CV_8UC1, cv::Scalar(0));
+    cv::detail::MultiBandBlender blender(true, 7);
+    // cv::detail::FeatherBlender blender;
     blender.prepare(cv::Rect(0, 0, result.cols, result.rows));
     for(auto& img_data : imgs_data) {
       cv::Mat srcImg          = img_data.origin_img().get();
@@ -53,16 +53,27 @@ public:
           srcImg, warped, transformMatrix, result.size(), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
       cv::warpPerspective(
           srcMask, warpedMask, transformMatrix, result.size(), cv::INTER_NEAREST, cv::BORDER_CONSTANT, cv::Scalar(0));
-      blender.feed(warped, warpedMask, cv::Point(0, 0));
+      {
+        // srcImg.convertTo(srcImg, CV_16SC3);
+        blender.feed(warped, warpedMask, cv::Point(0, 0));
+      }
+      {
+        cv::Mat tempMask;
+        cv::bitwise_and(warpedMask, ~resultMask, tempMask);
+        warped.copyTo(result, tempMask);
+        cv::bitwise_or(resultMask, warpedMask, resultMask);
+      }
       // {
-      //   cv::Mat tempMask;
-      //   cv::bitwise_and(warpedMask, ~resultMask, tempMask);
-      //   warped.copyTo(result, tempMask);
-      //   cv::bitwise_or(resultMask, warpedMask, resultMask);
+      //   cv::Mat mixed;
+      //   cv::addWeighted(result, 0.5, warped, 0.5, 0, mixed);
+      //   cv::Mat mask_mixed = resultMask & warpedMask;
+      //   mixed.copyTo(result, mask_mixed);
+      //   cv::Mat mask_warped_unique = ~resultMask & warpedMask;
+      //   warped.copyTo(result, mask_warped_unique);
+      //   resultMask = resultMask | warpedMask;
       // }
       progress.update();
       // {
-      //   std::cout << img_data.t_c2w() << std::endl;
       //   cv::Mat show;
       //   cv::resize(result, show, cv::Size{}, 0.2, 0.2);
       //   cv::imshow("res", show);
