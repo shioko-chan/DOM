@@ -130,11 +130,10 @@ public:
       latitude{latitude_}, longitude{longitude_}, altitude{altitude_}, focal_35mm{focal_35mm_},
       temp_save_path{temp_save_path}, img_origin{std::move(img_path)} {
     check_or_create_path(temp_save_path);
-    Angle yaw{yaw_};
-    Angle pitch{(pitch_ + 90.0)}; // DJI to nadir
-    Angle roll{roll_};
-    // cv::Mat R_w2c = z_rotate_matrix(yaw.radians()) * y_rotate_matrix(pitch.radians()) * x_rotate_matrix(roll.radians());
-    cv::Mat R_w2c = x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians()) * z_rotate_matrix(yaw.radians());
+    Angle   yaw{yaw_};
+    Angle   pitch{(pitch_ + 90.0)}; // DJI to nadir
+    Angle   roll{roll_};
+    cv::Mat R_w2c = z_rotate_matrix(yaw.radians()) * y_rotate_matrix(pitch.radians()) * x_rotate_matrix(roll.radians());
     Q_w2c_array   = rotate2qarray(R_w2c.t());
   }
 
