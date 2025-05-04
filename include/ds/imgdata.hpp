@@ -6,8 +6,11 @@
 #include <cmath>
 #include <concepts>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <functional>
+#include <iomanip>
+#include <ios>
 #include <iostream>
 #include <mutex>
 #include <numbers>
@@ -57,9 +60,9 @@ public:
 
 private:
 
-  static auto to_degrees(double radians) noexcept -> double { return radians * 180. / std::numbers::pi; }
+  static auto to_degrees(double radians) noexcept -> double { return radians * 180.0 / std::numbers::pi; }
 
-  static auto to_radians(double degrees) noexcept -> double { return degrees * std::numbers::pi / 180.; }
+  static auto to_radians(double degrees) noexcept -> double { return degrees * std::numbers::pi / 180.0; }
 
   double value = 0.;
 };
@@ -133,8 +136,9 @@ public:
     Angle   yaw{yaw_};
     Angle   pitch{(pitch_ + 90.0)}; // DJI to nadir
     Angle   roll{roll_};
-    cv::Mat R_w2c = z_rotate_matrix(yaw.radians()) * y_rotate_matrix(pitch.radians()) * x_rotate_matrix(roll.radians());
-    Q_w2c_array   = rotate2qarray(R_w2c.t());
+    cv::Mat R_v_w2c =
+        x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians()) * z_rotate_matrix(yaw.radians());
+    Q_w2c_array = rotate2qarray(R_v_w2c.t());
   }
 
   auto origin_img() const noexcept -> const OriginImage& { return img_origin; }

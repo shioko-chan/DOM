@@ -73,9 +73,19 @@ public:
     point[1] += T(t[1]);
     point[2] += T(t[2]);
     // T point_z         = ceres::fmax(point[2], T(1e-6));
-    T point_z         = point[2];
-    residuals_span[0] = T(c[0]) * point[1] / point_z + T(c[2]) - T(point_2d.x);
-    residuals_span[1] = -T(c[1]) * point[0] / point_z + T(c[3]) - T(point_2d.y);
+    T point_x = point[0];
+    T point_y = point[1];
+    T point_z = point[2];
+    T f_x     = T(c[0]);
+    T f_y     = T(c[1]);
+    T c_x     = T(c[2]);
+    T c_y     = T(c[3]);
+    if(point_z < T(0.0)) {
+      std::cout << "to be or not to be that is a question.\n";
+      std::cout << point_x << " " << point_y << " " << point_z << std::endl;
+    }
+    residuals_span[0] = (point_y / point_z) * f_x + c_x - T(point_2d.x);
+    residuals_span[1] = (-point_x / point_z) * f_y + c_y - T(point_2d.y);
     return true;
   }
 
@@ -124,9 +134,15 @@ public:
     point[1] += transpose_span[1];
     point[2] += transpose_span[2];
     // T point_z         = ceres::fmax(point[2], T(1e-6));
+    T point_x         = point[0];
+    T point_y         = point[1];
     T point_z         = point[2];
-    residuals_span[0] = camera_span[0] * point[1] / point_z + camera_span[2] - T(point_2d.x);
-    residuals_span[1] = -camera_span[1] * point[0] / point_z + camera_span[3] - T(point_2d.y);
+    T f_x             = camera_span[0];
+    T f_y             = camera_span[1];
+    T c_x             = camera_span[2];
+    T c_y             = camera_span[3];
+    residuals_span[0] = (point_y / point_z) * f_x + c_x - T(point_2d.x);
+    residuals_span[1] = (-point_x / point_z) * f_y + c_y - T(point_2d.y);
     return true;
   }
 

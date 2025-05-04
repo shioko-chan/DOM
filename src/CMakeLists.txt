@@ -4,6 +4,7 @@ find_package(exiv2 REQUIRED)
 find_package(Ceres REQUIRED)
 list(APPEND CMAKE_MODULE_PATH "/usr/share/cmake/geographiclib")
 find_package(GeographicLib REQUIRED)
+find_package(PCL REQUIRED)
 
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
@@ -21,10 +22,10 @@ target_include_directories(orthophoto PUBLIC
   ${onnxruntime_INCLUDE_DIR}
   ${exiv2_INCLUDE_DIR}
   ${GeographicLib_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
 )
 
 target_link_directories(orthophoto PUBLIC
-  ${OpenCV_LIB_DIR}
   ${onnxruntime_LIB_DIR}
   ${exiv2_LIB_DIR}
 )
@@ -50,6 +51,7 @@ target_link_libraries(orthophoto PUBLIC
   onnxruntime
   ceres
   ${GeographicLib_LIBRARIES}
+  ${PCL_LIBRARIES}
 )
 
 if(ENABLE_PARALLEL)
