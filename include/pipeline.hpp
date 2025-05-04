@@ -22,6 +22,7 @@
 #include "stitcher.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
+#include "tools/utility.hpp"
 
 namespace Ortho {
 
@@ -53,19 +54,16 @@ private:
                                           return data.get_coord();
                                         }) | std::views::common);
     std::vector<std::vector<MatchPair>> matches(imgs_data.size());
-    run(
-        imgs_data.size(),
-        [this, &knn, &matches](int idx) noexcept {
-          auto neighbors = knn.find_nearest_neighbour(idx);
-          for(auto&& neighbour : neighbors) {
-            if(idx < neighbour) {
-              matches[idx].emplace_back(idx, neighbour);
-            } else {
-              matches[idx].emplace_back(neighbour, idx);
-            }
-          }
-        },
-        progress);
+    run(imgs_data.size(), [this, &knn, &matches](int idx) noexcept {
+      auto neighbors = knn.find_nearest_neighbour(idx);
+      for(auto&& neighbour : neighbors) {
+        if(idx < neighbour) {
+          matches[idx].emplace_back(idx, neighbour);
+        } else {
+          matches[idx].emplace_back(neighbour, idx);
+        }
+      }
+    });
     auto                view = matches | std::views::join | std::views::common;
     std::set<MatchPair> match_set(view.begin(), view.end());
     return {match_set.begin(), match_set.end()};
@@ -158,11 +156,12 @@ public:
     THIS_MESSAGE("{}", res.size());
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
-      // smooth_surface(&res, temporary_save_path / "smoothed1.pcd");
+    smooth_surface(&res, temporary_save_path / "smoothed1.pcd");
 #else
     smooth_surface(&res);
 #endif
     ba(imgs_data, &res);
+    filter_outliers(&res, temporary_save_path / "filt2.pcd");
     r = img.R_w2c();
     t = img.t_w2c();
     k = img.K();
