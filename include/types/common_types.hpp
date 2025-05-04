@@ -13,6 +13,12 @@
 
 namespace Ortho {
 
+struct alignas(64) TriRes {
+  std::array<double, 3> pnt3d;
+  PointIdxs             pnt2d_idx_vec;
+};
+using TriReses = TriReses;
+
 using RotateQArray   = std::array<double, 4>;
 using CameraArray    = std::array<double, 4>;
 using DistortArray   = std::array<double, 6>;

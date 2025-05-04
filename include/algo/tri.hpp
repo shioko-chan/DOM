@@ -4,9 +4,6 @@
 #include <array>
 #include <fstream>
 #include <mutex>
-#include <opencv2/core/types.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/highgui.hpp>
 #include <ostream>
 #include <vector>
 
@@ -21,6 +18,7 @@
 #include "algo/tracks.hpp"
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
+#include "types/common_types.hpp"
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
@@ -48,13 +46,9 @@ inline void export_pcd(const fs::path& path, const Point3s<double>& points) {
   file.close();
 }
 #endif
-struct alignas(64) TriRes {
-  std::array<double, 3> pnt3d;
-  PointIdxs             pnt2d_idx_vec;
-};
 
 inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data, Progress& progress) noexcept
-    -> std::vector<TriRes> {
+    -> TriReses {
   THIS_MESSAGE("Build tracks");
   progress.reset(static_cast<int>(match_img_pairs.size()));
   TracksMaintainer tracks_maintainer;
@@ -71,7 +65,7 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
     progress.update();
   }
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
-  std::vector<TriRes>    all_res;
+  TriReses    all_res;
   std::mutex             mtx;
 #ifdef ENABLE_VISUALIZE_OUTPUT
   Point3s<double> points1;

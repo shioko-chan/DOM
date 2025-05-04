@@ -22,8 +22,8 @@
 
 namespace Ortho {
 
-inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLINT
-  for(auto& [pnt3d, pnt2d_idx_vec] : res) {
+inline void ba(ImgsData& imgs_data, TriReses * res) noexcept { // NOLINT
+  for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
     if(pnt2d_idx_vec.size() < 2) {
       std::cout << pnt2d_idx_vec.size() << std::endl;
     }
@@ -56,7 +56,7 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
     add_parameter_block(problem, img_data.camera_array_raw());
   }
 
-  for(auto& [pnt3d, pnt2d_idx_vec] : res) {
+  for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
     if(pnt2d_idx_vec.empty()) {
       continue;
     }
@@ -92,7 +92,7 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
     for(const auto& img_data : imgs_data) {
       set_parameter_block_constant(problem, img_data.camera_array_raw());
     }
-    for(const auto& [pnt3d, pnt2d_idx_vec] : res) {
+    for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
       if(pnt2d_idx_vec.empty()) {
         continue;
       }
@@ -110,7 +110,7 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
       set_parameter_block_constant(problem, img_data.Q_w2c_array_raw());
       set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
     }
-    for(auto& [pnt3d, pnt2d_idx_vec] : res) {
+    for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
       if(pnt2d_idx_vec.empty()) {
         continue;
       }
@@ -141,7 +141,7 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
       set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
       set_parameter_block_variable(problem, img_data.camera_array_raw());
     }
-    for(const auto& [pnt3d, pnt2d_idx_vec] : res) {
+    for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
       if(pnt2d_idx_vec.empty()) {
         continue;
       }
@@ -157,7 +157,7 @@ inline void ba(ImgsData& imgs_data, std::vector<TriRes>& res) noexcept { // NOLI
       set_parameter_block_variable(problem, img_data.Q_w2c_array_raw());
       set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
     }
-    for(auto& [pnt3d, pnt2d_idx_vec] : res) {
+    for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
       if(pnt2d_idx_vec.empty()) {
         continue;
       }

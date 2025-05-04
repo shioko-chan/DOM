@@ -21,6 +21,7 @@
 #include "stitcher.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
+#include "algo/filter.hpp"
 
 namespace Ortho {
 
@@ -144,7 +145,9 @@ public:
     std::cout << "R: " << r << '\n';
     std::cout << "t: " << t << '\n';
     std::cout << "K: " << k << '\n';
-    ba(imgs_data, res);
+    filter_outliers(&res);
+    smooth_surface(&res);
+    ba(imgs_data, &res);
     r = img.R_w2c();
     t = img.t_w2c();
     k = img.K();
