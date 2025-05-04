@@ -13,12 +13,6 @@
 
 namespace Ortho {
 
-struct alignas(64) TriRes {
-  std::array<double, 3> pnt3d;
-  PointIdxs             pnt2d_idx_vec;
-};
-using TriReses = TriReses;
-
 using RotateQArray   = std::array<double, 4>;
 using CameraArray    = std::array<double, 4>;
 using DistortArray   = std::array<double, 6>;
@@ -65,6 +59,13 @@ using PointIdxUSet = std::unordered_set<PointIdx, PointIdxHasher>;
 using PointIdxs = std::vector<PointIdx>;
 
 using Lock = std::unique_lock<std::mutex>;
+
+struct alignas(64) TriRes {
+  std::array<double, 3> pnt3d;
+  PointIdxs             pnt2d_idx_vec;
+};
+
+using TriResVec = std::vector<TriRes>;
 
 } // namespace Ortho
 #endif

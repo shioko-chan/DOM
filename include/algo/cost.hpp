@@ -81,8 +81,6 @@ public:
     T c_x     = T(c[2]);
     T c_y     = T(c[3]);
     if(point_z < T(0.0)) {
-      std::cout << "to be or not to be that is a question.\n";
-      std::cout << point_x << " " << point_y << " " << point_z << std::endl;
     }
     residuals_span[0] = (point_y / point_z) * f_x + c_x - T(point_2d.x);
     residuals_span[1] = (-point_x / point_z) * f_y + c_y - T(point_2d.y);

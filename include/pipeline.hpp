@@ -12,6 +12,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "algo/ba.hpp"
+#include "algo/filter.hpp"
 #include "algo/knn.hpp"
 #include "algo/tri.hpp"
 #include "config.hpp"
@@ -21,7 +22,6 @@
 #include "stitcher.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
-#include "algo/filter.hpp"
 
 namespace Ortho {
 
@@ -141,12 +141,27 @@ public:
     r               = img.R_w2c();
     t               = img.t_w2c();
     k               = img.K();
-    auto res        = triangulation(match_pairs, imgs_data, progress);
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    auto res = triangulation(match_pairs, imgs_data, progress, temporary_save_path);
+#else
+    auto res = triangulation(match_pairs, imgs_data, progress);
+#endif
     std::cout << "R: " << r << '\n';
     std::cout << "t: " << t << '\n';
     std::cout << "K: " << k << '\n';
+    THIS_MESSAGE("{}", res.size());
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    filter_outliers(&res, temporary_save_path / "filtered1.pcd");
+#else
     filter_outliers(&res);
+#endif
+    THIS_MESSAGE("{}", res.size());
+
+#ifdef ENABLE_VISUALIZE_OUTPUT
+      // smooth_surface(&res, temporary_save_path / "smoothed1.pcd");
+#else
     smooth_surface(&res);
+#endif
     ba(imgs_data, &res);
     r = img.R_w2c();
     t = img.t_w2c();

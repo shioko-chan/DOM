@@ -6,21 +6,25 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <numeric>
 #include <ranges>
 #include <type_traits>
+#include <utility>
 
-#include <opencv2/core/hal/interface.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 
 #include <Eigen/Dense>
+
 #include <opencv2/core.hpp>
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/opencv.hpp>
-#include <utility>
+
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
 
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
@@ -82,6 +86,31 @@ template <typename T>
 concept HasXYZ = HasXY<T> && requires(T point) {
   { point.z } -> arithmetic;
 };
+
+#ifdef ENABLE_VISUALIZE_OUTPUT
+inline void export_pcd(const fs::path& path, const Point3s<double>& points) {
+  std::ofstream file(path);
+  file << "# .PCD v7 - Point Cloud Data\n";
+  file << "VERSION .7\n";
+  file << "FIELDS x y z\n";
+  file << "SIZE 4 4 4\n";
+  file << "TYPE F F F\n";
+  file << "COUNT 1 1 1\n";
+  file << "WIDTH " << points.size() << "\n";
+  file << "HEIGHT 1\n";
+  file << "VIEWPOINT 0 0 0 1 0 0 0\n";
+  file << "POINTS " << points.size() << "\n";
+  file << "DATA ascii\n";
+  for(const auto& point : points) {
+    file << std::fixed << std::setprecision(6) << point.y << " " << point.x << " " << -point.z << "\n";
+  }
+  file.close();
+}
+
+inline void export_pcd(const fs::path& path, const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
+  pcl::io::savePCDFileASCII(path.string(), *cloud);
+}
+#endif
 
 void print_run_time(const auto& start) noexcept {
   using namespace std::chrono_literals;

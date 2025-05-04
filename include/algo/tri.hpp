@@ -2,9 +2,8 @@
 #define ORTHO_TRI_HPP
 
 #include <array>
-#include <fstream>
+#include <cmath>
 #include <mutex>
-#include <ostream>
 #include <vector>
 
 #include <Eigen/Dense>
@@ -18,37 +17,23 @@
 #include "algo/tracks.hpp"
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
-#include "types/common_types.hpp"
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
+#include "types/common_types.hpp"
 
 namespace Ortho {
 
+inline auto triangulation(
+    const MatchPairs& match_img_pairs,
+    ImgsData&         imgs_data,
+    Progress&         progress
 #ifdef ENABLE_VISUALIZE_OUTPUT
-inline void export_pcd(const fs::path& path, const Point3s<double>& points) {
-  std::ofstream file(path);
-  file << "# .PCD v7 - Point Cloud Data\n";
-  file << "VERSION .7\n";
-  file << "FIELDS x y z\n";
-  file << "SIZE 4 4 4\n";
-  file << "TYPE F F F\n";
-  file << "COUNT 1 1 1\n";
-  file << "WIDTH " << points.size() << "\n";
-  file << "HEIGHT 1\n";
-  file << "VIEWPOINT 0 0 0 1 0 0 0\n";
-  file << "POINTS " << points.size() << "\n";
-  file << "DATA ascii\n";
-  for(const auto& point : points) {
-    file << std::fixed << std::setprecision(6) << point.y << " " << point.x << " " << -point.z << "\n";
-  }
-  file.close();
-}
+    ,
+    const fs::path& pcd_output_dir
 #endif
-
-inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data, Progress& progress) noexcept
-    -> TriReses {
+    ) noexcept -> TriResVec {
   THIS_MESSAGE("Build tracks");
   progress.reset(static_cast<int>(match_img_pairs.size()));
   TracksMaintainer tracks_maintainer;
@@ -65,7 +50,7 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
     progress.update();
   }
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
-  TriReses    all_res;
+  TriResVec              all_res;
   std::mutex             mtx;
 #ifdef ENABLE_VISUALIZE_OUTPUT
   Point3s<double> points1;
@@ -110,6 +95,9 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
         }
         Eigen::VectorXd x_vector = A_matrix.colPivHouseholderQr().solve(b_vector);
         THIS_ASSERTION_SHOULD_TRUE(x_vector.array().isFinite().all());
+        if(!x_vector.array().isFinite().all()) {
+          return;
+        }
         std::array<double, 3> world_point{x_vector(0), x_vector(1), x_vector(2)};
 #ifdef ENABLE_VISUALIZE_OUTPUT
         {
@@ -144,7 +132,8 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
         options.max_num_iterations           = 1000;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
-        if(summary.IsSolutionUsable()) {
+        if(summary.IsSolutionUsable() && std::isfinite(world_point[0]) && std::isfinite(world_point[1])
+           && std::isfinite(world_point[2])) {
           std::lock_guard lock{mtx};
           all_res
               .emplace_back(std::array<double, 3>{world_point[0], world_point[1], world_point[2]}, std::move(pntidx_vec));
@@ -155,20 +144,14 @@ inline auto triangulation(const MatchPairs& match_img_pairs, ImgsData& imgs_data
           }
 #endif
         } else {
-          std::cout << 12324982743 << '\n';
           THIS_LOG_WARN("Triangulation solution is unusable. The report is as below: \n{}", summary.FullReport());
         }
       },
       progress);
-
 #ifdef ENABLE_VISUALIZE_OUTPUT
-  export_pcd("tri1.pcd", points1);
+  export_pcd(pcd_output_dir / "tri1.pcd", points1);
+  export_pcd(pcd_output_dir / "tri2.pcd", points2);
 #endif
-
-#ifdef ENABLE_VISUALIZE_OUTPUT
-  export_pcd("tri2.pcd", points2);
-#endif
-
   return all_res;
 }
 } // namespace Ortho

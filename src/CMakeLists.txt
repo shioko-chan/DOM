@@ -5,6 +5,8 @@ find_package(Ceres REQUIRED)
 list(APPEND CMAKE_MODULE_PATH "/usr/share/cmake/geographiclib")
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
+find_package(MPI REQUIRED)
+
 
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
@@ -23,6 +25,7 @@ target_include_directories(orthophoto PUBLIC
   ${exiv2_INCLUDE_DIR}
   ${GeographicLib_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  ${MPI_INCLUDE_PATH}
 )
 
 target_link_directories(orthophoto PUBLIC
