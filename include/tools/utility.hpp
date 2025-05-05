@@ -5,12 +5,14 @@
 #include <cassert>
 #include <chrono>
 #include <cmath>
+#include <concepts>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <numeric>
 #include <ranges>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 
 #include <tbb/blocked_range.h>
@@ -88,7 +90,7 @@ concept HasXYZ = HasXY<T> && requires(T point) {
 };
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
-inline void export_pcd(const fs::path& path, const Point3s<double>& points) {
+inline void export_pcd(const fs::path& path, const Point3s<double>& points) noexcept {
   std::ofstream file(path);
   file << "# .PCD v7 - Point Cloud Data\n";
   file << "VERSION .7\n";
@@ -107,10 +109,37 @@ inline void export_pcd(const fs::path& path, const Point3s<double>& points) {
   file.close();
 }
 
-inline void export_pcd(const fs::path& path, const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
+inline void export_pcd(const fs::path& path, const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) noexcept {
   pcl::io::savePCDFileASCII(path.string(), *cloud);
 }
 #endif
+
+template <typename T, typename U>
+  requires std::integral<U>
+void filter_by_idx(std::vector<T>* vec, const std::unordered_set<U>& idx_to_remove) noexcept {
+  THIS_ASSERTION_SHOULD_LEQ(idx_to_remove.size(), vec->size());
+  std::vector<T> vec_new;
+  vec_new.reserve(vec->size() - idx_to_remove.size());
+  for(int idx = 0; idx < vec->size(); ++idx) {
+    if(!idx_to_remove.contains(idx)) {
+      vec_new.push_back(std::move((*vec)[idx]));
+    }
+  }
+  vec->swap(vec_new);
+}
+
+template <typename T, typename U>
+  requires std::integral<U>
+void keep_by_idx(std::vector<T>* vec, const std::unordered_set<U>& idx_to_keep) noexcept {
+  THIS_ASSERTION_SHOULD_LEQ(idx_to_keep.size(), vec->size());
+  std::vector<T> vec_new;
+  vec_new.reserve(idx_to_keep.size());
+  for(const auto& idx : idx_to_keep) {
+    THIS_ASSERTION_SHOULD_LES(idx, static_cast<U>(vec->size()));
+    vec_new.push_back(std::move((*vec)[idx]));
+  }
+  vec->swap(vec_new);
+}
 
 void print_run_time(const auto& start) noexcept {
   using namespace std::chrono_literals;
@@ -224,10 +253,11 @@ inline auto rotate2qarray(cv::InputArray R_mat_input) noexcept -> RotateQArray {
 }
 
 inline auto qarray2rotate(const RotateQArray& q_array) noexcept -> cv::Mat {
-  Eigen::Quaterniond quaternion{q_array[0], q_array[1], q_array[2], q_array[3]};
+  Eigen::Quaterniond quaternion(q_array[0], q_array[1], q_array[2], q_array[3]);
   quaternion.normalize();
   Eigen::Matrix3d R_Eigen = quaternion.toRotationMatrix();
-  cv::Mat         R_mat;
+  THIS_ASSERTION_SHOULD_TRUE((R_Eigen * R_Eigen.inverse()).isApprox(Eigen::Matrix3d::Identity()));
+  cv::Mat R_mat;
   cv::eigen2cv(R_Eigen, R_mat);
   return R_mat;
 }

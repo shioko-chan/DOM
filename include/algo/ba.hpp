@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <exception>
 #include <thread>
 
@@ -27,20 +28,31 @@ namespace Ortho {
 
 inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
   std::erase_if(*res, [](const TriRes& tri_res) noexcept { return tri_res.pnt2d_idx_vec.size() < 2; });
+
+  std::unordered_set<int> observation_ids;
+  for(const auto& tri_res : *res) {
+    for(const auto& [idx, _] : tri_res.pnt2d_idx_vec) {
+      observation_ids.insert(idx);
+    }
+  }
+
   ceres::Problem         problem;
   ceres::Solver::Options options;
-  options.num_threads                       = static_cast<int>(std::thread::hardware_concurrency());
-  options.minimizer_progress_to_stdout      = true;
-  options.max_num_iterations                = 2000;
-  options.check_gradients                   = false;
-  options.gradient_check_relative_precision = 1e-2;
-  options.trust_region_strategy_type        = ceres::LEVENBERG_MARQUARDT;
-  options.linear_solver_type                = ceres::SPARSE_SCHUR;
-  options.use_inner_iterations              = true;
   ceres::Solver::Summary summary;
-  for(auto& img_data : imgs_data) {
-    Eigen::Quaterniond q(img_data.Q_w2c_array_raw().data());
-    THIS_ASSERTION_SHOULD_LEQ(std::abs(q.norm() - 1.0), 1e-4, "Non - unit quaternion detected");
+
+  options.num_threads        = static_cast<int>(std::thread::hardware_concurrency());
+  options.max_num_iterations = 2000;
+
+  options.minimizer_progress_to_stdout      = true;
+  options.check_gradients                   = true;
+  options.gradient_check_relative_precision = 1e-2;
+
+  options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+  options.linear_solver_type         = ceres::SPARSE_SCHUR;
+  options.use_inner_iterations       = true;
+
+  for(int observation_id : observation_ids) {
+    auto& img_data = imgs_data[observation_id];
     try {
       add_parameter_block(problem, img_data.Q_w2c_array_raw(), new ceres::QuaternionManifold);
     } catch(const std::exception& e) {
@@ -82,7 +94,7 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
       set_parameter_block_constant(problem, pnt3d);
     }
     ceres::Solve(options, &problem, &summary);
-    THIS_MESSAGE("Step 1: {}", summary.BriefReport());
+    THIS_MESSAGE("Step 1: {} {}", summary.FullReport(), summary.BriefReport());
   }
   // // Secondly, optimize the 3d points
   // // Make [R, t, K] constant

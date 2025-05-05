@@ -5,9 +5,11 @@
 #include <span>
 
 #include <ceres/ceres.h>
+#include <ceres/jet.h>
 #include <ceres/problem.h>
 #include <ceres/rotation.h>
 
+#include "tools/debug.hpp"
 #include "tools/report_error.hpp"
 #include "types/common_types.hpp"
 #include "types/cv_alias.hpp"
@@ -68,22 +70,19 @@ public:
     std::array       quaternion{T(q[0]), T(q[1]), T(q[2]), T(q[3])};
     std::array<T, 3> point{};
     std::span<T>     residuals_span{residuals, 2};
-    ceres::QuaternionRotatePoint(quaternion.data(), point_3d, point.data());
+    ceres::UnitQuaternionRotatePoint(quaternion.data(), point_3d, point.data());
     point[0] += T(t[0]);
     point[1] += T(t[1]);
     point[2] += T(t[2]);
-    // T point_z         = ceres::fmax(point[2], T(1e-6));
-    T point_x = point[0];
-    T point_y = point[1];
-    T point_z = point[2];
-    T f_x     = T(c[0]);
-    T f_y     = T(c[1]);
-    T c_x     = T(c[2]);
-    T c_y     = T(c[3]);
-    if(point_z < T(0.0)) {
-    }
-    residuals_span[0] = (point_y / point_z) * f_x + c_x - T(point_2d.x);
-    residuals_span[1] = (-point_x / point_z) * f_y + c_y - T(point_2d.y);
+    T point_x         = point[0];
+    T point_y         = point[1];
+    T point_z         = point[2];
+    T f_x             = T(c[0]);
+    T f_y             = T(c[1]);
+    T c_x             = T(c[2]);
+    T c_y             = T(c[3]);
+    residuals_span[0] = T(point_2d.x) - ((point_y / point_z) * f_x + c_x);
+    residuals_span[1] = T(point_2d.y) - ((-point_x / point_z) * f_y + c_y);
     return true;
   }
 
@@ -127,20 +126,26 @@ public:
     std::span<const T> transpose_span{transpose, 3};
     std::span<T>       residuals_span{residuals, 2};
     std::span<const T> camera_span{camera, 4};
-    ceres::QuaternionRotatePoint(quaternion, point_3d, point.data());
+    const T            norm = ceres::sqrt(
+        quaternion[0] * quaternion[0] + quaternion[1] * quaternion[1] + quaternion[2] * quaternion[2]
+        + quaternion[3] * quaternion[3]);
+    THIS_ASSERTION_SHOULD_LEQ(ceres::abs(norm - T(1.0)), T(1.0));
+    ceres::UnitQuaternionRotatePoint(quaternion, point_3d, point.data());
     point[0] += transpose_span[0];
     point[1] += transpose_span[1];
     point[2] += transpose_span[2];
-    // T point_z         = ceres::fmax(point[2], T(1e-6));
-    T point_x         = point[0];
-    T point_y         = point[1];
-    T point_z         = point[2];
+    T point_x = point[0];
+    T point_y = point[1];
+    T point_z = point[2];
+    // if(point_z < T(5.0)) {
+    //   return false;
+    // }
     T f_x             = camera_span[0];
     T f_y             = camera_span[1];
     T c_x             = camera_span[2];
     T c_y             = camera_span[3];
-    residuals_span[0] = (point_y / point_z) * f_x + c_x - T(point_2d.x);
-    residuals_span[1] = (-point_x / point_z) * f_y + c_y - T(point_2d.y);
+    residuals_span[0] = T(point_2d.x) - ((point_y / point_z) * f_x + c_x);
+    residuals_span[1] = T(point_2d.y) - ((-point_x / point_z) * f_y + c_y);
     return true;
   }
 
@@ -169,7 +174,7 @@ void add_parameter_block(ceres::Problem& problem, auto& param, ceres::Manifold* 
   } else {
     problem.AddParameterBlock(param.data(), static_cast<int>(param.size()));
   }
-};
+}
 
 void set_parameter_block_constant(ceres::Problem& problem, const auto& param) {
   problem.SetParameterBlockConstant(param.data());

@@ -55,7 +55,7 @@ inline void filter_outliers(
     const fs::path& pcd_output_path,
 #endif
     int    mean_k      = 100,
-    double std_dev_mul = 0.25) {
+    double std_dev_mul = 1.0) {
   if(tri_res_vec->empty()) {
     return;
   }
@@ -73,14 +73,7 @@ inline void filter_outliers(
   const auto              indices_ptr = sor.getRemovedIndices();
   std::unordered_set<int> indices_to_remove(indices_ptr->begin(), indices_ptr->end());
 
-  TriResVec vec;
-  vec.reserve(tri_res_vec->size() - indices_to_remove.size());
-  for(int idx = 0; idx < tri_res_vec->size(); ++idx) {
-    if(!indices_to_remove.contains(idx)) {
-      vec.push_back(std::move((*tri_res_vec)[idx]));
-    }
-  }
-  tri_res_vec->swap(vec);
+  filter_by_idx(tri_res_vec, indices_to_remove);
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
   THIS_MESSAGE("Original cloud size: {}", cloud->size());
@@ -136,12 +129,7 @@ inline void smooth_surface(
     }
   }
 
-  TriResVec vec;
-  vec.reserve(keep_indices.size());
-  for(size_t idx : keep_indices) {
-    vec.push_back(std::move((*tri_res_vec)[idx]));
-  }
-  tri_res_vec->swap(vec);
+  keep_by_idx(tri_res_vec, keep_indices);
 #ifdef ENABLE_VISUALIZE_OUTPUT
   export_pcd(pcd_output_path, smoothed);
 #endif

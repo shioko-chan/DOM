@@ -149,19 +149,18 @@ public:
     std::cout << "K: " << k << '\n';
     THIS_MESSAGE("{}", res.size());
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    filter_outliers(&res, temporary_save_path / "filtered1.pcd");
+    filter_outliers(&res, temporary_save_path / "f1.pcd");
 #else
     filter_outliers(&res);
 #endif
     THIS_MESSAGE("{}", res.size());
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    smooth_surface(&res, temporary_save_path / "smoothed1.pcd");
+    smooth_surface(&res, temporary_save_path / "s1.pcd");
 #else
     smooth_surface(&res);
 #endif
     ba(imgs_data, &res);
-    filter_outliers(&res, temporary_save_path / "filt2.pcd");
     r = img.R_w2c();
     t = img.t_w2c();
     k = img.K();
