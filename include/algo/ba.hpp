@@ -48,6 +48,7 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
     add_parameter_block(problem, img_data.A_w2c_array_raw());
     add_parameter_block(problem, img_data.t_w2c_array_raw());
     add_parameter_block(problem, img_data.camera_array_raw());
+    add_parameter_block(problem, img_data.distort_array_raw());
   }
 
   for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
@@ -67,15 +68,17 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
           img_data.A_w2c_array_raw().data(),
           img_data.t_w2c_array_raw().data(),
           img_data.camera_array_raw().data(),
+          img_data.distort_array_raw().data(),
           pnt3d.data());
     }
   }
   // Firstly, optimize the camera extrinsic
-  // Make [K, pnt3d] constant
+  // Make [K, d, pnt3d] constant
   //      [R, t] variable
   {
     for(const auto& img_data : imgs_data_filtered) {
       set_parameter_block_constant(problem, img_data.camera_array_raw());
+      set_parameter_block_constant(problem, img_data.distort_array_raw());
     }
     for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
       set_parameter_block_constant(problem, pnt3d);
@@ -84,7 +87,7 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
     THIS_MESSAGE("Step 1: {} {}", summary.FullReport(), summary.BriefReport());
   }
   // Secondly, optimize the 3d points
-  // Make [R, t, K] constant
+  // Make [R, t, K, d] constant
   //      [pnt3d] variable
   {
     for(const auto& img_data : imgs_data_filtered) {
@@ -98,7 +101,7 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
     THIS_MESSAGE("Step 2: {}", summary.BriefReport());
   }
   // Thirdly, optimize the 3d points and extrinsic
-  // Make [K] constant
+  // Make [K, d] constant
   //      [pnt3d, R, t] variable
   {
     for(auto& img_data : imgs_data_filtered) {
@@ -110,12 +113,13 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
   }
   // Fourthly, optimize the intrinsic
   // Make [R, t, pnt3d] constant
-  //      [K] variable
+  //      [K, d] variable
   {
     for(auto& img_data : imgs_data_filtered) {
       set_parameter_block_constant(problem, img_data.A_w2c_array_raw());
       set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
       set_parameter_block_variable(problem, img_data.camera_array_raw());
+      set_parameter_block_variable(problem, img_data.distort_array_raw());
     }
     for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
       set_parameter_block_constant(problem, pnt3d);

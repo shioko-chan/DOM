@@ -1,8 +1,10 @@
 #ifndef ORTHO_REPROJECTION_ERROR_HPP
 #define ORTHO_REPROJECTION_ERROR_HPP
 
-#include <array>
 #include <span>
+
+#include <Eigen/Core>
+#include <Eigen/Dense>
 
 #include <ceres/ceres.h>
 #include <ceres/jet.h>
@@ -10,8 +12,6 @@
 #include <ceres/problem.h>
 #include <ceres/rotation.h>
 #include <ceres/types.h>
-#include <Eigen/Core>
-#include <Eigen/Dense>
 
 #include "tools/report_error.hpp"
 #include "types/common_types.hpp"
@@ -31,24 +31,26 @@ public:
 
   template <typename T>
   auto operator()(const T* const point_3d, T* residuals) const noexcept -> bool {
-    Eigen::Matrix<T, 3, 1> axisangle(T(q[0]), T(q[1]), T(q[2]));
+    Eigen::Matrix<T, 3, 1> axisangle{T(q[0]), T(q[1]), T(q[2])};
     Eigen::Matrix<T, 3, 1> point;
-    
+    std::span<T>           resid{residuals, 2};
     ceres::AngleAxisRotatePoint(axisangle.data(), point_3d, point.data());
     point(0) += t[0];
     point(1) += t[1];
     point(2) += t[2];
-    const T point_x   = point(1);
-    const T point_y   = -point(0);
-    const T point_z   = point(2);
+
+    const T point_x = point(1);
+    const T point_y = -point(0);
+    const T point_z = point(2);
+
     const T f_x       = T(c[0]);
     const T f_y       = T(c[1]);
     const T c_x       = T(c[2]);
     const T c_y       = T(c[3]);
     const T predict_x = (point_x * f_x / point_z) + c_x;
     const T predict_y = (point_y * f_y / point_z) + c_y;
-    residuals[0] = predict_x - observe_x;
-    residuals[1] = predict_y - observe_y;
+    resid[0]          = predict_x - observe_x;
+    resid[1]          = predict_y - observe_y;
     return true;
   }
 
@@ -93,38 +95,44 @@ public:
     Eigen::Map<const Eigen::Matrix<T, 3, 1>> transpose_eigen(transpose);
     Eigen::Map<const Eigen::Matrix<T, 4, 1>> camera_eigen(camera);
     Eigen::Map<const Eigen::Matrix<T, 5, 1>> distort_eigen(distort);
-    Eigen::Matrix<T, 3, 1> point;
+    Eigen::Matrix<T, 3, 1>                   point;
+    std::span<T>                             resid{residuals, 2};
 
     ceres::AngleAxisRotatePoint(axisangle, point_3d, point.data());
     point += transpose_eigen;
-    const T point_x   = point(1);
-    const T point_y   = -point(0);
-    const T point_z   = point(2);
-    const T f_x       = camera_eigen(0);
-    const T f_y       = camera_eigen(1);
-    const T c_x       = camera_eigen(2);
-    const T c_y       = camera_eigen(3);
-    const T k_1       = distort_eigen(0);
-    const T k_2       = distort_eigen(1);
-    const T k_3       = distort_eigen(2);
-    const T p_1       = distort_eigen(3);
-    const T p_2       = distort_eigen(4);
+
+    const T point_x = point(1);
+    const T point_y = -point(0);
+    const T point_z = point(2);
+
+    const T f_x = camera_eigen(0);
+    const T f_y = camera_eigen(1);
+    const T c_x = camera_eigen(2);
+    const T c_y = camera_eigen(3);
+
+    const T k_1 = distort_eigen(0);
+    const T k_2 = distort_eigen(1);
+    const T k_3 = distort_eigen(2);
+    const T p_1 = distort_eigen(3);
+    const T p_2 = distort_eigen(4);
+
     const T norm_x = point_x / point_z;
     const T norm_y = point_y / point_z;
-    const T r2 = norm_x * norm_x + norm_y * norm_y;
-    const T r4 = r2 * r2;
-    const T r6 = r4 * r2;
-    const T radial_distortion = 1.0 + k_1 * r2 + k_2 * r4 + k_3 * r6;
-    const T distorted_x = norm_x * radial_distortion + 
-                         2 * p_1 * norm_x * norm_y + 
-                         p_2 * (r2 + 2 * norm_x * norm_x);
-    const T distorted_y = norm_y * radial_distortion + 
-                         p_1 * (r2 + 2 * norm_y * norm_y) + 
-                         2 * p_2 * norm_x * norm_y;
-    const T predict_x = distorted_x * f_x + c_x;
-    const T predict_y = distorted_y * f_y + c_y;
-    residuals[0] = predict_x - observe_x;
-    residuals[1] = predict_y - observe_y;
+
+    const T r_2 = (norm_x * norm_x) + (norm_y * norm_y);
+    const T r_4 = r_2 * r_2;
+    const T r_6 = r_4 * r_2;
+
+    const T radial_distortion = 1.0 + (k_1 * r_2) + (k_2 * r_4) + (k_3 * r_6);
+    const T distorted_x =
+        (norm_x * radial_distortion) + (2.0 * p_1 * norm_x * norm_y) + (p_2 * (r_2 + 2.0 * norm_x * norm_x));
+    const T distorted_y =
+        (norm_y * radial_distortion) + (2.0 * p_2 * norm_x * norm_y) + (p_1 * (r_2 + 2.0 * norm_y * norm_y));
+
+    const T predict_x = (distorted_x * f_x) + c_x;
+    const T predict_y = (distorted_y * f_y) + c_y;
+    resid[0]          = predict_x - observe_x;
+    resid[1]          = predict_y - observe_y;
     return true;
   }
 

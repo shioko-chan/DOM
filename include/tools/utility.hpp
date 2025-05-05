@@ -298,17 +298,11 @@ inline auto array2camera(const CameraArray& k_array) noexcept -> cv::Mat {
 
 inline auto distort2array(cv::InputArray d_mat_input) noexcept -> DistortArray {
   cv::Mat d_mat = d_mat_input.getMat();
-  return {
-      d_mat.at<double>(0),
-      d_mat.at<double>(1),
-      d_mat.at<double>(2),
-      d_mat.at<double>(3),
-      d_mat.at<double>(4),
-      d_mat.at<double>(5)};
+  return {d_mat.at<double>(0), d_mat.at<double>(1), d_mat.at<double>(2), d_mat.at<double>(3), d_mat.at<double>(4)};
 }
 
 inline auto array2distort(const DistortArray& d_array) noexcept -> cv::Mat {
-  cv::Mat d_mat = (cv::Mat_<double>(6, 1) << d_array[0], d_array[1], d_array[2], d_array[3], d_array[4], d_array[5]);
+  cv::Mat d_mat = (cv::Mat_<double>(5, 1) << d_array[0], d_array[1], d_array[2], d_array[3], d_array[4]);
   return d_mat;
 }
 
