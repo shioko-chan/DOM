@@ -13,10 +13,10 @@
 
 namespace Ortho {
 
-using RotateQArray   = std::array<double, 4>;
-using CameraArray    = std::array<double, 4>;
-using DistortArray   = std::array<double, 6>;
-using TranslateArray = std::array<double, 3>;
+using RotateAxisAngle = std::array<double, 3>;
+using CameraArray     = std::array<double, 4>;
+using DistortArray    = std::array<double, 5>;
+using TranslateArray  = std::array<double, 3>;
 template <typename T>
 using USets = std::vector<std::unordered_set<T>>;
 

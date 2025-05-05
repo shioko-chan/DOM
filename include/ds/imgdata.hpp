@@ -134,9 +134,15 @@ public:
     Angle   pitch{(pitch_ + 90.0)}; // DJI to nadir
     Angle   roll{roll_};
     cv::Mat R_v_w2c =
-        x_rotate_matrix(roll.radians()) * y_rotate_matrix(pitch.radians()) * z_rotate_matrix(yaw.radians());
-    Q_w2c_array = rotate2qarray(R_v_w2c.t());
+        z_rotate_matrix(yaw.radians()) * y_rotate_matrix(pitch.radians()) * x_rotate_matrix(roll.radians());
+    A_w2c_array = rotate2axisangle(R_v_w2c.t());
   }
+
+  auto is_valid() const noexcept -> bool { return valid; }
+
+  void set_invalid() noexcept { valid = false; }
+
+  void set_valid() noexcept { valid = true; }
 
   auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
 
@@ -219,20 +225,20 @@ public:
   }
 
   auto R_w2c() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_w2c_array[0]), "R not initialized yet!");
-    return qarray2rotate(Q_w2c_array);
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(A_w2c_array[0]), "R not initialized yet!");
+    return axisangle2rotate(A_w2c_array);
   }
 
   auto R_c2w() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_w2c_array[0]), "R not initialized yet!");
-    return qarray2rotate(Q_w2c_array).t();
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(A_w2c_array[0]), "R not initialized yet!");
+    return axisangle2rotate(A_w2c_array).t();
   }
 
-  auto Q_w2c_array_raw() noexcept -> RotateQArray& { return Q_w2c_array; }
+  auto A_w2c_array_raw() noexcept -> RotateAxisAngle& { return A_w2c_array; }
 
-  auto Q_w2c_array_raw() const noexcept -> const RotateQArray& {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(Q_w2c_array[0]), "R not initialized yet!");
-    return Q_w2c_array;
+  auto A_w2c_array_raw() const noexcept -> const RotateAxisAngle& {
+    THIS_ASSERTION_SHOULD_FALSE(std::isnan(A_w2c_array[0]), "R not initialized yet!");
+    return A_w2c_array;
   }
 
   auto t_w2c() const noexcept -> cv::Mat {
@@ -263,6 +269,8 @@ public:
 
 private:
 
+  bool valid{true};
+
   Kpnts kpnts;
 
   bool reference_set{false}, rotated_rectified{false};
@@ -274,10 +282,10 @@ private:
   double        latitude{}, longitude{}, altitude{};
   Point<double> coord;
 
-  RotateQArray   Q_w2c_array{std::numeric_limits<double>::quiet_NaN()};
-  TranslateArray t_w2c_array{std::numeric_limits<double>::quiet_NaN()};
-  CameraArray    camera_array{std::numeric_limits<double>::quiet_NaN()};
-  DistortArray   distort_array{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  RotateAxisAngle A_w2c_array{std::numeric_limits<double>::quiet_NaN()};
+  TranslateArray  t_w2c_array{std::numeric_limits<double>::quiet_NaN()};
+  CameraArray     camera_array{std::numeric_limits<double>::quiet_NaN()};
+  DistortArray    distort_array{0.0, 0.0, 0.0, 0.0, 0.0};
 
   double focal_35mm{};
 };

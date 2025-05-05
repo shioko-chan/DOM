@@ -160,6 +160,17 @@ public:
 #else
     smooth_surface(&res);
 #endif
+    std::unordered_set<int> observation_ids;
+    for(const auto& tri_res : res) {
+      for(const auto& [idx, _] : tri_res.pnt2d_idx_vec) {
+        observation_ids.insert(idx);
+      }
+    }
+    for(int idx = 0; idx < imgs_data.size(); ++idx) {
+      if(!observation_ids.contains(idx)) {
+        imgs_data[idx].set_invalid();
+      }
+    }
     ba(imgs_data, &res);
     r = img.R_w2c();
     t = img.t_w2c();

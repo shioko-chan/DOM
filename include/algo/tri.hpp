@@ -34,7 +34,7 @@ inline auto triangulation(
     const fs::path& pcd_output_dir
 #endif
     ) noexcept -> TriResVec {
-  THIS_MESSAGE("Build tracks");
+  THIS_MESSAGE("Build tracks.");
   progress.reset(static_cast<int>(match_img_pairs.size()));
   TracksMaintainer tracks_maintainer;
   for(const auto& match_img_pair : match_img_pairs) {
@@ -50,8 +50,10 @@ inline auto triangulation(
     progress.update();
   }
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
-  TriResVec              all_res;
-  std::mutex             mtx;
+
+  THIS_MESSAGE("Triangulating.");
+  TriResVec  all_res;
+  std::mutex mtx;
 #ifdef ENABLE_VISUALIZE_OUTPUT
   Point3s<double> points1;
   Point3s<double> points2;
@@ -108,14 +110,12 @@ inline auto triangulation(
         ceres::Problem problem;
         add_parameter_block(problem, world_point);
         for(const auto& pntidx : pntidx_vec) {
-          const auto& img_data = imgs_data[pntidx.img_idx];
+          const auto& img_data     = imgs_data[pntidx.img_idx];
+          const auto& [ob_x, ob_y] = img_data.get_kpnts().get(pntidx.pnt_idx);
           try {
             problem.AddResidualBlock(
                 SimpReprojectionError::create(
-                    img_data.get_kpnts().get(pntidx.pnt_idx),
-                    img_data.Q_w2c_array_raw(),
-                    img_data.camera_array_raw(),
-                    img_data.t_w2c_array_raw()),
+                    ob_x, ob_y, img_data.A_w2c_array_raw(), img_data.camera_array_raw(), img_data.t_w2c_array_raw()),
                 new ceres::HuberLoss(1.0),
                 world_point.data());
           } catch(const std::exception& e) {

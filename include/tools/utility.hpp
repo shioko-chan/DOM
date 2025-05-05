@@ -10,11 +10,13 @@
 #include <fstream>
 #include <functional>
 #include <numeric>
+#include <opencv2/calib3d.hpp>
 #include <ranges>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
 
+#include <opencv2/core/hal/interface.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 
@@ -240,25 +242,26 @@ auto normalized2pixel(const T& normalized, const cv::Size& size) {
   return Point<double>{(normalized.x * max2) + wf2, (normalized.y * max2) + hf2};
 }
 
-inline auto rotate2qarray(cv::InputArray R_mat_input) noexcept -> RotateQArray {
+inline auto rotate2axisangle(cv::InputArray R_mat_input) noexcept -> RotateAxisAngle {
   cv::Mat R_mat = R_mat_input.getMat();
   if(R_mat.type() != CV_64F) {
     R_mat.convertTo(R_mat, CV_64F);
   }
-  Eigen::Matrix3d R_Eigen;
-  cv::cv2eigen(R_mat, R_Eigen);
-  Eigen::Quaterniond quaternion(R_Eigen);
-  quaternion.normalize();
-  return {quaternion.w(), quaternion.x(), quaternion.y(), quaternion.z()};
+  cv::Mat axis_angle;
+  cv::Rodrigues(R_mat, axis_angle);
+  THIS_ASSERTION_SHOULD_EQ(axis_angle.type(), CV_64F);
+  THIS_ASSERTION_SHOULD_EQ(axis_angle.cols, 1);
+  THIS_ASSERTION_SHOULD_EQ(axis_angle.rows, 3);
+  return {axis_angle.at<double>(0), axis_angle.at<double>(1), axis_angle.at<double>(2)};
 }
 
-inline auto qarray2rotate(const RotateQArray& q_array) noexcept -> cv::Mat {
-  Eigen::Quaterniond quaternion(q_array[0], q_array[1], q_array[2], q_array[3]);
-  quaternion.normalize();
-  Eigen::Matrix3d R_Eigen = quaternion.toRotationMatrix();
-  THIS_ASSERTION_SHOULD_TRUE((R_Eigen * R_Eigen.inverse()).isApprox(Eigen::Matrix3d::Identity()));
+inline auto axisangle2rotate(const RotateAxisAngle& A_array) noexcept -> cv::Mat {
+  cv::Mat axis_angle = (cv::Mat_<double>(3, 1) << A_array[0], A_array[1], A_array[2]);
   cv::Mat R_mat;
-  cv::eigen2cv(R_Eigen, R_mat);
+  cv::Rodrigues(axis_angle, R_mat);
+  THIS_ASSERTION_SHOULD_EQ(R_mat.type(), CV_64F);
+  THIS_ASSERTION_SHOULD_EQ(R_mat.cols, 3);
+  THIS_ASSERTION_SHOULD_EQ(R_mat.rows, 3);
   return R_mat;
 }
 
