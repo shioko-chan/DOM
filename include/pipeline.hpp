@@ -12,6 +12,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "algo/ba.hpp"
+#include "algo/dsm.hpp"
 #include "algo/filter.hpp"
 #include "algo/knn.hpp"
 #include "algo/tri.hpp"
@@ -23,7 +24,7 @@
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
-#include "algo/dsm.hpp"
+
 namespace Ortho {
 
 namespace fs = std::filesystem;
@@ -178,7 +179,8 @@ public:
     }
     ba(imgs_data, &res);
     THIS_MESSAGE("Generating DSM");
-    cv::Mat dsm = pointcloud_to_dsm(res);
+    auto    cloud = tri_res_vec2point_cloud(res);
+    cv::Mat dsm   = pointcloud_to_dsm(cloud);
     save_dsm_as_image(dsm, temporary_save_path / "dsm.png");
 
     r = img.R_w2c();
