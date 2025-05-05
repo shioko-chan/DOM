@@ -23,7 +23,7 @@
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
-
+#include "algo/dsm.hpp"
 namespace Ortho {
 
 namespace fs = std::filesystem;
@@ -147,19 +147,24 @@ public:
     std::cout << "R: " << r << '\n';
     std::cout << "t: " << t << '\n';
     std::cout << "K: " << k << '\n';
-    THIS_MESSAGE("{}", res.size());
+    std::cout << "res: " << res.size() << '\n';
+
+    THIS_MESSAGE("Filtering outliers");
 #ifdef ENABLE_VISUALIZE_OUTPUT
     filter_outliers(&res, temporary_save_path / "f1.pcd");
 #else
     filter_outliers(&res);
 #endif
-    THIS_MESSAGE("{}", res.size());
+    std::cout << "res: " << res.size() << '\n';
 
+    THIS_MESSAGE("Smoothing surface");
 #ifdef ENABLE_VISUALIZE_OUTPUT
     smooth_surface(&res, temporary_save_path / "s1.pcd");
 #else
     smooth_surface(&res);
 #endif
+    std::cout << "res: " << res.size() << '\n';
+
     std::unordered_set<int> observation_ids;
     for(const auto& tri_res : res) {
       for(const auto& [idx, _] : tri_res.pnt2d_idx_vec) {
@@ -172,6 +177,10 @@ public:
       }
     }
     ba(imgs_data, &res);
+    THIS_MESSAGE("Generating DSM");
+    cv::Mat dsm = pointcloud_to_dsm(res);
+    save_dsm_as_image(dsm, temporary_save_path / "dsm.png");
+
     r = img.R_w2c();
     t = img.t_w2c();
     k = img.K();

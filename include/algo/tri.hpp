@@ -51,7 +51,7 @@ inline auto triangulation(
   }
   std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
 
-  THIS_MESSAGE("Triangulating.");
+  THIS_MESSAGE("Start Triangulating.");
   TriResVec  all_res;
   std::mutex mtx;
 #ifdef ENABLE_VISUALIZE_OUTPUT
@@ -152,6 +152,7 @@ inline auto triangulation(
   export_pcd(pcd_output_dir / "tri1.pcd", points1);
   export_pcd(pcd_output_dir / "tri2.pcd", points2);
 #endif
+  THIS_MESSAGE("Triangulation Finished");
   return all_res;
 }
 } // namespace Ortho

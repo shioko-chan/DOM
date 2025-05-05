@@ -25,6 +25,7 @@
 namespace Ortho {
 
 inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
+  THIS_MESSAGE("Start Bundle Adjustment");
   auto imgs_data_filtered =
       imgs_data | std::views::filter([](const auto& img_data) noexcept { return img_data.is_valid(); });
   std::erase_if(*res, [](const TriRes& tri_res) noexcept { return tri_res.pnt2d_idx_vec.size() < 2; });
@@ -36,7 +37,7 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
   options.num_threads        = static_cast<int>(std::thread::hardware_concurrency());
   options.max_num_iterations = 2000;
 
-  options.minimizer_progress_to_stdout      = true;
+  options.minimizer_progress_to_stdout      = false;
   options.check_gradients                   = false;
   options.gradient_check_relative_precision = 1e-3;
 
@@ -84,7 +85,7 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
       set_parameter_block_constant(problem, pnt3d);
     }
     ceres::Solve(options, &problem, &summary);
-    THIS_MESSAGE("Step 1: {} {}", summary.FullReport(), summary.BriefReport());
+    THIS_MESSAGE("Step 1: {}", summary.BriefReport());
   }
   // Secondly, optimize the 3d points
   // Make [R, t, K, d] constant
@@ -139,6 +140,7 @@ inline void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
     ceres::Solve(options, &problem, &summary);
     THIS_MESSAGE("Step 5: {}", summary.BriefReport());
   }
+  THIS_MESSAGE("Bundle Adjustment Finished");
 }
 } // namespace Ortho
 #endif

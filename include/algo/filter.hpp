@@ -38,16 +38,6 @@ inline auto compute_average_spacing(const pcl::PointCloud<pcl::PointXYZ>::Ptr& c
   return total_distance / static_cast<double>(cloud->size());
 }
 
-inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud{new pcl::PointCloud<pcl::PointXYZ>};
-  cloud->resize(tri_res_vec.size());
-  for(int i = 0; i < tri_res_vec.size(); ++i) {
-    const auto& point = tri_res_vec[i].pnt3d;
-    (*cloud)[i].getVector3fMap() =
-        Eigen::Vector3f{static_cast<float>(point[1]), static_cast<float>(point[0]), static_cast<float>(-point[2])};
-  }
-  return cloud;
-}
 
 inline void filter_outliers(
     TriResVec* tri_res_vec,
