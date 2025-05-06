@@ -92,8 +92,12 @@ concept HasXYZ = HasXY<T> && requires(T point) {
   { point.z } -> arithmetic;
 };
 
-auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) noexcept -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud{new pcl::PointCloud<pcl::PointXYZ>};
+inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) noexcept -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud{new(std::nothrow) pcl::PointCloud<pcl::PointXYZ>};
+  if(!cloud) {
+    THIS_LOG_ERROR("Failed to allocate memory for point cloud");
+    return nullptr;
+  }
   cloud->resize(tri_res_vec.size());
   for(int i = 0; i < tri_res_vec.size(); ++i) {
     const auto& point = tri_res_vec[i].pnt3d;
@@ -111,6 +115,43 @@ auto world2camera(const T* const axisangle, const T* const translation, const T*
   ceres::AngleAxisRotatePoint(axisangle, point_3d, point.data());
   point += transpose_eigen;
   return point;
+}
+
+template <typename T>
+auto camera2pixel(const T* const camera, const T* const distort, const T* const point_3d) noexcept
+    -> Eigen::Matrix<T, 2, 1> {
+  Eigen::Map<const Eigen::Matrix<T, 4, 1>> camera_eigen(camera);
+  Eigen::Map<const Eigen::Matrix<T, 5, 1>> distort_eigen(distort);
+  Eigen::Map<const Eigen::Matrix<T, 3, 1>> point(point_3d);
+
+  const T point_x = point(1);
+  const T point_y = -point(0);
+  const T point_z = point(2);
+
+  const T f_x = camera_eigen(0);
+  const T f_y = camera_eigen(1);
+  const T c_x = camera_eigen(2);
+  const T c_y = camera_eigen(3);
+
+  const T k_1 = distort_eigen(0);
+  const T k_2 = distort_eigen(1);
+  const T p_1 = distort_eigen(2);
+  const T p_2 = distort_eigen(3);
+  const T k_3 = distort_eigen(4);
+
+  const T norm_x = point_x / point_z;
+  const T norm_y = point_y / point_z;
+
+  const T r_2 = (norm_x * norm_x) + (norm_y * norm_y);
+  const T r_4 = r_2 * r_2;
+  const T r_6 = r_4 * r_2;
+
+  const T radial_distortion = T(1.0) + (k_1 * r_2) + (k_2 * r_4) + (k_3 * r_6);
+  const T distorted_x =
+      (norm_x * radial_distortion) + (T(2.0) * p_1 * norm_x * norm_y) + (p_2 * (r_2 + T(2.0) * norm_x * norm_x));
+  const T distorted_y =
+      (norm_y * radial_distortion) + (T(2.0) * p_2 * norm_x * norm_y) + (p_1 * (r_2 + T(2.0) * norm_y * norm_y));
+  return {(distorted_x * f_x) + c_x, (distorted_y * f_y) + c_y};
 }
 
 #ifdef ENABLE_VISUALIZE_OUTPUT

@@ -127,7 +127,7 @@ public:
     Filter::filter_invalid_image(res, imgs_data);
     BA::ba(imgs_data, &res);
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    export_pcd(temporary_save_path / "ba.pcd", Filter::tri_res_vec2point_cloud(res));
+    export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
     Filter::filter_outliers_radius(&res, temporary_save_path / "f2.pcd");
 #else
     Filter::filter_outliers_radius(&res);
@@ -140,21 +140,14 @@ public:
     std::cout << "K: " << k << '\n';
     std::cout << "d:" << imgs_data.D() << "\n";
     THIS_MESSAGE("Generating DSM");
-    auto cloud = Filter::tri_res_vec2point_cloud(res);
-#ifdef ENABLE_VISUALIZE_OUTPUT
-    auto dsm = pointcloud_to_dsm(cloud);
-    dsm.save_as_image(temporary_save_path / "dsm.png");
-    return dsm;
-#else
-    return pointcloud_to_dsm(cloud);
-#endif
+    return DSM{tri_res_vec2point_cloud(res)};
   }
 
-  void stitch(ImgsData& imgs_data, const DSM& dsm) {
+  void stitch(ImgsData& imgs_data, DSM& dsm) {
     THIS_MESSAGE("Stitching images");
-    auto     panorama      = Ortho::DSMStitcher::stitch(imgs_data, dsm, progress);
+    Ortho::stitch(imgs_data, dsm, progress);
     fs::path panorama_path = output_dir / "stitched_image.jpg";
-    cv::imwrite(panorama_path.string(), panorama);
+    dsm.export_texture(panorama_path);
     THIS_MESSAGE("Stitched image saved to {}", panorama_path.string());
   }
 };
