@@ -36,7 +36,6 @@ public:
       THIS_LOG_WARN("tri_res_vec is empty, cannot filter outliers");
       return;
     }
-
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
 
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor{true};
@@ -138,9 +137,9 @@ public:
       if(original_idx >= 0 && original_idx < tri_res_vec->size()) {
         auto& point_origin   = (*tri_res_vec)[original_idx].pnt3d;
         auto  point_smoothed = (*smoothed)[i].getVector3fMap();
-        point_origin[0]      = static_cast<double>(point_smoothed.y());
-        point_origin[1]      = static_cast<double>(point_smoothed.x());
-        point_origin[2]      = static_cast<double>(-point_smoothed.z());
+        point_origin[0]      = static_cast<double>(point_smoothed.x());
+        point_origin[1]      = static_cast<double>(point_smoothed.y());
+        point_origin[2]      = static_cast<double>(point_smoothed.z());
         keep_indices.insert(original_idx);
       }
     }
@@ -183,16 +182,6 @@ public:
     }
   }
 
-  static auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud{new pcl::PointCloud<pcl::PointXYZ>};
-    cloud->resize(tri_res_vec.size());
-    for(int i = 0; i < tri_res_vec.size(); ++i) {
-      const auto& point = tri_res_vec[i].pnt3d;
-      (*cloud)[i].getVector3fMap() =
-          Eigen::Vector3f{static_cast<float>(point[1]), static_cast<float>(point[0]), static_cast<float>(-point[2])};
-    }
-    return cloud;
-  }
 
 private:
 
