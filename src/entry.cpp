@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "config.hpp"
+#include "ds/imgdata.hpp"
 #include "pipeline.hpp"
 #include "tools/log.hpp"
 #include "tools/utility.hpp"
@@ -30,15 +31,15 @@ auto main(const int argc, const char* const argv[]) -> int {
 
     auto process = Ortho::Pipeline(input_dir, output_dir, output_dir / "temp");
     THIS_MESSAGE("[1/5] Getting image information");
-    process.get_image_info();
+    auto imgs_data = process.get_image_info();
     THIS_MESSAGE("[2/5] Rotating images for matching");
-    process.rotate_rectify();
+    process.rotate_rectify(imgs_data);
     THIS_MESSAGE("[3/5] Matching neighbor images");
-    process.match(Ortho::NEIGHBOR_PROPOSAL);
+    auto match_pairs = process.match(imgs_data, Ortho::NEIGHBOR_PROPOSAL);
     THIS_MESSAGE("[4/5] Triangulate");
-    process.triangulate();
+    auto dsm = process.triangulate(imgs_data, match_pairs);
     THIS_MESSAGE("[5/5] Stitching images");
-    // process.stitch();
+    process.stitch(imgs_data, dsm);
   }
   Ortho::print_run_time(start);
   return 0;

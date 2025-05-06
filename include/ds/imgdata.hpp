@@ -307,12 +307,9 @@ public:
 class ImgsData {
 public:
 
-  ImgsData() noexcept = default;
+  ImgsData() noexcept = delete;
 
-  void delay_initialize(
-      const std::vector<fs::path>& img_paths,
-      const fs::path&              temporary_save_path,
-      Progress&                    progress) noexcept {
+  ImgsData(const std::vector<fs::path>& img_paths, const fs::path& temporary_save_path, Progress& progress) noexcept {
     if(img_paths.empty()) {
       THIS_LOG_WARN("No image input!");
       return;

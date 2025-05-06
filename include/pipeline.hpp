@@ -1,7 +1,6 @@
 #ifndef ORTHO_PIPELINE_HPP
 #define ORTHO_PIPELINE_HPP
 
-#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <ranges>
@@ -15,6 +14,7 @@
 #include "algo/dsm.hpp"
 #include "algo/filter.hpp"
 #include "algo/knn.hpp"
+#include "algo/stitch.hpp"
 #include "algo/tri.hpp"
 #include "config.hpp"
 #include "ds/imgdata.hpp"
@@ -32,38 +32,36 @@ class Pipeline {
 private:
 
   struct Exiv2XmpParserInitializer {
-    Exiv2XmpParserInitializer() { Exiv2::XmpParser::initialize(); }
+    Exiv2XmpParserInitializer() noexcept { Exiv2::XmpParser::initialize(); }
 
     Exiv2XmpParserInitializer(const Exiv2XmpParserInitializer&)                    = delete;
     Exiv2XmpParserInitializer(Exiv2XmpParserInitializer&&)                         = delete;
     auto operator=(const Exiv2XmpParserInitializer&) -> Exiv2XmpParserInitializer& = delete;
     auto operator=(Exiv2XmpParserInitializer&&) -> Exiv2XmpParserInitializer&      = delete;
 
-    ~Exiv2XmpParserInitializer() { Exiv2::XmpParser::terminate(); }
+    ~Exiv2XmpParserInitializer() noexcept { Exiv2::XmpParser::terminate(); }
   };
 
   Progress                  progress;
   std::vector<fs::path>     img_paths;
   fs::path                  output_dir, temporary_save_path;
-  ImgsData                  imgs_data;
   Exiv2XmpParserInitializer exiv2_xmp_parser_initializer;
-  MatchPairs                match_pairs;
 
 public:
 
-  Pipeline(const fs::path& input_dir, fs::path output_dir, fs::path temporary_save_path) :
+  Pipeline(const fs::path& input_dir, fs::path output_dir, fs::path temporary_save_path) noexcept :
       output_dir(std::move(output_dir)), temporary_save_path(std::move(temporary_save_path)) {
     for(const auto& entry : fs::directory_iterator(input_dir)) {
       img_paths.push_back(entry.path());
     }
   }
 
-  void get_image_info() { imgs_data.delay_initialize(img_paths, temporary_save_path, progress); }
+  [[nodiscard]] auto get_image_info() noexcept -> ImgsData { return {img_paths, temporary_save_path, progress}; }
 
-  void rotate_rectify() {
+  void rotate_rectify(ImgsData& imgs_data) noexcept {
     run(
         imgs_data.size(),
-        [this](int idx) noexcept {
+        [&imgs_data, this](int idx) noexcept {
           imgs_data[idx].rotate_rectify();
 #ifdef ENABLE_VISUALIZE_OUTPUT
           cv::imwrite(
@@ -74,7 +72,7 @@ public:
         progress);
   }
 
-  void match(int neighbor_proposal = 8) {
+  [[nodiscard]] auto match(ImgsData& imgs_data, int neighbor_proposal = 8) noexcept -> MatchPairs {
     THIS_MESSAGE("Finding image pairs with neighbor proposal {}", neighbor_proposal);
     auto match_pairs_ = find_neighbors(imgs_data, neighbor_proposal);
     THIS_MESSAGE("Found {} image pairs", match_pairs_.size());
@@ -88,15 +86,13 @@ public:
       matcher.match(match_pairs_, imgs_data, progress);
     } else {
       THIS_LOG_ERROR("Unknown feature extraction method");
-      return;
+      return {};
     }
-    match_pairs.clear();
-    std::ranges::move(
-        match_pairs_ | std::views::filter([](auto&& pair) noexcept { return pair.valid; }),
-        std::back_inserter(match_pairs));
+    auto view = match_pairs_ | std::views::filter([](auto&& pair) noexcept { return pair.valid; });
+    return {view.begin(), view.end()};
   }
 
-  void triangulate() {
+  auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept -> cv::Mat {
     cv::Mat     r;
     cv::Mat     t;
     cv::Mat     k;
@@ -113,7 +109,6 @@ public:
     std::cout << "t: " << t << '\n';
     std::cout << "K: " << k << '\n';
     std::cout << "res: " << res.size() << '\n';
-
     THIS_MESSAGE("Filtering outliers");
 #ifdef ENABLE_VISUALIZE_OUTPUT
     filter_outliers(&res, temporary_save_path / "f1.pcd");
@@ -141,8 +136,9 @@ public:
       }
     }
     ba(imgs_data, &res);
+#ifdef ENABLE_VISUALIZE_OUTPUT
     export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
-
+#endif
     r = img.R_w2c();
     t = img.t_w2c();
     k = imgs_data.K();
@@ -150,25 +146,25 @@ public:
     std::cout << "t: " << t << '\n';
     std::cout << "K: " << k << '\n';
     std::cout << "d:" << imgs_data.D() << "\n";
-
     THIS_MESSAGE("Generating DSM");
-    auto    cloud = tri_res_vec2point_cloud(res);
-    cv::Mat dsm   = pointcloud_to_dsm(cloud);
+    auto cloud = tri_res_vec2point_cloud(res);
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    cv::Mat dsm = pointcloud_to_dsm(cloud);
     save_dsm_as_image(dsm, temporary_save_path / "dsm.png");
+    return dsm;
+#else
+    return pointcloud_to_dsm(cloud);
+#endif
   }
 
-  // void stitch() {
-  //   THIS_MESSAGE("Stitching images");
-  //   Stitcher stitcher(temporary_save_path);
-  //   auto     stitched_img = stitcher.stitch(imgs_data, progress);
-  //   if(stitched_img.empty()) {
-  //     THIS_LOG_ERROR("Stitching failed");
-  //     return;
-  //   }
-  //   fs::path stitched_img_path = output_dir / "stitched_image.jpg";
-  //   cv::imwrite(stitched_img_path.string(), stitched_img);
-  //   THIS_MESSAGE("Stitched image saved to {}", stitched_img_path.string());
-  // }
+  void stitch(ImgsData& imgs_data, const cv::Mat& dsm) {
+    THIS_MESSAGE("Stitching images");
+    DSMStitcher stitcher(temporary_save_path);
+    auto        panorama      = stitcher.stitch(imgs_data, dsm, progress);
+    fs::path    panorama_path = output_dir / "stitched_image.jpg";
+    cv::imwrite(panorama_path.string(), panorama);
+    THIS_MESSAGE("Stitched image saved to {}", panorama_path.string());
+  }
 };
 
 } // namespace Ortho

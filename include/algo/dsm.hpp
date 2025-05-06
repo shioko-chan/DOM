@@ -45,7 +45,7 @@ inline auto pointcloud_to_dsm(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, 
     for(int j = 0; j < cols; j++) {
       valid_mask.at<uchar>(i, j) = std::isnan(dsm.at<double>(i, j)) ? 0 : 255;
       if(std::isnan(dsm.at<double>(i, j))) {
-        dsm_temp.at<float>(i, j) = 0.0f;
+        dsm_temp.at<float>(i, j) = 0.0F;
       }
     }
   }
