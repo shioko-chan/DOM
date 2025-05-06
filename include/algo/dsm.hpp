@@ -39,17 +39,13 @@ inline auto pointcloud_to_dsm(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, 
     }
   }
   cv::Mat valid_mask = cv::Mat(rows, cols, CV_8U);
+  cv::Mat dsm_temp;
+  dsm.convertTo(dsm_temp, CV_32F);
   for(int i = 0; i < rows; i++) {
     for(int j = 0; j < cols; j++) {
       valid_mask.at<uchar>(i, j) = std::isnan(dsm.at<double>(i, j)) ? 0 : 255;
-    }
-  }
-  cv::Mat dsm_temp;
-  dsm.convertTo(dsm_temp, CV_64F);
-  for(int i = 0; i < rows; i++) {
-    for(int j = 0; j < cols; j++) {
       if(std::isnan(dsm.at<double>(i, j))) {
-        dsm_temp.at<double>(i, j) = 0.0;
+        dsm_temp.at<float>(i, j) = 0.0f;
       }
     }
   }
