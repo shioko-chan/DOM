@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include <ceres/rotation.h>
 #include <opencv2/core/hal/interface.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
@@ -90,6 +91,16 @@ template <typename T>
 concept HasXYZ = HasXY<T> && requires(T point) {
   { point.z } -> arithmetic;
 };
+
+template <typename T>
+auto world2camera(const T* const axisangle, const T* const translation, const T* const point_3d) noexcept
+    -> Eigen::Matrix<T, 3, 1> {
+  Eigen::Map<const Eigen::Matrix<T, 3, 1>> transpose_eigen(translation);
+  Eigen::Matrix<T, 3, 1>                   point;
+  ceres::AngleAxisRotatePoint(axisangle, point_3d, point.data());
+  point += transpose_eigen;
+  return point;
+}
 
 inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud{new pcl::PointCloud<pcl::PointXYZ>};

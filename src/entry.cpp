@@ -31,14 +31,14 @@ auto main(const int argc, const char* const argv[]) -> int {
     auto process = Ortho::Pipeline(input_dir, output_dir, output_dir / "temp");
     THIS_MESSAGE("[1/5] Getting image information");
     process.get_image_info();
-    THIS_MESSAGE("[2/5] Rectifying images");
+    THIS_MESSAGE("[2/5] Rotating images for matching");
     process.rotate_rectify();
     THIS_MESSAGE("[3/5] Matching neighbor images");
     process.match(Ortho::NEIGHBOR_PROPOSAL);
     THIS_MESSAGE("[4/5] Triangulate");
     process.triangulate();
     THIS_MESSAGE("[5/5] Stitching images");
-    process.stitch();
+    // process.stitch();
   }
   Ortho::print_run_time(start);
   return 0;

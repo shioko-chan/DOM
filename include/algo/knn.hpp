@@ -10,6 +10,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "ds/imgdata.hpp"
+#include "ds/matchpair.hpp"
 #include "types/cv_alias.hpp"
 
 namespace Ortho {
@@ -52,6 +54,26 @@ private:
     return std::sqrt(std::pow(point0.x - point1.x, 2) + std::pow(point0.y - point1.y, 2));
   }
 };
+
+inline auto find_neighbors(const ImgsData& imgs_data, const int k_neighbors = 8) -> MatchPairs {
+  auto knn = KNN<double>(k_neighbors, imgs_data.get() | std::views::transform([](const auto& data) noexcept {
+                                        return data.get_coord();
+                                      }) | std::views::common);
+  std::vector<std::vector<MatchPair>> matches(imgs_data.size());
+  run(imgs_data.size(), [&knn, &matches](int idx) noexcept {
+    auto neighbors = knn.find_nearest_neighbour(idx);
+    for(auto&& neighbour : neighbors) {
+      if(idx < neighbour) {
+        matches[idx].emplace_back(idx, neighbour);
+      } else {
+        matches[idx].emplace_back(neighbour, idx);
+      }
+    }
+  });
+  auto                view = matches | std::views::join | std::views::common;
+  std::set<MatchPair> match_set(view.begin(), view.end());
+  return {match_set.begin(), match_set.end()};
+}
 
 } // namespace Ortho
 

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <numbers>
 #include <ranges>
@@ -28,6 +29,7 @@
 #include "ds/image.hpp"
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
+#include "tools/progress.hpp"
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 
@@ -124,11 +126,10 @@ public:
       double          latitude_,
       double          longitude_,
       double          altitude_,
-      double          focal_35mm_,
       fs::path        img_path,
       const fs::path& temp_save_path) noexcept :
-      latitude{latitude_}, longitude{longitude_}, altitude{altitude_}, focal_35mm{focal_35mm_},
-      temp_save_path{temp_save_path}, img_origin{std::move(img_path)} {
+      latitude{latitude_}, longitude{longitude_}, altitude{altitude_}, temp_save_path{temp_save_path},
+      img_origin{std::move(img_path)} {
     check_or_create_path(temp_save_path);
     Angle   yaw{yaw_};
     Angle   pitch{(pitch_ + 90.0)}; // DJI to nadir
@@ -160,9 +161,8 @@ public:
 
   void rotate_rectify() noexcept {
     THIS_ASSERTION_SHOULD_TRUE(reference_set, "Reference coordinate not set!");
-    auto img                   = img_origin.get();
-    const auto [width, height] = img.size();
-    set_by_camera_params(width, height, focal_35mm);
+    auto img                                = img_origin.get();
+    const auto [width, height]              = img.size();
     auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_c2w(), img);
     cv::Mat pers_mat_inv                    = pers_mat.inv();
     kpnts.set_convert_function([pers = pers_mat_inv, height](Point<double> point) noexcept -> Point<double> {
@@ -174,40 +174,6 @@ public:
         std::move(rotate_img),
         pixel_span);
     rotated_rectified = true;
-  }
-
-  auto K() const noexcept -> cv::Mat {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
-    return array2camera(camera_array);
-  }
-
-  auto M() const noexcept -> cv::Mat {
-    // clang-format off
-    return K() * (cv::Mat_<double>(3, 3) << 
-     0, 1, 0,
-    -1, 0, 0, 
-     0, 0, 1);
-    // clang-format on
-  }
-
-  auto D() const noexcept -> cv::Mat { return array2distort(distort_array); }
-
-  auto camera_array_raw() noexcept -> CameraArray& { return camera_array; }
-
-  auto camera_array_raw() const noexcept -> const CameraArray& {
-    THIS_ASSERTION_SHOULD_FALSE(std::isnan(camera_array[0]), "K not initialized yet!");
-    return camera_array;
-  }
-
-  auto distort_array_raw() noexcept -> DistortArray& { return distort_array; }
-
-  auto distort_array_raw() const noexcept -> const DistortArray& { return distort_array; }
-
-  void set_by_camera_params(double width, double height, double focal_35mm) noexcept {
-    double aspect_ratio = width * 1.0 / height;
-    double ref_width    = (aspect_ratio >= 1.5) ? 36.0 : 24.0 * aspect_ratio;
-    double focal_pix    = (aspect_ratio >= 1.5) ? (width / 36.0 * focal_35mm) : (height / 24.0 * focal_35mm);
-    camera_array        = {focal_pix, focal_pix, width / 2.0, height / 2.0};
   }
 
   void set_reference(double latitude_ref_degree, double longitude_ref_degree) noexcept {
@@ -224,45 +190,45 @@ public:
     reference_set     = true;
   }
 
-  auto R_w2c() const noexcept -> cv::Mat {
+  [[nodiscard]] auto R_w2c() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(A_w2c_array[0]), "R not initialized yet!");
     return axisangle2rotate(A_w2c_array);
   }
 
-  auto R_c2w() const noexcept -> cv::Mat {
+  [[nodiscard]] auto R_c2w() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(A_w2c_array[0]), "R not initialized yet!");
     return axisangle2rotate(A_w2c_array).t();
   }
 
-  auto A_w2c_array_raw() noexcept -> RotateAxisAngle& { return A_w2c_array; }
+  [[nodiscard]] auto A_w2c_array_raw() noexcept -> RotateAxisAngle& { return A_w2c_array; }
 
-  auto A_w2c_array_raw() const noexcept -> const RotateAxisAngle& {
+  [[nodiscard]] auto A_w2c_array_raw() const noexcept -> const RotateAxisAngle& {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(A_w2c_array[0]), "R not initialized yet!");
     return A_w2c_array;
   }
 
-  auto t_w2c() const noexcept -> cv::Mat {
+  [[nodiscard]] auto t_w2c() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_w2c_array[0]), "t not initialized yet!");
     return array2translate(t_w2c_array);
   }
 
-  auto t_c2w() const noexcept -> cv::Mat {
+  [[nodiscard]] auto t_c2w() const noexcept -> cv::Mat {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_w2c_array[0]), "t not initialized yet!");
     return -R_c2w() * array2translate(t_w2c_array);
   }
 
-  auto t_w2c_array_raw() noexcept -> TranslateArray& { return t_w2c_array; }
+  [[nodiscard]] auto t_w2c_array_raw() noexcept -> TranslateArray& { return t_w2c_array; }
 
-  auto t_w2c_array_raw() const noexcept -> const TranslateArray& {
+  [[nodiscard]] auto t_w2c_array_raw() const noexcept -> const TranslateArray& {
     THIS_ASSERTION_SHOULD_FALSE(std::isnan(t_w2c_array[0]), "t not initialized yet!");
     return t_w2c_array;
   }
 
-  auto get_kpnts() const noexcept -> const Kpnts& { return kpnts; }
+  [[nodiscard]] auto get_kpnts() const noexcept -> const Kpnts& { return kpnts; }
 
-  auto get_kpnts() noexcept -> Kpnts& { return kpnts; }
+  [[nodiscard]] auto get_kpnts() noexcept -> Kpnts& { return kpnts; }
 
-  auto get_coord() noexcept -> const Point<double>& {
+  [[nodiscard]] auto get_coord() const noexcept -> const Point<double>& {
     THIS_ASSERTION_SHOULD_TRUE(reference_set, "reference not set!");
     return coord;
   }
@@ -284,10 +250,58 @@ private:
 
   RotateAxisAngle A_w2c_array{std::numeric_limits<double>::quiet_NaN()};
   TranslateArray  t_w2c_array{std::numeric_limits<double>::quiet_NaN()};
-  CameraArray     camera_array{std::numeric_limits<double>::quiet_NaN()};
-  DistortArray    distort_array{0.0, 0.0, 0.0, 0.0, 0.0};
+};
 
-  double focal_35mm{};
+class ImgDataFactory {
+private:
+
+  static constexpr std::array<std::string_view, 10> img_extensions =
+      {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
+
+  struct XmpKey {
+    static constexpr std::string_view yaw{"Xmp.drone-dji.GimbalYawDegree"}, pitch{"Xmp.drone-dji.GimbalPitchDegree"},
+        roll{"Xmp.drone-dji.GimbalRollDegree"}, latitude{"Xmp.drone-dji.GpsLatitude"},
+        longitude{"Xmp.drone-dji.GpsLongitude"}, altitude{"Xmp.drone-dji.RelativeAltitude"};
+  };
+
+public:
+
+  static auto check_path(const fs::path& path) noexcept -> bool {
+    if(!fs::is_regular_file(path)
+       || std::ranges::find(img_extensions, path.extension().string()) == img_extensions.end()) {
+      THIS_LOG_WARN("Error: {} is not a valid image file", path.string());
+      return false;
+    }
+    return true;
+  }
+
+  static auto check_xmp(const Exiv2::XmpData& xmp_data) -> bool {
+    auto validate_xmp = [&xmp_data](std::string_view key_) noexcept {
+      std::string key{key_};
+      if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
+        THIS_LOG_WARN("Key {} not found in XMP data", key);
+        return false;
+      }
+      return true;
+    };
+    return validate_xmp(XmpKey::yaw) && validate_xmp(XmpKey::pitch) && validate_xmp(XmpKey::roll)
+           && validate_xmp(XmpKey::latitude) && validate_xmp(XmpKey::longitude) && validate_xmp(XmpKey::altitude);
+  }
+
+  static auto build(const fs::path& path, const fs::path& temp_save_path) noexcept -> ImgData {
+    ExifXmp exif_xmp{path};
+    auto&   xmp_data  = exif_xmp.xmp_data();
+    auto&   exif_data = exif_xmp.exif_data();
+    return ImgData{
+        xmp_data[std::string{XmpKey::yaw}].toFloat(),
+        xmp_data[std::string{XmpKey::pitch}].toFloat(),
+        xmp_data[std::string{XmpKey::roll}].toFloat(),
+        xmp_data[std::string{XmpKey::latitude}].toFloat(),
+        xmp_data[std::string{XmpKey::longitude}].toFloat(),
+        xmp_data[std::string{XmpKey::altitude}].toFloat(),
+        path,
+        temp_save_path};
+  }
 };
 
 class ImgsData {
@@ -295,10 +309,56 @@ public:
 
   ImgsData() noexcept = default;
 
-  ImgsData(std::initializer_list<ImgData> init) noexcept : imgs_data(init) {}
-
-  template <std::input_iterator I>
-  ImgsData(I first, I last) noexcept : imgs_data(first, last) {}
+  void delay_initialize(
+      const std::vector<fs::path>& img_paths,
+      const fs::path&              temporary_save_path,
+      Progress&                    progress) noexcept {
+    if(img_paths.empty()) {
+      THIS_LOG_WARN("No image input!");
+      return;
+    }
+    std::vector<double> f_35mms(img_paths.size(), std::numeric_limits<double>::quiet_NaN());
+    run(
+        img_paths.size(),
+        [this, &img_paths, &f_35mms, temporary_save_path](int idx) noexcept {
+          const auto& img_path = img_paths[idx];
+          if(!ImgDataFactory::check_path(img_path)) {
+            return;
+          }
+          ExifXmp exif_xmp(img_path);
+          if(!ImgDataFactory::check_xmp(exif_xmp.xmp_data())) {
+            return;
+          }
+          auto&       exif_data = exif_xmp.exif_data();
+          std::string key{ExifKey::focal_length_35mm};
+          if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
+            THIS_LOG_WARN("Key {} not found in Exif data", key);
+            return;
+          }
+          f_35mms[idx] = exif_data[std::string{ExifKey::focal_length_35mm}].toFloat();
+          push_back(ImgDataFactory::build(img_path, temporary_save_path));
+        },
+        progress);
+    std::unordered_map<int, int> freq_map;
+    const double                 approx = 1000.0;
+    for(double focal : f_35mms) {
+      if(std::isfinite(focal)) {
+        freq_map[static_cast<int>(std::round(focal * approx))]++;
+      }
+    }
+    int max_count = 0;
+    for(const auto& [focal, count] : freq_map) {
+      if(count > max_count) {
+        max_count = count;
+        f_35mm    = focal;
+      }
+    }
+    f_35mm /= approx;
+    if(max_count != imgs_data.size()) {
+      THIS_LOG_WARN("Images are not taken from same camera!");
+    }
+    find_and_set_reference_coord();
+  }
 
   [[nodiscard]] auto operator[](size_t idx) noexcept -> ImgData& { return imgs_data[idx]; }
 
@@ -363,11 +423,60 @@ public:
     imgs_data.pop_back();
   }
 
+  [[nodiscard]] auto K() noexcept -> cv::Mat {
+    if(std::isnan(camera_array[0])) {
+      initialize_camera_param();
+    }
+    return array2camera(camera_array);
+  }
+
+  [[nodiscard]] auto M() noexcept -> cv::Mat {
+    // clang-format off
+    return K() * (cv::Mat_<double>(3, 3) << 
+     0, 1, 0,
+    -1, 0, 0, 
+     0, 0, 1);
+    // clang-format on
+  }
+
+  [[nodiscard]] auto D() const noexcept -> cv::Mat { return array2distort(distort_array); }
+
+  [[nodiscard]] auto camera_array_raw() noexcept -> CameraArray& {
+    if(std::isnan(camera_array[0])) {
+      initialize_camera_param();
+    }
+    return camera_array;
+  }
+
+  [[nodiscard]] auto distort_array_raw() noexcept -> DistortArray& { return distort_array; }
+
+  [[nodiscard]] auto distort_array_raw() const noexcept -> const DistortArray& { return distort_array; }
+
+  void set_by_camera_params(double width, double height, double focal_35mm) noexcept {
+    double aspect_ratio = width * 1.0 / height;
+    double ref_width    = (aspect_ratio >= 1.5) ? 36.0 : 24.0 * aspect_ratio;
+    double focal_pix    = (aspect_ratio >= 1.5) ? (width / 36.0 * focal_35mm) : (height / 24.0 * focal_35mm);
+    camera_array        = {focal_pix, focal_pix, width / 2.0, height / 2.0};
+  }
+
+  void initialize_camera_param() {
+    THIS_ASSERTION_SHOULD_TRUE(!imgs_data.empty());
+    const auto& [w, h] = imgs_data[0].origin_img().get_size();
+    THIS_ASSERTION_SHOULD_TRUE(std::ranges::all_of(imgs_data, [w, h](auto& img_data) noexcept {
+      const auto& [w1, h1] = img_data.origin_img().get_size();
+      return w == w1 && h == h1;
+    }));
+    set_by_camera_params(w, h, f_35mm);
+  }
+
   void find_and_set_reference_coord() noexcept {
     std::lock_guard<std::mutex> lock(mutex);
     std::vector<double>         latitudes;
     std::vector<double>         longitudes;
-    for(auto&& data : imgs_data) {
+    if(imgs_data.empty()) {
+      return;
+    }
+    for(const auto& data : imgs_data) {
       latitudes.push_back(data.latitude);
       longitudes.push_back(data.longitude);
     }
@@ -376,81 +485,24 @@ public:
     std::nth_element(longitudes.begin(), longitudes.begin() + nth, longitudes.end());
     double latitude_ref  = latitudes[nth];
     double longitude_ref = longitudes[nth];
-    for(auto&& data : imgs_data) {
+    for(auto& data : imgs_data) {
       data.set_reference(latitude_ref, longitude_ref);
     }
   }
 
 private:
 
-  std::vector<ImgData> imgs_data;
-  std::mutex           mutex;
-};
-
-class ImgDataFactory {
-private:
-
-  static constexpr std::array<std::string_view, 10> img_extensions =
-      {".jpg", ".jpeg", ".png", ".tiff", ".bmp", ".JPG", ".JPEG", ".PNG", ".TIFF", ".BMP"};
-
   struct ExifKey {
     static constexpr std::string_view focal_length_35mm{"Exif.Photo.FocalLengthIn35mmFilm"};
   };
 
-  struct XmpKey {
-    static constexpr std::string_view yaw{"Xmp.drone-dji.GimbalYawDegree"}, pitch{"Xmp.drone-dji.GimbalPitchDegree"},
-        roll{"Xmp.drone-dji.GimbalRollDegree"}, latitude{"Xmp.drone-dji.GpsLatitude"},
-        longitude{"Xmp.drone-dji.GpsLongitude"}, altitude{"Xmp.drone-dji.RelativeAltitude"};
-  };
-
-public:
-
-  static auto validate(const fs::path& path) noexcept -> bool {
-    if(!fs::is_regular_file(path)
-       || std::ranges::find(img_extensions, path.extension().string()) == img_extensions.end()) {
-      THIS_LOG_WARN("Error: {} is not a valid image file", path.string());
-      return false;
-    }
-    ExifXmp               exif_xmp(path);
-    const Exiv2::XmpData& xmp_data = exif_xmp.xmp_data();
-    auto validate_xmp = [&xmp_data, path = exif_xmp.get_img_path().string()](std::string_view key_) noexcept {
-      std::string key{key_.data(), key_.size()};
-      if(xmp_data.findKey(Exiv2::XmpKey(key)) == xmp_data.end()) {
-        THIS_LOG_WARN("{}: Key {} not found in XMP data", path, key);
-        return false;
-      }
-      return true;
-    };
-    const Exiv2::ExifData& exif_data = exif_xmp.exif_data();
-    auto validate_exif = [&exif_data, path = exif_xmp.get_img_path().string()](std::string_view key_) noexcept {
-      std::string key{key_.data(), key_.size()};
-      if(exif_data.findKey(Exiv2::ExifKey(key)) == exif_data.end()) {
-        THIS_LOG_WARN("{}: Key {} not found in XMP data", path, key);
-        return false;
-      }
-      return true;
-    };
-    return validate_xmp(XmpKey::yaw) && validate_xmp(XmpKey::pitch) && validate_xmp(XmpKey::roll)
-           && validate_xmp(XmpKey::latitude) && validate_xmp(XmpKey::longitude) && validate_xmp(XmpKey::altitude)
-           && validate_exif(ExifKey::focal_length_35mm);
-  }
-
-  static auto build(const fs::path& path, const fs::path& temp_save_path) noexcept -> ImgData {
-    ExifXmp exif_xmp{path};
-    auto&   xmp_data  = exif_xmp.xmp_data();
-    auto&   exif_data = exif_xmp.exif_data();
-    return ImgData{
-        xmp_data[std::string{XmpKey::yaw}].toFloat(),
-        xmp_data[std::string{XmpKey::pitch}].toFloat(),
-        xmp_data[std::string{XmpKey::roll}].toFloat(),
-        xmp_data[std::string{XmpKey::latitude}].toFloat(),
-        xmp_data[std::string{XmpKey::longitude}].toFloat(),
-        xmp_data[std::string{XmpKey::altitude}].toFloat(),
-        exif_data[std::string{ExifKey::focal_length_35mm}].toFloat(),
-        path,
-        temp_save_path};
-  }
+  std::vector<ImgData> imgs_data;
+  std::mutex           mutex;
+  double               f_35mm{};
+  CameraArray          camera_array{std::numeric_limits<double>::quiet_NaN()};
+  DistortArray         distort_array{0.0, 0.0, 0.0, 0.0, 0.0};
 };
+
 } // namespace Ortho
 
 #endif

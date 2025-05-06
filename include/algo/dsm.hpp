@@ -2,16 +2,12 @@
 #define ORTHO_DSM_HPP
 
 #include <pcl/common/common.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/surface/mls.h>
+
 #include <opencv2/core.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include "tools/report_error.hpp"
-#include "tools/utility.hpp"
-#include "types/common_types.hpp"
 
 namespace Ortho {
 
@@ -20,18 +16,23 @@ inline auto pointcloud_to_dsm(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, 
     THIS_MESSAGE("Empty point cloud data, cannot generate DSM.");
     return {};
   }
-  pcl::PointXYZ min_pt;
-  pcl::PointXYZ max_pt;
-  pcl::getMinMax3D(*cloud, min_pt, max_pt);
-  int cols = static_cast<int>(std::ceil((max_pt.x - min_pt.x) / resolution)) + 1;
-  int rows = static_cast<int>(std::ceil((max_pt.y - min_pt.y) / resolution)) + 1;
+  pcl::PointXYZ min_pt_;
+  pcl::PointXYZ max_pt_;
+  pcl::getMinMax3D(*cloud, min_pt_, max_pt_);
+  auto min_pt = min_pt_.getVector3fMap();
+  auto max_pt = max_pt_.getVector3fMap();
+  std::cout << std::format("max {} {} min {} {}", max_pt.x(), max_pt.y(), min_pt.x(), min_pt.y());
+
+  int cols = static_cast<int>(std::ceil((max_pt.x() - min_pt.x()) / resolution)) + 1;
+  int rows = static_cast<int>(std::ceil((max_pt.y() - min_pt.y()) / resolution)) + 1;
   THIS_MESSAGE("DSM size: {}x{}, resolution: {}m", cols, rows, resolution);
   cv::Mat dsm(rows, cols, CV_64F, std::numeric_limits<double>::quiet_NaN());
-  for(const auto& point : *cloud) {
-    int col = static_cast<int>((point.x - min_pt.x) / resolution);
-    int row = static_cast<int>((point.y - min_pt.y) / resolution);
+  for(const auto& point_ : *cloud) {
+    auto point = point_.getVector3fMap();
+    int  col   = static_cast<int>((point.x() - min_pt.x()) / resolution);
+    int  row   = static_cast<int>((point.y() - min_pt.y()) / resolution);
     if(col >= 0 && col < cols && row >= 0 && row < rows) {
-      auto z_value = static_cast<double>(point.z);
+      auto z_value = static_cast<double>(point.z());
       if(std::isnan(dsm.at<double>(row, col)) || z_value > dsm.at<double>(row, col)) {
         dsm.at<double>(row, col) = z_value;
       }
