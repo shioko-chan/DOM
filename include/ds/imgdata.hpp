@@ -460,12 +460,27 @@ public:
   }
 
   void initialize_camera_param() {
-    THIS_ASSERTION_SHOULD_TRUE(!imgs_data.empty());
-    const auto& [w, h] = imgs_data[0].origin_img().get_size();
-    THIS_ASSERTION_SHOULD_TRUE(std::ranges::all_of(imgs_data, [w, h](auto& img_data) noexcept {
-      const auto& [w1, h1] = img_data.origin_img().get_size();
-      return w == w1 && h == h1;
-    }));
+    if(imgs_data.empty()) {
+      THIS_LOG_WARN("No image input!");
+      return;
+    }
+    std::map<std::pair<int, int>, int> freq_map;
+    for(auto& img_data : imgs_data) {
+      const auto& [w, h] = img_data.origin_img().get_size();
+      freq_map[{w, h}]++;
+    }
+    int                 max_count = 0;
+    std::pair<int, int> w_h{};
+    for(const auto& [wh, count] : freq_map) {
+      if(count > max_count) {
+        max_count = count;
+        w_h       = wh;
+      }
+    }
+    if(max_count != imgs_data.size()) {
+      THIS_LOG_WARN("Images are not in the same size!");
+    }
+    const auto& [w, h] = w_h;
     set_by_camera_params(w, h, f_35mm);
   }
 
