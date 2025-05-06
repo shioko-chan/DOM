@@ -102,17 +102,6 @@ auto world2camera(const T* const axisangle, const T* const translation, const T*
   return point;
 }
 
-inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud{new pcl::PointCloud<pcl::PointXYZ>};
-  cloud->resize(tri_res_vec.size());
-  for(int i = 0; i < tri_res_vec.size(); ++i) {
-    const auto& point = tri_res_vec[i].pnt3d;
-    (*cloud)[i].getVector3fMap() =
-        Eigen::Vector3f{static_cast<float>(point[1]), static_cast<float>(point[0]), static_cast<float>(-point[2])};
-  }
-  return cloud;
-}
-
 #ifdef ENABLE_VISUALIZE_OUTPUT
 inline void export_pcd(const fs::path& path, const Point3s<double>& points) noexcept {
   std::ofstream file(path);

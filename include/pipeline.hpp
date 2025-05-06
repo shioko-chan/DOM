@@ -11,12 +11,12 @@
 #include <opencv2/opencv.hpp>
 
 #include "algo/ba.hpp"
-#include "algo/dsm.hpp"
 #include "algo/filter.hpp"
 #include "algo/knn.hpp"
 #include "algo/stitch.hpp"
 #include "algo/tri.hpp"
 #include "config.hpp"
+#include "ds/dsm.hpp"
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
 #include "nn/matcher.hpp"
@@ -92,7 +92,7 @@ public:
     return {view.begin(), view.end()};
   }
 
-  auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept -> cv::Mat {
+  auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept -> DSM {
     cv::Mat     r;
     cv::Mat     t;
     cv::Mat     k;
@@ -111,33 +111,26 @@ public:
     std::cout << "res: " << res.size() << '\n';
     THIS_MESSAGE("Filtering outliers");
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    filter_outliers(&res, temporary_save_path / "f1.pcd");
+    Filter::filter_outliers_statistical(&res, temporary_save_path / "f1.pcd");
 #else
-    filter_outliers(&res);
+    Filter::filter_outliers_statistical(&res);
 #endif
 
     THIS_MESSAGE("Smoothing surface");
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    smooth_surface(&res, temporary_save_path / "s1.pcd");
+    Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
 #else
-    smooth_surface(&res);
+    Filter::smooth_surface(&res);
 #endif
-    filter_near_observes(imgs_data, &res);
-    filter_too_few_points(&res);
-    std::unordered_set<int> observation_ids;
-    for(const auto& tri_res : res) {
-      for(const auto& [idx, _] : tri_res.pnt2d_idx_vec) {
-        observation_ids.insert(idx);
-      }
-    }
-    for(int idx = 0; idx < imgs_data.size(); ++idx) {
-      if(!observation_ids.contains(idx)) {
-        imgs_data[idx].set_invalid();
-      }
-    }
-    ba(imgs_data, &res);
+    Filter::filter_near_observes(imgs_data, &res);
+    Filter::filter_too_few_points(&res);
+    Filter::filter_invalid_image(res, imgs_data);
+    BA::ba(imgs_data, &res);
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
+    export_pcd(temporary_save_path / "ba.pcd", Filter::tri_res_vec2point_cloud(res));
+    Filter::filter_outliers_radius(&res, temporary_save_path / "f2.pcd");
+#else
+    Filter::filter_outliers_radius(&res);
 #endif
     r = img.R_w2c();
     t = img.t_w2c();
@@ -147,21 +140,20 @@ public:
     std::cout << "K: " << k << '\n';
     std::cout << "d:" << imgs_data.D() << "\n";
     THIS_MESSAGE("Generating DSM");
-    auto cloud = tri_res_vec2point_cloud(res);
+    auto cloud = Filter::tri_res_vec2point_cloud(res);
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    cv::Mat dsm = pointcloud_to_dsm(cloud);
-    save_dsm_as_image(dsm, temporary_save_path / "dsm.png");
+    auto dsm = pointcloud_to_dsm(cloud);
+    dsm.save_as_image(temporary_save_path / "dsm.png");
     return dsm;
 #else
     return pointcloud_to_dsm(cloud);
 #endif
   }
 
-  void stitch(ImgsData& imgs_data, const cv::Mat& dsm) {
+  void stitch(ImgsData& imgs_data, const DSM& dsm) {
     THIS_MESSAGE("Stitching images");
-    DSMStitcher stitcher(temporary_save_path);
-    auto        panorama      = stitcher.stitch(imgs_data, dsm, progress);
-    fs::path    panorama_path = output_dir / "stitched_image.jpg";
+    auto     panorama      = Ortho::DSMStitcher::stitch(imgs_data, dsm, progress);
+    fs::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), panorama);
     THIS_MESSAGE("Stitched image saved to {}", panorama_path.string());
   }
