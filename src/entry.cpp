@@ -28,18 +28,18 @@ auto main(const int argc, const char* const argv[]) -> int {
       fs::create_directory(output_dir);
     }
 
-    auto process = Ortho::Pipeline(input_dir, output_dir, output_dir / "temp");
+    auto process = SkyMerge::Pipeline(input_dir, output_dir, output_dir / "temp");
     THIS_MESSAGE("[1/5] Getting image information");
     auto imgs_data = process.get_image_info();
     THIS_MESSAGE("[2/5] Rotating images for matching");
     process.rotate_rectify(imgs_data);
     THIS_MESSAGE("[3/5] Matching neighbor images");
-    auto match_pairs = process.match(imgs_data, Ortho::NEIGHBOR_PROPOSAL);
+    auto match_pairs = process.match(imgs_data, SkyMerge::NEIGHBOR_PROPOSAL);
     THIS_MESSAGE("[4/5] Triangulate");
     auto dsm = process.triangulate(imgs_data, match_pairs);
     THIS_MESSAGE("[5/5] Stitching images");
     process.stitch(imgs_data, dsm);
   }
-  Ortho::print_run_time(start);
+  SkyMerge::print_run_time(start);
   return 0;
 }

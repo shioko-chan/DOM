@@ -1,5 +1,5 @@
-#ifndef ORTHO_FEATURE_EXTRACTOR_HPP
-#define ORTHO_FEATURE_EXTRACTOR_HPP
+#ifndef SKYMERGE_FEATURE_EXTRACTOR_HPP
+#define SKYMERGE_FEATURE_EXTRACTOR_HPP
 
 #include <algorithm>
 #include <array>
@@ -26,7 +26,7 @@
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -155,7 +155,7 @@ public:
   auto operator=(Extractor&&) -> Extractor&      = delete;
 
   using Feature  = F;
-  using Features = Ortho::Features<F>;
+  using Features = SkyMerge::Features<F>;
 
   static constexpr size_t descriptor_size = Feature::descriptor_size;
 
@@ -380,5 +380,5 @@ public:
   explicit DiskExtractor(const fs::path& temporary_save_path) : Extractor(temporary_save_path, "disk", DISK_WEIGHT) {}
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

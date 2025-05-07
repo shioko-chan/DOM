@@ -1,5 +1,5 @@
-#ifndef ORTHO_IMAGE_HPP
-#define ORTHO_IMAGE_HPP
+#ifndef SKYMERGE_IMAGE_HPP
+#define SKYMERGE_IMAGE_HPP
 
 #include <exception>
 #include <filesystem>
@@ -17,7 +17,7 @@
 #include "tools/utility.hpp"
 #include "types/cv_alias.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -298,5 +298,5 @@ private:
     }
   }
 };
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

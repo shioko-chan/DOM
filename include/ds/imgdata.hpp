@@ -1,5 +1,5 @@
-#ifndef ORTHO_IMGDATA_HPP
-#define ORTHO_IMGDATA_HPP
+#ifndef SKYMERGE_IMGDATA_HPP
+#define SKYMERGE_IMGDATA_HPP
 
 #include <algorithm>
 #include <array>
@@ -33,7 +33,7 @@
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -163,7 +163,7 @@ public:
     THIS_ASSERTION_SHOULD_TRUE(reference_set, "Reference coordinate not set!");
     auto img                                = img_origin.get();
     const auto [width, height]              = img.size();
-    auto [rotate_img, pixel_span, pers_mat] = Ortho::rotate_rectify(R_c2w(), img);
+    auto [rotate_img, pixel_span, pers_mat] = SkyMerge::rotate_rectify(R_c2w(), img);
     cv::Mat pers_mat_inv                    = pers_mat.inv();
     kpnts.set_convert_function([pers = pers_mat_inv, height](Point<double> point) noexcept -> Point<double> {
       return mat2point(pers * point);
@@ -515,6 +515,6 @@ private:
   DistortArray         distort_array{0.0, 0.0, 0.0, 0.0, 0.0};
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

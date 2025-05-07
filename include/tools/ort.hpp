@@ -1,5 +1,5 @@
-#ifndef ORTHO_ONNXRUNTIME_HPP
-#define ORTHO_ONNXRUNTIME_HPP
+#ifndef SKYMERGE_ONNXRUNTIME_HPP
+#define SKYMERGE_ONNXRUNTIME_HPP
 
 #include <algorithm>
 #include <filesystem>
@@ -12,7 +12,7 @@
 #include "tools/debug.hpp"
 #include "tools/report_error.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -109,5 +109,5 @@ public:
     return std::ranges::find(output_names, name) - output_names.begin();
   }
 };
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

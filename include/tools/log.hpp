@@ -1,5 +1,5 @@
-#ifndef ORTHO_LOG_HPP
-#define ORTHO_LOG_HPP
+#ifndef SKYMERGE_LOG_HPP
+#define SKYMERGE_LOG_HPP
 
 #include <format>
 #include <iostream>
@@ -8,7 +8,7 @@
 
 #include "tools/ansi.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 inline auto stream_mtx() -> std::mutex& {
   static std::mutex stream_mtx;
@@ -28,7 +28,7 @@ void log_error(std::string_view format, const Args&... args) {
   log(std::cerr, prefix, format, args...);
 }
 
-  #define THIS_LOG_ERROR(fmt, ...) Ortho::log_error(fmt __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_LOG_ERROR(fmt, ...) SkyMerge::log_error(fmt __VA_OPT__(, ) __VA_ARGS__)
 #else
   #define THIS_LOG_ERROR(...)
 #endif
@@ -40,7 +40,7 @@ void log_warn(std::string_view format, const Args&... args) {
   log(std::cerr, prefix, format, args...);
 }
 
-  #define THIS_LOG_WARN(fmt, ...) Ortho::log_warn(fmt __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_LOG_WARN(fmt, ...) SkyMerge::log_warn(fmt __VA_OPT__(, ) __VA_ARGS__)
 #else
   #define THIS_LOG_WARN(...)
 #endif
@@ -52,7 +52,7 @@ void log_info(std::string_view format, const Args&... args) {
   log(std::cout, prefix, format, args...);
 }
 
-  #define THIS_LOG_INFO(fmt, ...) Ortho::log_info(fmt __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_LOG_INFO(fmt, ...) SkyMerge::log_info(fmt __VA_OPT__(, ) __VA_ARGS__)
 #else
   #define THIS_LOG_INFO(...)
 #endif
@@ -64,7 +64,7 @@ void log_debug(std::string_view format, const Args&... args) {
   log(std::cout, prefix, format, args...);
 }
 
-  #define THIS_LOG_DEBUG(fmt, ...) Ortho::log_debug(fmt __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_LOG_DEBUG(fmt, ...) SkyMerge::log_debug(fmt __VA_OPT__(, ) __VA_ARGS__)
 #else
   #define THIS_LOG_DEBUG(...)
 #endif
@@ -75,7 +75,7 @@ void message(std::string_view format, const Args&... args) {
   log(std::cout, prefix, format, args...);
 }
 
-#define THIS_MESSAGE(fmt, ...) Ortho::message(fmt __VA_OPT__(, ) __VA_ARGS__)
+#define THIS_MESSAGE(fmt, ...) SkyMerge::message(fmt __VA_OPT__(, ) __VA_ARGS__)
 
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

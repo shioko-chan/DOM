@@ -8,7 +8,7 @@
 
 #include "types/common_types.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 class MatchPair {
 public:
@@ -38,6 +38,6 @@ public:
 
 using MatchPairs = std::vector<MatchPair>;
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

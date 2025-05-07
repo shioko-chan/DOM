@@ -1,5 +1,5 @@
-#ifndef ORTHO_COMMON_TYPES_HPP
-#define ORTHO_COMMON_TYPES_HPP
+#ifndef SKYMERGE_COMMON_TYPES_HPP
+#define SKYMERGE_COMMON_TYPES_HPP
 
 #include <array>
 #include <mutex>
@@ -11,7 +11,7 @@
 
 #include "types/hash.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 using RotateAxisAngle = std::array<double, 3>;
 using CameraArray     = std::array<double, 4>;
@@ -67,5 +67,5 @@ struct alignas(64) TriRes {
 
 using TriResVec = std::vector<TriRes>;
 
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

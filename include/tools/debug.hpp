@@ -1,5 +1,5 @@
-#ifndef ORTHO_DEBUG_HPP
-#define ORTHO_DEBUG_HPP
+#ifndef SKYMERGE_DEBUG_HPP
+#define SKYMERGE_DEBUG_HPP
 
 #ifdef ENABLE_ASSERTION
 
@@ -12,7 +12,7 @@
 
   #include "tools/log.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 template <typename T>
 concept streamable = requires(T&& type, std::ostream& ostream) {
   { ostream << std::forward<T>(type) } -> std::convertible_to<std::ostream&>;
@@ -156,14 +156,14 @@ inline void false_assertion(
     report_assertion_failure(custom_msg, "false", loc);
   }
 }
-} // namespace Ortho
+} // namespace SkyMerge
 
-  #define THIS_ASSERTION_SHOULD_EQ(lhs, rhs, ...) Ortho::eq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
-  #define THIS_ASSERTION_SHOULD_NEQ(lhs, rhs, ...) Ortho::neq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
-  #define THIS_ASSERTION_SHOULD_LES(lhs, rhs, ...) Ortho::les_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
-  #define THIS_ASSERTION_SHOULD_LEQ(lhs, rhs, ...) Ortho::leq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
-  #define THIS_ASSERTION_SHOULD_TRUE(exp, ...) Ortho::true_assertion(exp __VA_OPT__(, ) __VA_ARGS__)
-  #define THIS_ASSERTION_SHOULD_FALSE(exp, ...) Ortho::false_assertion(exp __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_ASSERTION_SHOULD_EQ(lhs, rhs, ...) SkyMerge::eq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_ASSERTION_SHOULD_NEQ(lhs, rhs, ...) SkyMerge::neq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_ASSERTION_SHOULD_LES(lhs, rhs, ...) SkyMerge::les_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_ASSERTION_SHOULD_LEQ(lhs, rhs, ...) SkyMerge::leq_assertion(lhs, rhs __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_ASSERTION_SHOULD_TRUE(exp, ...) SkyMerge::true_assertion(exp __VA_OPT__(, ) __VA_ARGS__)
+  #define THIS_ASSERTION_SHOULD_FALSE(exp, ...) SkyMerge::false_assertion(exp __VA_OPT__(, ) __VA_ARGS__)
 
 #else
 

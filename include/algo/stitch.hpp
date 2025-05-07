@@ -1,5 +1,5 @@
-#ifndef ORTHO_ALGO_STITCH_HPP
-#define ORTHO_ALGO_STITCH_HPP
+#ifndef SKYMERGE_ALGO_STITCH_HPP
+#define SKYMERGE_ALGO_STITCH_HPP
 
 #include <mutex>
 #include <opencv2/calib3d.hpp>
@@ -15,7 +15,7 @@
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 class DSMStitcher {
 public:
@@ -77,6 +77,7 @@ public:
         texture.at<cv::Vec3b>(t_y, t_x) = img.at<cv::Vec3b>(pixel.y, pixel.x);
       }
     }
+    cv::flip(texture, texture, -1);
     return texture;
   }
 
@@ -93,6 +94,6 @@ private:
     int        dsm_idx;
   };
 };
-} // namespace Ortho
+} // namespace SkyMerge
 
-#endif // ORTHO_ALGO_STITCH_HPP
+#endif // SKYMERGE_ALGO_STITCH_HPP

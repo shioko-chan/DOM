@@ -1,5 +1,5 @@
-#ifndef ORTHO_REPORT_ERROR_HPP
-#define ORTHO_REPORT_ERROR_HPP
+#ifndef SKYMERGE_REPORT_ERROR_HPP
+#define SKYMERGE_REPORT_ERROR_HPP
 
 #include <exception>
 #include <filesystem>
@@ -65,7 +65,7 @@ struct formatter<OrtErrorCode> : formatter<std::string_view> { // NOLINT
 };
 } // namespace std
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -130,6 +130,6 @@ template <typename... Args>
   std::terminate();
 }
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

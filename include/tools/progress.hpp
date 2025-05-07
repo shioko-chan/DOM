@@ -10,7 +10,7 @@
 #include "tools/ansi.hpp"
 #include "tools/log.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 struct alignas(64) Progress {
 private:
 
@@ -80,5 +80,5 @@ public:
     cnt   = 0;
   }
 };
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

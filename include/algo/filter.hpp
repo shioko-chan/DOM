@@ -1,5 +1,5 @@
-#ifndef ORTHO_FILTER_HPP
-#define ORTHO_FILTER_HPP
+#ifndef SKYMERGE_FILTER_HPP
+#define SKYMERGE_FILTER_HPP
 
 #include <thread>
 #include <unordered_set>
@@ -21,7 +21,7 @@
 #include "tools/utility.hpp"
 #include "types/common_types.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 class Filter {
 public:
 
@@ -202,6 +202,6 @@ private:
     return total_distance / static_cast<double>(cloud->size());
   }
 };
-} // namespace Ortho
+} // namespace SkyMerge
 
-#endif // ORTHO_FILTER_HPP
+#endif // SKYMERGE_FILTER_HPP

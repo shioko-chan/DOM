@@ -1,5 +1,5 @@
-#ifndef ORTHO_KNN_ON_EUCLIDEAN_DISTANCE_HPP
-#define ORTHO_KNN_ON_EUCLIDEAN_DISTANCE_HPP
+#ifndef SKYMERGE_KNN_ON_EUCLIDEAN_DISTANCE_HPP
+#define SKYMERGE_KNN_ON_EUCLIDEAN_DISTANCE_HPP
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +14,7 @@
 #include "ds/matchpair.hpp"
 #include "types/cv_alias.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 template <typename T>
   requires std::is_arithmetic_v<T>
@@ -75,6 +75,6 @@ inline auto find_neighbors(const ImgsData& imgs_data, const int k_neighbors = 8)
   return {match_set.begin(), match_set.end()};
 }
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

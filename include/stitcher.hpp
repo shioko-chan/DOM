@@ -1,5 +1,5 @@
-#ifndef ORTHO_STITCHER_HPP
-#define ORTHO_STITCHER_HPP
+#ifndef SKYMERGE_STITCHER_HPP
+#define SKYMERGE_STITCHER_HPP
 
 #include <algorithm>
 #include <filesystem>
@@ -17,7 +17,7 @@
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -163,6 +163,6 @@ private:
   }
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

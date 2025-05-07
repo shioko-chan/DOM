@@ -1,5 +1,5 @@
-#ifndef ORTHO_TRI_HPP
-#define ORTHO_TRI_HPP
+#ifndef SKYMERGE_TRI_HPP
+#define SKYMERGE_TRI_HPP
 
 #include <array>
 #include <cmath>
@@ -22,7 +22,7 @@
 #include "tools/utility.hpp"
 #include "types/common_types.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 inline auto triangulation(
     const MatchPairs& match_img_pairs,
@@ -120,6 +120,6 @@ inline auto triangulation(
   THIS_MESSAGE("Triangulation Finished");
   return all_res;
 }
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

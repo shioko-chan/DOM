@@ -1,5 +1,5 @@
-#ifndef ORTHO_TRACKS_HPP
-#define ORTHO_TRACKS_HPP
+#ifndef SKYMERGE_TRACKS_HPP
+#define SKYMERGE_TRACKS_HPP
 
 #include <algorithm>
 #include <cassert>
@@ -14,7 +14,7 @@
 #include "tools/debug.hpp"
 #include "types/common_types.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 using WeightMap     = PointIdxUMap<PointIdxUMap<double>>;
 using PointIdxPair  = std::pair<PointIdx, PointIdx>;
@@ -203,7 +203,7 @@ private:
 
   template <typename Func>
   void bfs(const PointIdx& start, Func visit, PointIdxUSet* arranged = nullptr) const {
-    Ortho::bfs(pnt_map, start, visit, arranged);
+    SkyMerge::bfs(pnt_map, start, visit, arranged);
   }
 
   auto find_conflicts(const PointIdx& start) const -> PointIdxPairs {
@@ -237,5 +237,5 @@ private:
   }
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

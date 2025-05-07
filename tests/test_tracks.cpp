@@ -4,7 +4,7 @@
 
 #include "algo/tracks.hpp"
 
-using namespace Ortho;
+using namespace SkyMerge;
 
 PointIdx test_make_idx(int i) { return {i, 0}; }
 

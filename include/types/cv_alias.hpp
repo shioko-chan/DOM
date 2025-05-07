@@ -1,5 +1,5 @@
-#ifndef ORTHO_CV_ALIAS_HPP
-#define ORTHO_CV_ALIAS_HPP
+#ifndef SKYMERGE_CV_ALIAS_HPP
+#define SKYMERGE_CV_ALIAS_HPP
 
 #include <set>
 #include <type_traits>
@@ -11,7 +11,7 @@
 
 #include "types/hash.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 template <typename T>
   requires std::is_arithmetic_v<T>
@@ -65,5 +65,5 @@ template <typename T>
   requires std::is_arithmetic_v<T>
 using Point3USet = std::unordered_set<Point3<T>, Point3Hasher<T>>;
 
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

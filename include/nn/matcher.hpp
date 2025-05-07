@@ -25,7 +25,7 @@
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -261,5 +261,5 @@ auto matcher_factory(const fs::path& temporary_save_path) -> Matcher<E> {
   }
 }
 
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

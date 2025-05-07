@@ -1,9 +1,9 @@
-#ifndef ORTHO_ANSI_COLOR_HPP
-#define ORTHO_ANSI_COLOR_HPP
+#ifndef SKYMERGE_ANSI_COLOR_HPP
+#define SKYMERGE_ANSI_COLOR_HPP
 
 #include <string_view>
 
-namespace Ortho::ansi {
+namespace SkyMerge::ansi {
 constexpr std::string_view RESET      = "\033[0m";
 constexpr std::string_view BOLD       = "\033[1m";
 constexpr std::string_view DIM        = "\033[2m";
@@ -23,5 +23,5 @@ constexpr std::string_view CYAN       = "\033[36m";
 constexpr std::string_view WHITE      = "\033[37m";
 constexpr std::string_view GRAY       = "\033[90m";
 constexpr std::string_view BRIGHT_RED = "\033[91m";
-} // namespace Ortho::ansi
+} // namespace SkyMerge::ansi
 #endif

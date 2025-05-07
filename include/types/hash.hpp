@@ -1,10 +1,10 @@
-#ifndef ORTHO_HASH_HPP
-#define ORTHO_HASH_HPP
+#ifndef SKYMERGE_HASH_HPP
+#define SKYMERGE_HASH_HPP
 
 #include <cstdint>
 #include <functional>
 
-namespace Ortho {
+namespace SkyMerge {
 
 template <typename T>
 void hash_append(uint64_t& seed, const T& val) noexcept {
@@ -18,6 +18,6 @@ auto hash(const Args&... args) noexcept -> uint64_t {
   return seed;
 }
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

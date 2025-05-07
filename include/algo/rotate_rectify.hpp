@@ -10,7 +10,7 @@
 #include "tools/utility.hpp"
 #include "types/cv_alias.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 struct alignas(128) RectifyResult {
   cv::Mat        img;
@@ -63,5 +63,5 @@ inline auto rotate_rectify(const cv::Mat& R_cam2world, const cv::Mat& img) noexc
       .pers_mat   = std::move(perspective_mat),
   };
 }
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

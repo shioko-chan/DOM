@@ -1,9 +1,9 @@
-#ifndef ORTHO_CONFIG_HPP
-#define ORTHO_CONFIG_HPP
+#ifndef SKYMERGE_CONFIG_HPP
+#define SKYMERGE_CONFIG_HPP
 
 #include <cstdint>
 
-namespace Ortho {
+namespace SkyMerge {
 
 constexpr double LIGHTGLUE_THRESHOLD{0.8};
 constexpr int    MATCH_CNT_THRESHOLD{150};
@@ -26,7 +26,7 @@ enum method_t : uint8_t { SUPERPOINT, DISK };
 
 constexpr method_t FEATURE_EXTRACTION_METHOD{DISK};
 
-constexpr double RESOLUTION{0.05}; // meters
-} // namespace Ortho
+constexpr double RESOLUTION{0.25}; // meters
+} // namespace SkyMerge
 
 #endif

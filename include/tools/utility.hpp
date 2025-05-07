@@ -1,5 +1,5 @@
-#ifndef ORTHO_UTILITY_HPP
-#define ORTHO_UTILITY_HPP
+#ifndef SKYMERGE_UTILITY_HPP
+#define SKYMERGE_UTILITY_HPP
 
 #include <algorithm>
 #include <cassert>
@@ -38,7 +38,7 @@
 #include "types/common_types.hpp"
 #include "types/cv_alias.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -613,7 +613,7 @@ auto distance(const Point3<T>& point0, const Point3<U>& point1) noexcept -> doub
       static_cast<double>(point0.z - point1.z));
 }
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 namespace cv {
 

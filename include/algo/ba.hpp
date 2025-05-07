@@ -1,5 +1,5 @@
-#ifndef ORTHO_BA_HPP
-#define ORTHO_BA_HPP
+#ifndef SKYMERGE_BA_HPP
+#define SKYMERGE_BA_HPP
 
 #include <cassert>
 #include <cmath>
@@ -22,7 +22,7 @@
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 class BA {
 public:
@@ -239,5 +239,5 @@ private:
     }
   }
 };
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

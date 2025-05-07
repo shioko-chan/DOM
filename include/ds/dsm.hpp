@@ -1,5 +1,5 @@
-#ifndef ORTHO_DSM_HPP
-#define ORTHO_DSM_HPP
+#ifndef SKYMERGE_DSM_HPP
+#define SKYMERGE_DSM_HPP
 
 #include <pcl/common/common.h>
 
@@ -12,7 +12,7 @@
 #include "tools/report_error.hpp"
 #include "types/cv_alias.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 class DSM {
 public:
@@ -81,9 +81,8 @@ private:
     auto max_pt = max_pt_.getVector3fMap();
     min_x       = min_pt.x();
     min_y       = min_pt.y();
-    std::cout << std::format("max {} {} min {} {}", max_pt.x(), max_pt.y(), min_x, min_y);
-    int cols = static_cast<int>(std::ceil((max_pt.x() - min_x) / resolution_)) + 1;
-    int rows = static_cast<int>(std::ceil((max_pt.y() - min_y) / resolution_)) + 1;
+    int cols    = static_cast<int>(std::ceil((max_pt.x() - min_x) / resolution_)) + 1;
+    int rows    = static_cast<int>(std::ceil((max_pt.y() - min_y) / resolution_)) + 1;
     THIS_MESSAGE("DSM size: {}x{}, resolution: {}m", cols, rows, resolution_);
     cv::Mat dsm(rows, cols, CV_64F, std::numeric_limits<double>::quiet_NaN());
     for(const auto& point_ : *cloud) {
@@ -111,6 +110,10 @@ private:
     cv::Mat inpainted;
     cv::inpaint(dsm_temp, valid_mask, inpainted, 5, cv::INPAINT_NS);
     inpainted.convertTo(height_map, CV_64F);
+    cv::normalize(inpainted, inpainted, 0.0, 1.0, cv::NORM_MINMAX);
+    inpainted.convertTo(inpainted, CV_8UC1, 255.0);
+    // cv::imshow("in", inpainted);
+    // cv::waitKey();
   }
 
   void calculate_normals() noexcept {
@@ -118,6 +121,13 @@ private:
     int cols             = height_map.cols;
     normals_             = cv::Mat(rows, cols, CV_64FC3, cv::Vec3d(0.0, 0.0, 1.0));
     const double inv_res = 1.0 / resolution_;
+    // run(rows * cols, [this](int idx) noexcept {
+    //   int row = idx / cols;
+    //   int col = idx % cols;
+    //   if(row == 0 || row == rows - 1 || col == 0 || col == cols - 1) {
+    //     normals_.at<cv::Vec3f>(row, col) = cv::Vec3f(0.0, 0.0, -1.0);
+    //   }
+    // });
     for(int row = 1; row < rows - 1; ++row) {
       for(int col = 1; col < cols - 1; ++col) {
         double d_x = (height_map.at<double>(row - 1, col + 1) + (2 * height_map.at<double>(row, col + 1))
@@ -164,6 +174,6 @@ private:
   double  min_y       = 0.0;
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 
-#endif // ORTHO_DSM_HPP
+#endif // SKYMERGE_DSM_HPP

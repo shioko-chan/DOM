@@ -1,5 +1,5 @@
-#ifndef ORTHO_LRU_HPP
-#define ORTHO_LRU_HPP
+#ifndef SKYMERGE_LRU_HPP
+#define SKYMERGE_LRU_HPP
 
 #include <atomic>
 #include <condition_variable>
@@ -17,7 +17,7 @@
 #include "tools/log.hpp"
 #include "types/common_types.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 class ManageAble {
 public:
@@ -218,6 +218,6 @@ private:
   static inline LRU mem{MEM_LIMIT};
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif

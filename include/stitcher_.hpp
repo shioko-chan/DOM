@@ -1,5 +1,5 @@
-#ifndef ORTHO_STITCHER_HPP
-#define ORTHO_STITCHER_HPP
+#ifndef SKYMERGE_STITCHER_HPP
+#define SKYMERGE_STITCHER_HPP
 
 #include <algorithm>
 #include <filesystem>
@@ -17,7 +17,7 @@
 #include "ds/matchpair.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -140,7 +140,7 @@ private:
       // cv::perspectiveTransform(corners, corners, M);
       std::ranges::move(
           corners | std::views::transform([](const Point<double>& p) noexcept {
-            return Point<int>(Ortho::abs_ceil(p.x), Ortho::abs_ceil(p.y));
+            return Point<int>(SkyMerge::abs_ceil(p.x), SkyMerge::abs_ceil(p.y));
           }),
           std::back_inserter(all_corners));
     }
@@ -193,5 +193,5 @@ private:
   }
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 #endif

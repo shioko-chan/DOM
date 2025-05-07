@@ -1,5 +1,5 @@
-#ifndef ORTHO_PIPELINE_HPP
-#define ORTHO_PIPELINE_HPP
+#ifndef SKYMERGE_PIPELINE_HPP
+#define SKYMERGE_PIPELINE_HPP
 
 #include <filesystem>
 #include <ranges>
@@ -23,7 +23,7 @@
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
 
-namespace Ortho {
+namespace SkyMerge {
 
 namespace fs = std::filesystem;
 
@@ -91,7 +91,7 @@ public:
     return {view.begin(), view.end()};
   }
 
-  auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept -> DSM {
+  [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept -> DSM {
 #ifdef ENABLE_VISUALIZE_OUTPUT
     auto res = triangulation(match_pairs, imgs_data, progress, temporary_save_path);
     THIS_MESSAGE("Filtering outliers statistical");
@@ -133,6 +133,6 @@ public:
   }
 };
 
-} // namespace Ortho
+} // namespace SkyMerge
 
 #endif
