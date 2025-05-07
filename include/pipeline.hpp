@@ -105,6 +105,7 @@ public:
     Filter::filter_invalid_image(res, imgs_data);
     BA::ba(imgs_data, &res);
     export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
+    Filter::filter_outliers_radius(&res, temporary_save_path / "f3.pcd");
 #else
     auto res = triangulation(match_pairs, imgs_data, progress);
     THIS_MESSAGE("Filtering outliers statistical");
@@ -117,14 +118,15 @@ public:
     Filter::filter_too_few_points(&res);
     Filter::filter_invalid_image(res, imgs_data);
     BA::ba(imgs_data, &res);
+    Filter::filter_outliers_radius(&res);
 #endif
     THIS_MESSAGE("Generating DSM");
-    return DSM{tri_res_vec2point_cloud(res)};
+    return DSM{tri_res_vec2point_cloud(res), RESOLUTION};
   }
 
   void stitch(ImgsData& imgs_data, DSM& dsm) {
     THIS_MESSAGE("Stitching images");
-    cv::Mat  texture       = Ortho::stitch(imgs_data, dsm, progress);
+    cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress, 0.1);
     fs::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), texture);
     THIS_MESSAGE("Stitched image saved to {}", panorama_path.string());

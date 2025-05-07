@@ -26,6 +26,7 @@ enum method_t : uint8_t { SUPERPOINT, DISK };
 
 constexpr method_t FEATURE_EXTRACTION_METHOD{DISK};
 
+constexpr double RESOLUTION{0.05}; // meters
 } // namespace Ortho
 
 #endif

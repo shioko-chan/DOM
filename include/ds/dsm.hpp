@@ -104,6 +104,7 @@ private:
       for(int j = 0; j < cols; j++) {
         if(std::isnan(dsm.at<double>(i, j))) {
           valid_mask.at<uchar>(i, j) = 255;
+          dsm_temp.at<float>(i, j)   = 0;
         }
       }
     }
@@ -134,7 +135,7 @@ private:
           normal[1] /= norm;
           normal[2] /= norm;
         } else {
-          normal = cv::Vec3d(0.0, 0.0, 1.0);
+          normal = cv::Vec3d(0.0, 0.0, -1.0);
         }
 
         normals_.at<cv::Vec3d>(row, col) = normal;
