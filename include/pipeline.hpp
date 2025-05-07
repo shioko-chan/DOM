@@ -2,7 +2,6 @@
 #define ORTHO_PIPELINE_HPP
 
 #include <filesystem>
-#include <iostream>
 #include <ranges>
 #include <utility>
 #include <vector>
@@ -93,61 +92,41 @@ public:
   }
 
   auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept -> DSM {
-    cv::Mat     r;
-    cv::Mat     t;
-    cv::Mat     k;
-    const auto& img = imgs_data[30];
-    r               = img.R_w2c();
-    t               = img.t_w2c();
-    k               = imgs_data.K();
 #ifdef ENABLE_VISUALIZE_OUTPUT
     auto res = triangulation(match_pairs, imgs_data, progress, temporary_save_path);
-#else
-    auto res = triangulation(match_pairs, imgs_data, progress);
-#endif
-    std::cout << "R: " << r << '\n';
-    std::cout << "t: " << t << '\n';
-    std::cout << "K: " << k << '\n';
-    std::cout << "res: " << res.size() << '\n';
-    THIS_MESSAGE("Filtering outliers");
-#ifdef ENABLE_VISUALIZE_OUTPUT
+    THIS_MESSAGE("Filtering outliers statistical");
     Filter::filter_outliers_statistical(&res, temporary_save_path / "f1.pcd");
-#else
-    Filter::filter_outliers_statistical(&res);
-#endif
-
     THIS_MESSAGE("Smoothing surface");
-#ifdef ENABLE_VISUALIZE_OUTPUT
     Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
-#else
-    Filter::smooth_surface(&res);
-#endif
+    THIS_MESSAGE("Filtering outliers radius");
+    Filter::filter_outliers_radius(&res, temporary_save_path / "f2.pcd");
     Filter::filter_near_observes(imgs_data, &res);
     Filter::filter_too_few_points(&res);
     Filter::filter_invalid_image(res, imgs_data);
     BA::ba(imgs_data, &res);
-#ifdef ENABLE_VISUALIZE_OUTPUT
     export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
-    Filter::filter_outliers_radius(&res, temporary_save_path / "f2.pcd");
 #else
+    auto res = triangulation(match_pairs, imgs_data, progress);
+    THIS_MESSAGE("Filtering outliers statistical");
+    Filter::filter_outliers_statistical(&res);
+    THIS_MESSAGE("Smoothing surface");
+    Filter::smooth_surface(&res);
+    THIS_MESSAGE("Filtering outliers radius");
     Filter::filter_outliers_radius(&res);
+    Filter::filter_near_observes(imgs_data, &res);
+    Filter::filter_too_few_points(&res);
+    Filter::filter_invalid_image(res, imgs_data);
+    BA::ba(imgs_data, &res);
 #endif
-    r = img.R_w2c();
-    t = img.t_w2c();
-    k = imgs_data.K();
-    std::cout << "R: " << r << '\n';
-    std::cout << "t: " << t << '\n';
-    std::cout << "K: " << k << '\n';
-    std::cout << "d:" << imgs_data.D() << "\n";
     THIS_MESSAGE("Generating DSM");
     return DSM{tri_res_vec2point_cloud(res)};
   }
 
   void stitch(ImgsData& imgs_data, DSM& dsm) {
     THIS_MESSAGE("Stitching images");
-    Ortho::stitch(imgs_data, dsm, progress);
+    cv::Mat  texture       = Ortho::stitch(imgs_data, dsm, progress);
     fs::path panorama_path = output_dir / "stitched_image.jpg";
-    dsm.export_texture(panorama_path);
+    cv::imwrite(panorama_path.string(), texture);
     THIS_MESSAGE("Stitched image saved to {}", panorama_path.string());
   }
 };

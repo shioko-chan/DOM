@@ -72,7 +72,7 @@ public:
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
 
-    pcl::RadiusOutlierRemoval<pcl::PointXYZ> ror;
+    pcl::RadiusOutlierRemoval<pcl::PointXYZ> ror{true};
     ror.setInputCloud(cloud);
     ror.setRadiusSearch(radius);
     ror.setMinNeighborsInRadius(min_neighbors);
@@ -182,6 +182,20 @@ public:
     }
   }
 
+  static void filter_reprojection_error(TriResVec* tri_res_vec, ImgsData& imgs_data, double threshold = 5.0) {
+    for(auto& [pnt3d, pnt2d_idx_vec] : *tri_res_vec) {
+      for(auto& pnt2d_idx : pnt2d_idx_vec) {
+        const auto& img_data = imgs_data[pnt2d_idx.img_idx];
+        auto pnt = world2camera(img_data.A_w2c_array_raw().data(), img_data.t_w2c_array_raw().data(), pnt3d.data());
+        auto pixel = camera2pixel(imgs_data.camera_array_raw().data(), imgs_data.distort_array_raw().data(), pnt.data());
+        auto   kpnt         = img_data.get_kpnts().get(pnt2d_idx.pnt_idx);
+        double reproj_error = std::abs(pnt[0] - kpnt.x) + std::abs(pnt[1] - kpnt.y);
+        if(reproj_error > threshold) {
+          std::erase_if(pnt2d_idx_vec, [&pnt2d_idx](const auto& idx) noexcept { return idx == pnt2d_idx; });
+        }
+      }
+    }
+  }
 
 private:
 
