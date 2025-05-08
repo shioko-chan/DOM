@@ -29,10 +29,10 @@ public:
 
   static void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
     if(res->empty() || imgs_data.empty()) {
-      THIS_LOG_WARN("No input!");
+      THIS_LOG_WARN("[BA] Empty input data");
       return;
     }
-    THIS_MESSAGE("Start Bundle Adjustment");
+    THIS_LOG_INFO("[BA] Starting Bundle Adjustment");
     auto imgs_data_filtered =
         imgs_data | std::views::filter([](const auto& img_data) noexcept { return img_data.is_valid(); });
     std::erase_if(*res, [](const TriRes& tri_res) noexcept { return tri_res.pnt2d_idx_vec.size() < 2; });
@@ -84,7 +84,7 @@ public:
     // Make [K, d, pnt3d] constant
     //      [R, t] variable
     {
-      THIS_MESSAGE("Step 1 Info: Optimize camera extrinsic, keep intrinsic and 3D points fixed.");
+      THIS_LOG_INFO("[BA] Step 1: Optimizing camera extrinsic parameters");
       for(auto& img_data : imgs_data_filtered) {
         set_parameter_block_variable(problem, img_data.A_w2c_array_raw());
         set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
@@ -96,12 +96,12 @@ public:
       }
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 1);
-    }
+    }   
     // Secondly, optimize the intrinsic
     // Make [R, t, pnt3d] constant
     //      [K, d] variable
     {
-      THIS_MESSAGE("Step 2 Info: Optimize intrinsic, keep extrinsic and 3D points fixed.");
+      THIS_LOG_INFO("[BA] Step 2: Optimizing camera intrinsic parameters");
       for(auto& img_data : imgs_data_filtered) {
         set_parameter_block_constant(problem, img_data.A_w2c_array_raw());
         set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
@@ -118,7 +118,7 @@ public:
     // Make [R, t, K, d] constant
     //      [pnt3d] variable
     {
-      THIS_MESSAGE("Step 3 Info: Optimize 3D points, keep extrinsic and intrinsic fixed.");
+      THIS_LOG_INFO("[BA] Step 3: Optimizing 3D points");
       for(auto& img_data : imgs_data_filtered) {
         set_parameter_block_constant(problem, img_data.A_w2c_array_raw());
         set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
@@ -135,7 +135,7 @@ public:
     // Make [K, d] constant
     //      [pnt3d, R, t] variable
     {
-      THIS_MESSAGE("Step 4 Info: Optimize 3D points and extrinsic, keep intrinsic fixed.");
+      THIS_LOG_INFO("[BA] Step 4: Optimizing 3D points and camera extrinsic parameters");
       for(auto& img_data : imgs_data_filtered) {
         set_parameter_block_variable(problem, img_data.A_w2c_array_raw());
         set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
@@ -150,7 +150,7 @@ public:
     }
     // Finally, optimize all together
     {
-      THIS_MESSAGE("Step 5 Info: Optimize all parameters together.");
+      THIS_LOG_INFO("[BA] Step 5: Optimizing all parameters together");
       for(auto& img_data : imgs_data_filtered) {
         set_parameter_block_variable(problem, img_data.A_w2c_array_raw());
         set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
@@ -163,7 +163,7 @@ public:
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 5);
     }
-    THIS_MESSAGE("Bundle Adjustment Finished");
+    THIS_LOG_INFO("[BA] Bundle Adjustment completed");
   }
 
 private:
@@ -246,9 +246,9 @@ private:
 
   static void check_summary(const ceres::Solver::Summary& summary, int step) {
     if(summary.IsSolutionUsable()) {
-      THIS_MESSAGE("Step {}: {}", step, summary.BriefReport());
+      THIS_LOG_INFO("[BA] Step {} completed: {}", step, summary.BriefReport());
     } else {
-      THIS_LOG_ERROR("Step {} failed: {}", step, summary.FullReport());
+      THIS_LOG_ERROR("[BA] Step {} failed: {}", step, summary.FullReport());
     }
   }
 };

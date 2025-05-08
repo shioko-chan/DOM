@@ -33,7 +33,7 @@ public:
       int    mean_k      = 100,
       double std_dev_mul = 1.0) {
     if(tri_res_vec->empty()) {
-      THIS_LOG_WARN("tri_res_vec is empty, cannot filter outliers");
+      THIS_LOG_WARN("[Filter] Empty input data, cannot filter outliers");
       return;
     }
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
@@ -52,9 +52,7 @@ public:
     filter_by_idx(tri_res_vec, indices_to_remove);
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    THIS_MESSAGE("Original cloud size: {}", cloud->size());
-    THIS_MESSAGE("Statistical Filtered cloud size: {}", filtered_cloud->size());
-    THIS_MESSAGE("Removed indices: {}", indices_to_remove.size());
+    THIS_LOG_INFO("[Filter] Statistical filtering: {} points removed from {} points", indices_to_remove.size(), cloud->size());
     export_pcd(pcd_output_path, filtered_cloud);
 #endif
   }
@@ -67,6 +65,7 @@ public:
       double radius        = 5.0,
       int    min_neighbors = 2) {
     if(tri_res_vec->empty()) {
+      THIS_LOG_WARN("[Filter] Empty input data, cannot filter outliers");
       return;
     }
 
@@ -86,9 +85,7 @@ public:
     filter_by_idx(tri_res_vec, indices_to_remove);
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    THIS_MESSAGE("Original cloud size: {}", cloud->size());
-    THIS_MESSAGE("Radius Filtered cloud size: {}", filtered_cloud->size());
-    THIS_MESSAGE("Removed (radius outliers): {}", indices_to_remove.size());
+    THIS_LOG_INFO("[Filter] Radius filtering: {} points removed from {} points", indices_to_remove.size(), cloud->size());
     export_pcd(pcd_output_path, filtered_cloud);
 #endif
   }
@@ -101,13 +98,12 @@ public:
       double target_resolution = 0.5,
       int    polynomial_order  = 2) -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
     if(tri_res_vec->empty()) {
-      THIS_LOG_WARN("tri_res_vec is empty, cannot smooth surface");
+      THIS_LOG_WARN("[Filter] Empty input data, cannot smooth surface");
       return {};
     }
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
 
     double voxel_size = target_resolution / std::numbers::sqrt2;
-
     double search_radius = target_resolution * 2.0;
 
     pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
@@ -115,9 +111,7 @@ public:
     mls.setInputCloud(cloud);
     mls.setNumberOfThreads(std::thread::hardware_concurrency());
     mls.setPolynomialOrder(polynomial_order);
-
     mls.setSearchRadius(search_radius);
-
     mls.setUpsamplingMethod(pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ>::SAMPLE_LOCAL_PLANE);
     mls.setUpsamplingRadius(voxel_size);
     mls.setUpsamplingStepSize(voxel_size);
@@ -144,10 +138,9 @@ public:
       }
     }
     keep_by_idx(tri_res_vec, keep_indices);
-#ifdef ENABLE_VISUALIZE_OUTPUT
 
-    THIS_MESSAGE("Original cloud size: {}", cloud->size());
-    THIS_MESSAGE("Smoothed cloud size: {}", smoothed->size());
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    THIS_LOG_INFO("[Filter] Surface smoothing: {} points processed from {} points", smoothed->size(), cloud->size());
     export_pcd(pcd_output_path, smoothed);
 #endif
     return smoothed;
