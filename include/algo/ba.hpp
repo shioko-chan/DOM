@@ -85,6 +85,10 @@ public:
     //      [R, t] variable
     {
       THIS_MESSAGE("Step 1 Info: Optimize camera extrinsic, keep intrinsic and 3D points fixed.");
+      for(auto& img_data : imgs_data_filtered) {
+        set_parameter_block_variable(problem, img_data.A_w2c_array_raw());
+        set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
+      }
       set_parameter_block_constant(problem, imgs_data.camera_array_raw());
       set_parameter_block_constant(problem, imgs_data.distort_array_raw());
       for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
@@ -93,46 +97,53 @@ public:
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 1);
     }
-    // Secondly, optimize the 3d points
-    // Make [R, t, K, d] constant
-    //      [pnt3d] variable
+    // Secondly, optimize the intrinsic
+    // Make [R, t, pnt3d] constant
+    //      [K, d] variable
     {
-      THIS_MESSAGE("Step 2 Info: Optimize 3D points, keep extrinsic and intrinsic fixed.");
-      for(const auto& img_data : imgs_data_filtered) {
+      THIS_MESSAGE("Step 2 Info: Optimize intrinsic, keep extrinsic and 3D points fixed.");
+      for(auto& img_data : imgs_data_filtered) {
         set_parameter_block_constant(problem, img_data.A_w2c_array_raw());
         set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
       }
-      for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
-        set_parameter_block_variable(problem, pnt3d);
+      set_parameter_block_variable(problem, imgs_data.camera_array_raw());
+      set_parameter_block_variable(problem, imgs_data.distort_array_raw());
+      for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
+        set_parameter_block_constant(problem, pnt3d);
       }
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 2);
     }
-    // Thirdly, optimize the 3d points and extrinsic
-    // Make [K, d] constant
-    //      [pnt3d, R, t] variable
+    // Thirdly, optimize the 3d points
+    // Make [R, t, K, d] constant
+    //      [pnt3d] variable
     {
-      THIS_MESSAGE("Step 3 Info: Optimize 3D points and extrinsic, keep intrinsic fixed.");
-      for(auto& img_data : imgs_data_filtered) {
-        set_parameter_block_variable(problem, img_data.A_w2c_array_raw());
-        set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
-      }
-      ceres::Solve(options, &problem, &summary);
-      check_summary(summary, 3);
-    }
-    // Fourthly, optimize the intrinsic
-    // Make [R, t, pnt3d] constant
-    //      [K, d] variable
-    {
-      THIS_MESSAGE("Step 4 Info: Optimize intrinsic, keep extrinsic and 3D points fixed.");
-      set_parameter_block_variable(problem, imgs_data.camera_array_raw());
-      set_parameter_block_variable(problem, imgs_data.distort_array_raw());
+      THIS_MESSAGE("Step 3 Info: Optimize 3D points, keep extrinsic and intrinsic fixed.");
       for(auto& img_data : imgs_data_filtered) {
         set_parameter_block_constant(problem, img_data.A_w2c_array_raw());
         set_parameter_block_constant(problem, img_data.t_w2c_array_raw());
       }
-      for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
-        set_parameter_block_constant(problem, pnt3d);
+      set_parameter_block_constant(problem, imgs_data.camera_array_raw());
+      set_parameter_block_constant(problem, imgs_data.distort_array_raw());
+      for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
+        set_parameter_block_variable(problem, pnt3d);
+      }
+      ceres::Solve(options, &problem, &summary);
+      check_summary(summary, 3);
+    }
+    // Fourthly, optimize the 3d points and extrinsic
+    // Make [K, d] constant
+    //      [pnt3d, R, t] variable
+    {
+      THIS_MESSAGE("Step 4 Info: Optimize 3D points and extrinsic, keep intrinsic fixed.");
+      for(auto& img_data : imgs_data_filtered) {
+        set_parameter_block_variable(problem, img_data.A_w2c_array_raw());
+        set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
+      }
+      set_parameter_block_constant(problem, imgs_data.camera_array_raw());
+      set_parameter_block_constant(problem, imgs_data.distort_array_raw());
+      for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
+        set_parameter_block_variable(problem, pnt3d);
       }
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 4);
@@ -144,6 +155,8 @@ public:
         set_parameter_block_variable(problem, img_data.A_w2c_array_raw());
         set_parameter_block_variable(problem, img_data.t_w2c_array_raw());
       }
+      set_parameter_block_variable(problem, imgs_data.camera_array_raw());
+      set_parameter_block_variable(problem, imgs_data.distort_array_raw());
       for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
         set_parameter_block_variable(problem, pnt3d);
       }
