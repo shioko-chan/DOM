@@ -2,26 +2,30 @@
 #define PROGRESS_HPP
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
-#include <mutex>
 
 #include "tools/ansi.hpp"
-#include "tools/log.hpp"
 
 namespace SkyMerge {
-struct alignas(64) Progress {
+struct alignas(16) Progress {
 private:
 
   static constexpr int bar_width{50};
 
-  std::mutex mtx;
-  int        cnt{0}, total{0};
+  std::atomic<int>  cnt{0};
+  std::atomic<int>  total{0};
+  std::atomic<bool> is_printing{false};
 
-  void print_bar() const {
-    std::lock_guard<std::mutex> lock(stream_mtx());
-    double                      factor = 1. * cnt / total;
+  void print_bar() {
+    bool expected = false;
+    if(!is_printing.compare_exchange_strong(expected, true)) {
+      return;
+    }
+
+    double factor = 1. * cnt.load(std::memory_order_relaxed) / total.load(std::memory_order_relaxed);
     std::cout << ansi::BOLD << "\r[" << std::fixed << std::setprecision(2) << factor * 100 << "%]";
     int pos = static_cast<int>(std::round(bar_width * factor));
     for(int i = 0; i < bar_width; ++i) {
@@ -33,52 +37,51 @@ private:
         std::cout << "-";
       }
     }
-    std::cout << "(" << cnt << "/" << total << ")" << ansi::RESET;
-    if(cnt == total) {
+    std::cout << "(" << cnt.load(std::memory_order_relaxed) << "/" << total.load(std::memory_order_relaxed) << ")"
+              << ansi::RESET;
+    if(cnt.load(std::memory_order_relaxed) == total.load(std::memory_order_relaxed)) {
       std::cout << '\n';
     } else {
       std::cout << std::flush;
     }
+
+    is_printing.store(false, std::memory_order_release);
   }
 
 public:
 
   Progress() = default;
 
-  explicit Progress(int total) : total(total) {}
+  explicit Progress(int total_) : total(total_) {}
 
   void update(int inc = 1, int current = -1, bool countdown = false) {
-    {
-      std::lock_guard<std::mutex> lock(mtx);
-      if(countdown) {
-        if(current >= 0) {
-          cnt = total - current;
-        } else {
-          cnt = cnt - inc;
-        }
-        cnt = std::max(0, cnt);
+    if(countdown) {
+      if(current >= 0) {
+        cnt.store(total.load(std::memory_order_relaxed) - current, std::memory_order_relaxed);
       } else {
-        if(current >= 0) {
-          cnt = current;
-        } else {
-          cnt = cnt + inc;
-        }
-        cnt = std::min(total, cnt);
+        int old_val = cnt.load(std::memory_order_relaxed);
+        int new_val = std::max(0, old_val - inc);
+        cnt.store(new_val, std::memory_order_relaxed);
+      }
+    } else {
+      if(current >= 0) {
+        cnt.store(current, std::memory_order_relaxed);
+      } else {
+        int old_val = cnt.load(std::memory_order_relaxed);
+        int new_val = std::min(total.load(std::memory_order_relaxed), old_val + inc);
+        cnt.store(new_val, std::memory_order_relaxed);
       }
     }
     print_bar();
   }
 
-  void rerun() {
-    std::lock_guard<std::mutex> lock(mtx);
-    cnt = 0;
-  }
+  void rerun() { cnt.store(0, std::memory_order_relaxed); }
 
   void reset(int total_) {
-    std::lock_guard<std::mutex> lock(mtx);
-    total = total_;
-    cnt   = 0;
+    total.store(total_, std::memory_order_relaxed);
+    cnt.store(0, std::memory_order_relaxed);
   }
 };
 } // namespace SkyMerge
+
 #endif

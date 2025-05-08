@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <numeric>
 #include <opencv2/calib3d.hpp>
 #include <ranges>
@@ -29,6 +30,7 @@
 #include <opencv2/opencv.hpp>
 
 #include <pcl/io/pcd_io.h>
+#include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/point_types.h>
 
 #include "tools/debug.hpp"
@@ -92,12 +94,25 @@ concept HasXYZ = HasXY<T> && requires(T point) {
   { point.z } -> arithmetic;
 };
 
-inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) noexcept -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud{new(std::nothrow) pcl::PointCloud<pcl::PointXYZ>};
-  if(!cloud) {
-    THIS_LOG_ERROR("Failed to allocate memory for point cloud");
-    return nullptr;
+inline auto compute_average_spacing(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, int k_neighbors = 100) -> double {
+  pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+  kdtree.setInputCloud(cloud);
+  double total_distance = 0.0;
+  for(const auto& point : *cloud) {
+    std::vector<int>   indices(k_neighbors);
+    std::vector<float> distances(k_neighbors);
+    kdtree.nearestKSearch(point, k_neighbors, indices, distances);
+    double distance = 0.0;
+    for(double dist : distances) {
+      distance += sqrt(dist);
+    }
+    total_distance += distance / k_neighbors;
   }
+  return total_distance / static_cast<double>(cloud->size());
+}
+
+inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) noexcept -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   cloud->resize(tri_res_vec.size());
   for(int i = 0; i < tri_res_vec.size(); ++i) {
     const auto& point = tri_res_vec[i].pnt3d;

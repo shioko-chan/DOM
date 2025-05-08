@@ -3,7 +3,7 @@
 
 #include <cassert>
 #include <cmath>
-#include <exception>
+#include <memory>
 #include <ranges>
 #include <thread>
 
@@ -19,7 +19,6 @@
 
 #include "ds/imgdata.hpp"
 #include "tools/log.hpp"
-#include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 
 namespace SkyMerge {
@@ -62,17 +61,12 @@ public:
     for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
       add_parameter_block(problem, pnt3d);
       for(const auto& pnt2d_idx : pnt2d_idx_vec) {
-        auto&             img_data = imgs_data[pnt2d_idx.img_idx];
-        ceres::HuberLoss* loss{};
-        try {
-          loss = new ceres::HuberLoss(1.0);
-        } catch(const std::exception& e) {
-          report_error(e, "Bad allocation");
-        }
+        auto& img_data           = imgs_data[pnt2d_idx.img_idx];
+        auto  loss               = std::make_unique<ceres::HuberLoss>(1.0);
         const auto& [ob_x, ob_y] = img_data.get_kpnts().get(pnt2d_idx.pnt_idx);
         problem.AddResidualBlock(
-            ReprojectionError::create(ob_x, ob_y),
-            loss,
+            ReprojectionError::create(ob_x, ob_y).release(),
+            loss.release(),
             img_data.A_w2c_array_raw().data(),
             img_data.t_w2c_array_raw().data(),
             imgs_data.camera_array_raw().data(),
@@ -96,7 +90,7 @@ public:
       }
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 1);
-    }   
+    }
     // Secondly, optimize the intrinsic
     // Make [R, t, pnt3d] constant
     //      [K, d] variable
@@ -192,18 +186,9 @@ private:
       return true;
     }
 
-    static auto create(double observe_x, double observe_y) noexcept -> ceres::CostFunction* {
-      ReprojectionError* error_ptr{};
-      try {
-        error_ptr = new ReprojectionError(observe_x, observe_y);
-      } catch(const std::exception& e) {
-        report_error(e, "Bad allocation");
-      }
-      try {
-        return new ceres::AutoDiffCostFunction<ReprojectionError, 2, 3, 3, 4, 5, 3>(error_ptr);
-      } catch(const std::exception& e) {
-        report_error(e, "Bad allocation");
-      }
+    static auto create(double observe_x, double observe_y) noexcept -> std::unique_ptr<ceres::CostFunction> {
+      auto error_ptr = std::make_unique<ReprojectionError>(observe_x, observe_y);
+      return std::make_unique<ceres::AutoDiffCostFunction<ReprojectionError, 2, 3, 3, 4, 5, 3>>(error_ptr.release());
     }
 
   private:

@@ -2,6 +2,7 @@
 #define SKYMERGE_DSM_HPP
 
 #include <pcl/common/common.h>
+#include <pcl/kdtree/kdtree_flann.h>
 
 #include <cmath>
 #include <opencv2/core.hpp>
@@ -11,6 +12,7 @@
 
 #include "tools/log.hpp"
 #include "tools/report_error.hpp"
+#include "tools/utility.hpp"
 #include "types/cv_alias.hpp"
 
 namespace SkyMerge {
@@ -26,7 +28,14 @@ public:
       THIS_MESSAGE("Empty point cloud data, cannot generate DSM.");
       return;
     }
-    height_map = calculate_dsm(cloud);
+    pcl::PointXYZ min_pt_;
+    pcl::PointXYZ max_pt_;
+    pcl::getMinMax3D(*cloud, min_pt_, max_pt_);
+    auto min_pt = min_pt_.getVector3fMap();
+    auto max_pt = max_pt_.getVector3fMap();
+    min_x       = min_pt.x();
+    min_y       = min_pt.y();
+    height_map  = calculate_dsm(cloud, min_x, min_y, max_pt.x(), max_pt.y(), resolution);
   }
 
   [[nodiscard]] auto operator[](int idx) const noexcept -> Point3<double> {
@@ -61,50 +70,69 @@ public:
     return height_map.rows;
   }
 
+  [[nodiscard]] auto resolution() const noexcept -> double { return resolution_; }
+
+  void downsample(double target_resolution) noexcept {
+    if(resolution_ >= target_resolution) {
+      return;
+    }
+    auto scale = resolution_ / target_resolution;
+    cv::resize(height_map, height_map, {}, scale, scale, cv::INTER_NEAREST);
+    resolution_ = target_resolution;
+  }
+
 private:
 
-  auto calculate_dsm(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) noexcept -> cv::Mat {
-    pcl::PointXYZ min_pt_;
-    pcl::PointXYZ max_pt_;
-    pcl::getMinMax3D(*cloud, min_pt_, max_pt_);
-    auto min_pt = min_pt_.getVector3fMap();
-    auto max_pt = max_pt_.getVector3fMap();
-    min_x       = min_pt.x();
-    min_y       = min_pt.y();
-    int cols    = static_cast<int>(std::ceil((max_pt.x() - min_x) / resolution_)) + 1;
-    int rows    = static_cast<int>(std::ceil((max_pt.y() - min_y) / resolution_)) + 1;
-    THIS_MESSAGE("DSM size: {}x{}, resolution: {}m", cols, rows, resolution_);
-    cv::Mat dsm(rows, cols, CV_64F, std::numeric_limits<double>::quiet_NaN());
-    for(const auto& point_ : *cloud) {
-      auto point = point_.getVector3fMap();
-      int  col   = static_cast<int>((point.x() - min_x) / resolution_);
-      int  row   = static_cast<int>((point.y() - min_y) / resolution_);
-      if(col >= 0 && col < cols && row >= 0 && row < rows) {
-        auto z_value = static_cast<double>(point.z());
-        if(std::isnan(dsm.at<double>(row, col)) || z_value < dsm.at<double>(row, col)) {
-          dsm.at<double>(row, col) = z_value;
+  [[nodiscard]] static auto calculate_dsm(
+      const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+      double                                     min_x,
+      double                                     min_y,
+      double                                     max_x,
+      double                                     max_y,
+      double                                     resolution = 0.5,
+      int                                        k_nn       = 16) noexcept -> cv::Mat {
+    int cols = static_cast<int>(std::ceil((max_x - min_x) / resolution)) + 1;
+    int rows = static_cast<int>(std::ceil((max_y - min_y) / resolution)) + 1;
+    THIS_MESSAGE("DSM size: {}x{}, resolution: {}m", cols, rows, resolution);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_xy = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    for(const auto& point : *cloud) {
+      auto pnt = point.getVector3fMap();
+      cloud_xy->points.emplace_back(pnt.x(), pnt.y(), 0.0F);
+    }
+    pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+    kdtree.setInputCloud(cloud_xy);
+    cv::Mat      dsm(rows, cols, CV_64F, std::numeric_limits<double>::quiet_NaN());
+    const double max_distance = compute_average_spacing(cloud_xy) * 2.0;
+    for(int row = 0; row < rows; ++row) {
+      for(int col = 0; col < cols; ++col) {
+        double             cur_x = min_x + (col * resolution);
+        double             cur_y = min_y + (row * resolution);
+        pcl::PointXYZ      search_point{static_cast<float>(cur_x), static_cast<float>(cur_y), 0.0F};
+        std::vector<int>   point_idx(k_nn);
+        std::vector<float> point_dist(k_nn);
+        if(kdtree.radiusSearch(search_point, max_distance, point_idx, point_dist, k_nn) > 0) {
+          double sum_weights = 0.0;
+          double sum_values  = 0.0;
+          auto&  dsm_val     = dsm.at<double>(row, col);
+          for(auto&& [idx, dist] : std::views::zip(point_idx, point_dist)) {
+            if(dist < 1e-6) {
+              dsm_val = cloud->points[idx].getVector3fMap().z();
+              break;
+            }
+            double weight = 1.0 / std::pow(dist, 2);
+            sum_weights += weight;
+            sum_values += weight * cloud->points[idx].getVector3fMap().z();
+          }
+          if(std::isnan(dsm_val)) {
+            dsm_val = sum_values / sum_weights;
+          }
         }
       }
     }
-
-    cv::Mat dsm_temp;
-    dsm.convertTo(dsm_temp, CV_32F);
-    cv::Mat invalid_mask;
-    cv::compare(dsm, dsm, invalid_mask, cv::CMP_NE);
-    dsm_temp.setTo(0, invalid_mask);
-    cv::Mat inpainted;
-    cv::inpaint(dsm_temp, invalid_mask, inpainted, 5, cv::INPAINT_NS);
-    inpainted.convertTo(inpainted, CV_64F);
-
-    cv::normalize(inpainted, inpainted, 0.0, 1.0, cv::NORM_MINMAX);
-    inpainted.convertTo(inpainted, CV_8UC1, 255.0);
-    cv::imshow("in", inpainted);
-    cv::waitKey();
-    return inpainted;
+    return dsm;
   }
 
   cv::Mat height_map;
-  cv::Mat normals_;
   double  resolution_ = 0.0;
   double  min_x       = 0.0;
   double  min_y       = 0.0;

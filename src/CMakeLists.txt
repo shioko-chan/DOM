@@ -7,7 +7,6 @@ find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
 find_package(MPI REQUIRED)
 
-
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
 set(onnxruntime_INCLUDE_DIR ${onnxruntime_DIR}/../../../include)

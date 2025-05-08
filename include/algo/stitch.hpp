@@ -6,7 +6,6 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <ranges>
-#include <unordered_map>
 
 #include "algo/knn.hpp"
 #include "ds/dsm.hpp"
@@ -21,22 +20,29 @@ namespace SkyMerge {
 class DSMStitcher {
 public:
 
-  static auto stitch(ImgsData& imgs_data, DSM& dsm, Progress& progress) noexcept -> cv::Mat {
+  static auto stitch(ImgsData& imgs_data, DSM& dsm, Progress& progress, double target_resolution = 0.05) noexcept
+      -> cv::Mat {
     if(imgs_data.empty() || dsm.empty()) {
       THIS_LOG_ERROR("empty imgs_data or dsm");
       return {};
     }
+    if(target_resolution > dsm.resolution()) {
+      dsm.downsample(target_resolution);
+    }
     THIS_MESSAGE("start stitching");
-    std::unordered_map<int, std::vector<PixelSrc>> idx_map;
-    std::mutex                                     mtx;
+    std::vector<std::vector<PixelSrc>> img_pixel_map(imgs_data.size());
+    std::mutex                         mtx;
     auto knn = KNN<double>(8, imgs_data.get() | std::views::transform([](const auto& data) noexcept {
                                 return data.get_coord();
                               }) | std::views::common);
     progress.reset(dsm.size());
     run(
         dsm.size(),
-        [&dsm, &imgs_data, &idx_map, &mtx, &knn](int idx) noexcept {
-          auto                  world_pt_ = dsm[idx];
+        [&dsm, &imgs_data, &img_pixel_map, &mtx, &knn](int idx) noexcept {
+          auto world_pt_ = dsm[idx];
+          if(std::isnan(world_pt_.z)) {
+            return;
+          }
           std::array<double, 3> world_pt{world_pt_.x, world_pt_.y, world_pt_.z};
           BestPixel             best_pixel{.img_idx = -1, .pixel = {-1, -1}, .cos_angle = 0.0};
           cv::Mat               normal = (cv::Mat_<double>(3, 1) << 0, 0, -1);
@@ -66,23 +72,47 @@ public:
             best_pixel.img_idx   = idx;
             best_pixel.pixel     = {img_x, img_y};
           }
-          std::lock_guard<std::mutex> lock(mtx);
           if(best_pixel.img_idx != -1) {
-            idx_map[best_pixel.img_idx].emplace_back(best_pixel.pixel, idx);
+            std::lock_guard<std::mutex> lock(mtx);
+            img_pixel_map[best_pixel.img_idx].emplace_back(best_pixel.pixel, idx);
           }
         },
         progress);
-    cv::Mat texture(dsm.rows(), dsm.cols(), CV_8UC3, cv::Scalar(0, 0, 0));
-    for(const auto& [img_idx, pixels] : idx_map) {
-      auto&   img_data = imgs_data[img_idx];
-      cv::Mat img      = img_data.origin_img().get();
-      for(const auto& [pixel, dsm_idx] : pixels) {
-        int t_x                         = dsm_idx % dsm.cols();
-        int t_y                         = dsm_idx / dsm.cols();
-        texture.at<cv::Vec3b>(t_y, t_x) = img.at<cv::Vec3b>(pixel.y, pixel.x);
-      }
-    }
-    cv::flip(texture, texture, -1);
+    cv::Mat texture(
+        static_cast<int>(dsm.rows() * dsm.resolution() / target_resolution),
+        static_cast<int>(dsm.cols() * dsm.resolution() / target_resolution),
+        CV_8UC3,
+        cv::Scalar(0, 0, 0));
+    run(
+        img_pixel_map.size(),
+        [&dsm, &img_pixel_map, &imgs_data, &texture, resolution_ratio = dsm.resolution() / target_resolution](
+            int idx) noexcept {
+          auto&   img_data = imgs_data[idx];
+          auto&&  pixels   = img_pixel_map[idx];
+          cv::Mat img      = img_data.origin_img().get();
+          for(const auto& [pixel, dsm_idx] : pixels) {
+            int     t_x     = dsm_idx % dsm.cols();
+            int     t_y     = dsm_idx / dsm.cols();
+            int     start_x = static_cast<int>(t_x * resolution_ratio);
+            int     start_y = static_cast<int>(t_y * resolution_ratio);
+            int     end_x   = static_cast<int>((t_x + 1) * resolution_ratio);
+            int     end_y   = static_cast<int>((t_y + 1) * resolution_ratio);
+            cv::Mat roi;
+            cv::resize(
+                img(cv::Rect(pixel.x, pixel.y, 1, 1)),
+                roi,
+                cv::Size(end_x - start_x, end_y - start_y),
+                0,
+                0,
+                cv::INTER_LINEAR);
+            roi.copyTo(texture(cv::Rect(start_x, start_y, end_x - start_x, end_y - start_y)));
+          }
+        },
+        progress);
+    cv::transpose(texture, texture);
+    cv::flip(texture, texture, 0);
+    cv::imshow("texture", texture);
+    cv::waitKey(0);
     return texture;
   }
 

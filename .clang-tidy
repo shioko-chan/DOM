@@ -9,7 +9,6 @@ Checks: >
   -*-magic-numbers,
   -misc-no-recursion,
   -cppcoreguidelines-macro-usage,
-  -cppcoreguidelines-owning-memory,
   llvm-include-order,      
   readability-redundant-include 
   modernize-deprecated-headers 

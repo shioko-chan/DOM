@@ -10,7 +10,6 @@
 #include <pcl/common/distances.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/statistical_outlier_removal.h>
-#include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/search/kdtree.h>
@@ -43,7 +42,7 @@ public:
     sor.setMeanK(mean_k);
     sor.setStddevMulThresh(std_dev_mul);
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    auto filtered_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     sor.filter(*filtered_cloud);
 
     const auto              indices_ptr = sor.getRemovedIndices();
@@ -52,7 +51,8 @@ public:
     filter_by_idx(tri_res_vec, indices_to_remove);
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    THIS_LOG_INFO("[Filter] Statistical filtering: {} points removed from {} points", indices_to_remove.size(), cloud->size());
+    THIS_LOG_INFO(
+        "[Filter] Statistical filtering: {} points removed from {} points", indices_to_remove.size(), cloud->size());
     export_pcd(pcd_output_path, filtered_cloud);
 #endif
   }
@@ -76,7 +76,7 @@ public:
     ror.setRadiusSearch(radius);
     ror.setMinNeighborsInRadius(min_neighbors);
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    auto filtered_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     ror.filter(*filtered_cloud);
 
     const auto              indices_ptr = ror.getRemovedIndices();
@@ -90,37 +90,30 @@ public:
 #endif
   }
 
-  static auto smooth_surface(
+  static void smooth_surface(
       TriResVec* tri_res_vec,
 #ifdef ENABLE_VISUALIZE_OUTPUT
       const fs::path& pcd_output_path,
 #endif
-      double target_resolution = 0.5,
-      int    polynomial_order  = 2) -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
+      int polynomial_order = 2) {
     if(tri_res_vec->empty()) {
       THIS_LOG_WARN("[Filter] Empty input data, cannot smooth surface");
-      return {};
+      return;
     }
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
-
-    double voxel_size = target_resolution / std::numbers::sqrt2;
-    double search_radius = target_resolution * 2.0;
+    auto cloud    = tri_res_vec2point_cloud(*tri_res_vec);
+    auto smoothed = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    auto kdtree   = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+    kdtree->setInputCloud(cloud);
 
     pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
     mls.setComputeNormals(false);
     mls.setInputCloud(cloud);
     mls.setNumberOfThreads(std::thread::hardware_concurrency());
     mls.setPolynomialOrder(polynomial_order);
-    mls.setSearchRadius(search_radius);
-    mls.setUpsamplingMethod(pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ>::SAMPLE_LOCAL_PLANE);
-    mls.setUpsamplingRadius(voxel_size);
-    mls.setUpsamplingStepSize(voxel_size);
-
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
-    kdtree->setInputCloud(cloud);
+    mls.setSearchRadius(5.0 * compute_average_spacing(cloud));
+    mls.setUpsamplingMethod(pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ>::NONE);
     mls.setSearchMethod(kdtree);
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr smoothed{new pcl::PointCloud<pcl::PointXYZ>};
     mls.process(*smoothed);
 
     auto corresponding_indices = mls.getCorrespondingIndices();
@@ -143,7 +136,6 @@ public:
     THIS_LOG_INFO("[Filter] Surface smoothing: {} points processed from {} points", smoothed->size(), cloud->size());
     export_pcd(pcd_output_path, smoothed);
 #endif
-    return smoothed;
   }
 
   static void filter_too_few_points(TriResVec* tri_res_vec, int min_points = 2) {
@@ -174,26 +166,6 @@ public:
         imgs_data[idx].set_invalid();
       }
     }
-  }
-
-private:
-
-  static auto compute_average_spacing(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, int k_neighbors = 100)
-      -> double {
-    pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
-    kdtree.setInputCloud(cloud);
-    double total_distance = 0.0;
-    for(const auto& point : *cloud) {
-      std::vector<int>   indices(k_neighbors);
-      std::vector<float> distances(k_neighbors);
-      kdtree.nearestKSearch(point, k_neighbors, indices, distances);
-      double distance = 0.0;
-      for(double dist : distances) {
-        distance += sqrt(dist);
-      }
-      total_distance += distance / k_neighbors;
-    }
-    return total_distance / static_cast<double>(cloud->size());
   }
 };
 } // namespace SkyMerge

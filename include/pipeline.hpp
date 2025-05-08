@@ -102,7 +102,7 @@ public:
     Filter::filter_too_few_points(&res);
     Filter::filter_invalid_image(res, imgs_data);
     THIS_LOG_INFO("[Pipeline] Smoothing surface");
-    auto smoothed = Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
+    Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
     BA::ba(imgs_data, &res);
     export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
     Filter::filter_outliers_radius(&res, temporary_save_path / "f3.pcd");
@@ -110,23 +110,23 @@ public:
     auto res = triangulation(match_pairs, imgs_data, progress);
     THIS_LOG_INFO("[Pipeline] Filtering outliers using statistical method");
     Filter::filter_outliers_statistical(&res);
-    THIS_LOG_INFO("[Pipeline] Smoothing surface");
-    Filter::smooth_surface(&res);
     THIS_LOG_INFO("[Pipeline] Filtering outliers using radius method");
     Filter::filter_outliers_radius(&res);
     Filter::filter_near_observes(imgs_data, &res);
     Filter::filter_too_few_points(&res);
     Filter::filter_invalid_image(res, imgs_data);
+    THIS_LOG_INFO("[Pipeline] Smoothing surface");
+    auto smoothed = Filter::smooth_surface(&res, DSM_RESOLUTION);
     BA::ba(imgs_data, &res);
     Filter::filter_outliers_radius(&res);
 #endif
     THIS_LOG_INFO("[Pipeline] Generating DSM");
-    return DSM{tri_res_vec2point_cloud(res), RESOLUTION};
+    return DSM{tri_res_vec2point_cloud(res), DSM_RESOLUTION};
   }
 
   void stitch(ImgsData& imgs_data, DSM& dsm) {
     THIS_LOG_INFO("[Pipeline] Stitching images");
-    cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress);
+    cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
     fs::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), texture);
     THIS_LOG_INFO("[Pipeline] Stitched image saved to {}", panorama_path.string());
