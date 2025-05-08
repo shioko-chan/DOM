@@ -45,6 +45,21 @@ public:
     return std::vector<int>{view1.begin(), view1.end()};
   }
 
+  [[nodiscard]] auto find_nearest_neighbour(const Point<double> point) const -> std::vector<int> {
+    auto view0 = std::views::zip_transform(
+                     [&point](const int index, const Point<T>& point1) noexcept {
+                       return std::make_pair(euclidean_distance(point, point1), index);
+                     },
+                     std::views::iota(0),
+                     dataset)
+                 | std::views::common;
+    std::vector<std::pair<double, int>> distances(view0.begin(), view0.end());
+    std::nth_element(distances.begin(), distances.begin() + k_num - 1, distances.end());
+    auto view1 = distances | std::views::take(k_num)
+                 | std::views::transform([](const auto& pair) noexcept { return pair.second; }) | std::views::common;
+    return std::vector<int>{view1.begin(), view1.end()};
+  }
+
 private:
 
   int       k_num;

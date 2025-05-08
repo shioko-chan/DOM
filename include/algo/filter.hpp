@@ -53,7 +53,7 @@ public:
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
     THIS_MESSAGE("Original cloud size: {}", cloud->size());
-    THIS_MESSAGE("Filtered cloud size: {}", filtered_cloud->size());
+    THIS_MESSAGE("Statistical Filtered cloud size: {}", filtered_cloud->size());
     THIS_MESSAGE("Removed indices: {}", indices_to_remove.size());
     export_pcd(pcd_output_path, filtered_cloud);
 #endif
@@ -87,37 +87,40 @@ public:
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
     THIS_MESSAGE("Original cloud size: {}", cloud->size());
-    THIS_MESSAGE("Filtered cloud size: {}", filtered_cloud->size());
+    THIS_MESSAGE("Radius Filtered cloud size: {}", filtered_cloud->size());
     THIS_MESSAGE("Removed (radius outliers): {}", indices_to_remove.size());
     export_pcd(pcd_output_path, filtered_cloud);
 #endif
   }
 
-  static void smooth_surface(
+  static auto smooth_surface(
       TriResVec* tri_res_vec,
 #ifdef ENABLE_VISUALIZE_OUTPUT
       const fs::path& pcd_output_path,
 #endif
-      int  polynomial_order = 2,
-      bool compute_normals  = false) {
+      double target_resolution = 0.5,
+      int    polynomial_order  = 2) -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
     if(tri_res_vec->empty()) {
       THIS_LOG_WARN("tri_res_vec is empty, cannot smooth surface");
-      return;
+      return {};
     }
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
 
-    double avg_spacing = compute_average_spacing(cloud);
+    double voxel_size = target_resolution / std::numbers::sqrt2;
+
+    double search_radius = target_resolution * 2.0;
 
     pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
+    mls.setComputeNormals(false);
     mls.setInputCloud(cloud);
     mls.setNumberOfThreads(std::thread::hardware_concurrency());
-
-    mls.setSearchRadius(5.0 * avg_spacing);
     mls.setPolynomialOrder(polynomial_order);
-    mls.setComputeNormals(compute_normals);
-    mls.setUpsamplingMethod(pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ>::RANDOM_UNIFORM_DENSITY);
-    mls.setUpsamplingRadius(0.7 * mls.getSearchRadius());
-    mls.setUpsamplingStepSize(0.5 * avg_spacing);
+
+    mls.setSearchRadius(search_radius);
+
+    mls.setUpsamplingMethod(pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ>::SAMPLE_LOCAL_PLANE);
+    mls.setUpsamplingRadius(voxel_size);
+    mls.setUpsamplingStepSize(voxel_size);
 
     pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree(new pcl::search::KdTree<pcl::PointXYZ>);
     kdtree->setInputCloud(cloud);
@@ -127,10 +130,7 @@ public:
     mls.process(*smoothed);
 
     auto corresponding_indices = mls.getCorrespondingIndices();
-    if(!corresponding_indices || corresponding_indices->indices.empty()) {
-      THIS_LOG_WARN("No corresponding indices found after smoothing");
-      return;
-    }
+    THIS_ASSERTION_SHOULD_FALSE(!corresponding_indices || corresponding_indices->indices.empty());
     std::unordered_set<size_t> keep_indices;
     for(size_t i = 0; i < smoothed->size(); ++i) {
       int original_idx = corresponding_indices->indices[i];
@@ -150,6 +150,7 @@ public:
     THIS_MESSAGE("Smoothed cloud size: {}", smoothed->size());
     export_pcd(pcd_output_path, smoothed);
 #endif
+    return smoothed;
   }
 
   static void filter_too_few_points(TriResVec* tri_res_vec, int min_points = 2) {

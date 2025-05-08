@@ -8,6 +8,7 @@
 #include <ranges>
 #include <unordered_map>
 
+#include "algo/knn.hpp"
 #include "ds/dsm.hpp"
 #include "ds/imgdata.hpp"
 #include "tools/debug.hpp"
@@ -20,8 +21,7 @@ namespace SkyMerge {
 class DSMStitcher {
 public:
 
-  static auto stitch(ImgsData& imgs_data, DSM& dsm, Progress& progress, double cos_angle_threshold = 0.0) noexcept
-      -> cv::Mat {
+  static auto stitch(ImgsData& imgs_data, DSM& dsm, Progress& progress) noexcept -> cv::Mat {
     if(imgs_data.empty() || dsm.empty()) {
       THIS_LOG_ERROR("empty imgs_data or dsm");
       return {};
@@ -29,22 +29,27 @@ public:
     THIS_MESSAGE("start stitching");
     std::unordered_map<int, std::vector<PixelSrc>> idx_map;
     std::mutex                                     mtx;
+    auto knn = KNN<double>(8, imgs_data.get() | std::views::transform([](const auto& data) noexcept {
+                                return data.get_coord();
+                              }) | std::views::common);
     progress.reset(dsm.size());
     run(
         dsm.size(),
-        [&dsm, &imgs_data, &idx_map, &mtx, cos_angle_threshold](int idx) noexcept {
-          auto                  dsm_unit = dsm[idx];
+        [&dsm, &imgs_data, &idx_map, &mtx, &knn](int idx) noexcept {
+          auto                  world_pt_ = dsm[idx];
+          std::array<double, 3> world_pt{world_pt_.x, world_pt_.y, world_pt_.z};
           BestPixel             best_pixel{.img_idx = -1, .pixel = {-1, -1}, .cos_angle = 0.0};
-          std::array<double, 3> world_pt{dsm_unit.point.x, dsm_unit.point.y, dsm_unit.point.z};
-          for(auto [idx, img_data] : imgs_data | std::views::enumerate) {
+          cv::Mat               normal = (cv::Mat_<double>(3, 1) << 0, 0, -1);
+          for(int idx : knn.find_nearest_neighbour(Point<double>{world_pt_.x, world_pt_.y})) {
+            auto& img_data = imgs_data[idx];
             if(!img_data.is_valid()) {
               continue;
             }
-            cv::Mat view_vec = dsm_unit.point - img_data.t_c2w();
+            cv::Mat view_vec = img_data.t_c2w() - world_pt_;
             THIS_ASSERTION_SHOULD_LEQ(1e-6, cv::norm(view_vec));
             cv::normalize(view_vec, view_vec);
-            double cos_angle = std::abs(view_vec.dot(dsm_unit.normal));
-            if(cos_angle <= best_pixel.cos_angle || cos_angle < cos_angle_threshold) {
+            double cos_angle = std::abs(view_vec.dot(normal));
+            if(cos_angle <= best_pixel.cos_angle) {
               continue;
             }
             const auto& [width, height] = img_data.origin_img().get_size();
@@ -58,7 +63,7 @@ public:
               continue;
             }
             best_pixel.cos_angle = cos_angle;
-            best_pixel.img_idx   = static_cast<int>(idx);
+            best_pixel.img_idx   = idx;
             best_pixel.pixel     = {img_x, img_y};
           }
           std::lock_guard<std::mutex> lock(mtx);

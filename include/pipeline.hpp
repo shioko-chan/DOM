@@ -96,13 +96,13 @@ public:
     auto res = triangulation(match_pairs, imgs_data, progress, temporary_save_path);
     THIS_MESSAGE("Filtering outliers statistical");
     Filter::filter_outliers_statistical(&res, temporary_save_path / "f1.pcd");
-    THIS_MESSAGE("Smoothing surface");
-    Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
     THIS_MESSAGE("Filtering outliers radius");
     Filter::filter_outliers_radius(&res, temporary_save_path / "f2.pcd");
     Filter::filter_near_observes(imgs_data, &res);
     Filter::filter_too_few_points(&res);
     Filter::filter_invalid_image(res, imgs_data);
+    THIS_MESSAGE("Smoothing surface");
+    auto smoothed = Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
     BA::ba(imgs_data, &res);
     export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
     Filter::filter_outliers_radius(&res, temporary_save_path / "f3.pcd");
@@ -126,7 +126,7 @@ public:
 
   void stitch(ImgsData& imgs_data, DSM& dsm) {
     THIS_MESSAGE("Stitching images");
-    cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress, 0.1);
+    cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress);
     fs::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), texture);
     THIS_MESSAGE("Stitched image saved to {}", panorama_path.string());
