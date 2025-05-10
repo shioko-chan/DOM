@@ -31,50 +31,78 @@ public:
     }
     THIS_MESSAGE("start stitching");
     std::vector<std::vector<PixelSrc>> img_pixel_map(imgs_data.size());
-    std::mutex                         mtx;
+    struct PatchSrc {
+      int img_idx;
+      int dsm_idx;
+      std::array<cv::Point2f, 4> img_corners;
+      int start_x, start_y, end_x, end_y;
+    };
+    std::vector<PatchSrc> patch_src_map;
     auto knn = KNN<double>(8, imgs_data.get() | std::views::transform([](const auto& data) noexcept {
                                 return data.get_coord();
                               }) | std::views::common);
     progress.reset(dsm.size());
     run(
         dsm.size(),
-        [&dsm, &imgs_data, &img_pixel_map, &mtx, &knn](int idx) noexcept {
+        [&dsm, &imgs_data, &patch_src_map, &mtx, &knn, target_resolution](int idx) noexcept {
           auto world_pt_ = dsm[idx];
           if(std::isnan(world_pt_.z)) {
             return;
           }
           std::array<double, 3> world_pt{world_pt_.x, world_pt_.y, world_pt_.z};
-          BestPixel             best_pixel{.img_idx = -1, .pixel = {-1, -1}, .cos_angle = 0.0};
-          cv::Mat               normal = (cv::Mat_<double>(3, 1) << 0, 0, -1);
-          for(int idx : knn.find_nearest_neighbour(Point<double>{world_pt_.x, world_pt_.y})) {
-            auto& img_data = imgs_data[idx];
-            if(!img_data.is_valid()) {
-              continue;
-            }
+          BestPixel best_pixel{.img_idx = -1, .pixel = {-1, -1}, .cos_angle = 0.0};
+          cv::Mat normal = (cv::Mat_<double>(3, 1) << 0, 0, -1);
+          int best_img_idx = -1;
+          double best_cos_angle = 0.0;
+          std::array<cv::Point2f, 4> best_img_corners;
+          for(int img_idx : knn.find_nearest_neighbour(Point<double>{world_pt_.x, world_pt_.y})) {
+            auto& img_data = imgs_data[img_idx];
+            if(!img_data.is_valid()) continue;
             cv::Mat view_vec = img_data.t_c2w() - world_pt_;
             THIS_ASSERTION_SHOULD_LEQ(1e-6, cv::norm(view_vec));
             cv::normalize(view_vec, view_vec);
             double cos_angle = std::abs(view_vec.dot(normal));
-            if(cos_angle <= best_pixel.cos_angle) {
-              continue;
+            if(cos_angle <= best_cos_angle) continue;
+            // 计算DSM区块四角点的世界坐标
+            int t_x = idx % dsm.cols();
+            int t_y = idx / dsm.cols();
+            double res = dsm.resolution();
+            double z = world_pt_.z;
+            double cx = world_pt_.x;
+            double cy = world_pt_.y;
+            std::array<std::array<double, 3>, 4> world_corners = {
+              std::array<double, 3>{cx - res/2, cy - res/2, z}, // 左上
+              std::array<double, 3>{cx + res/2, cy - res/2, z}, // 右上
+              std::array<double, 3>{cx + res/2, cy + res/2, z}, // 右下
+              std::array<double, 3>{cx - res/2, cy + res/2, z}  // 左下
+            };
+            std::array<cv::Point2f, 4> img_corners;
+            bool valid = true;
+            for (int i = 0; i < 4; ++i) {
+              auto cam_pt = world2camera(img_data.A_w2c_array_raw().data(), img_data.t_w2c_array_raw().data(), world_corners[i].data());
+              auto px = camera2pixel(imgs_data.camera_array_raw().data(), imgs_data.distort_array_raw().data(), cam_pt.data());
+              img_corners[i] = cv::Point2f(static_cast<float>(px.x()), static_cast<float>(px.y()));
+              // 可选：检查是否在图像范围内
+              const auto& [width, height] = img_data.origin_img().get_size();
+              if(img_corners[i].x < 0 || img_corners[i].y < 0 || img_corners[i].x >= width || img_corners[i].y >= height) {
+                valid = false;
+              }
             }
-            const auto& [width, height] = img_data.origin_img().get_size();
-            auto point =
-                world2camera(img_data.A_w2c_array_raw().data(), img_data.t_w2c_array_raw().data(), world_pt.data());
-            auto pixel =
-                camera2pixel(imgs_data.camera_array_raw().data(), imgs_data.distort_array_raw().data(), point.data());
-            int img_x = static_cast<int>(std::round(pixel.x()));
-            int img_y = static_cast<int>(std::round(pixel.y()));
-            if(img_x < 0 || img_y < 0 || img_x >= width || img_y >= height) {
-              continue;
-            }
-            best_pixel.cos_angle = cos_angle;
-            best_pixel.img_idx   = idx;
-            best_pixel.pixel     = {img_x, img_y};
+            if (!valid) continue;
+            best_cos_angle = cos_angle;
+            best_img_idx = img_idx;
+            best_img_corners = img_corners;
           }
-          if(best_pixel.img_idx != -1) {
+          if(best_img_idx != -1) {
+            int t_x = idx % dsm.cols();
+            int t_y = idx / dsm.cols();
+            double resolution_ratio = dsm.resolution() / target_resolution;
+            int start_x = static_cast<int>(t_x * resolution_ratio);
+            int start_y = static_cast<int>(t_y * resolution_ratio);
+            int end_x   = static_cast<int>((t_x + 1) * resolution_ratio);
+            int end_y   = static_cast<int>((t_y + 1) * resolution_ratio);
             std::lock_guard<std::mutex> lock(mtx);
-            img_pixel_map[best_pixel.img_idx].emplace_back(best_pixel.pixel, idx);
+            patch_src_map.push_back(PatchSrc{best_img_idx, idx, best_img_corners, start_x, start_y, end_x, end_y});
           }
         },
         progress);
@@ -84,29 +112,29 @@ public:
         CV_8UC3,
         cv::Scalar(0, 0, 0));
     run(
-        img_pixel_map.size(),
-        [&dsm, &img_pixel_map, &imgs_data, &texture, resolution_ratio = dsm.resolution() / target_resolution](
-            int idx) noexcept {
-          auto&   img_data = imgs_data[idx];
-          auto&&  pixels   = img_pixel_map[idx];
-          cv::Mat img      = img_data.origin_img().get();
-          for(const auto& [pixel, dsm_idx] : pixels) {
-            int     t_x     = dsm_idx % dsm.cols();
-            int     t_y     = dsm_idx / dsm.cols();
-            int     start_x = static_cast<int>(t_x * resolution_ratio);
-            int     start_y = static_cast<int>(t_y * resolution_ratio);
-            int     end_x   = static_cast<int>((t_x + 1) * resolution_ratio);
-            int     end_y   = static_cast<int>((t_y + 1) * resolution_ratio);
-            cv::Mat roi;
-            cv::resize(
-                img(cv::Rect(pixel.x, pixel.y, 1, 1)),
-                roi,
-                cv::Size(end_x - start_x, end_y - start_y),
-                0,
-                0,
-                cv::INTER_LINEAR);
-            roi.copyTo(texture(cv::Rect(start_x, start_y, end_x - start_x, end_y - start_y)));
+        patch_src_map.size(),
+        [&imgs_data, &patch_src_map, &texture](int idx) noexcept {
+          const auto& patch = patch_src_map[idx];
+          auto& img_data = imgs_data[patch.img_idx];
+          cv::Mat img = img_data.origin_img().get();
+          int patch_w = patch.end_x - patch.start_x;
+          int patch_h = patch.end_y - patch.start_y;
+          std::vector<cv::Point2f> patch_corners = {
+            cv::Point2f(0, 0),
+            cv::Point2f(static_cast<float>(patch_w-1), 0),
+            cv::Point2f(static_cast<float>(patch_w-1), static_cast<float>(patch_h-1)),
+            cv::Point2f(0, static_cast<float>(patch_h-1))
+          };
+          cv::Mat H = cv::getPerspectiveTransform(patch.img_corners.data(), patch_corners.data());
+          cv::Mat patch_img;
+          cv::warpPerspective(img, patch_img, H, cv::Size(patch_w, patch_h), cv::INTER_LINEAR, cv::BORDER_REFLECT);
+          cv::Mat roi;
+          if (patch_img.size() != cv::Size(patch_w, patch_h)) {
+            cv::resize(patch_img, roi, cv::Size(patch_w, patch_h), 0, 0, cv::INTER_LINEAR);
+          } else {
+            roi = patch_img;
           }
+          roi.copyTo(texture(cv::Rect(patch.start_x, patch.start_y, patch_w, patch_h)));
         },
         progress);
     cv::transpose(texture, texture);
