@@ -2,6 +2,7 @@
 #define SKYMERGE_PIPELINE_HPP
 
 #include <filesystem>
+#include <pcl/impl/point_types.hpp>
 #include <ranges>
 #include <utility>
 #include <vector>
@@ -12,10 +13,10 @@
 #include "algo/ba.hpp"
 #include "algo/filter.hpp"
 #include "algo/knn.hpp"
-#include "algo/stitch.hpp"
+#include "algo/stitch1.hpp"
 #include "algo/tri.hpp"
 #include "config.hpp"
-#include "ds/dsm.hpp"
+// #include "ds/dsm.hpp"
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
 #include "nn/matcher.hpp"
@@ -91,7 +92,8 @@ public:
     return {view.begin(), view.end()};
   }
 
-  [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept -> DSM {
+  [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept
+      -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
 #ifdef ENABLE_VISUALIZE_OUTPUT
     auto res = triangulation(match_pairs, imgs_data, progress, temporary_save_path);
     THIS_LOG_INFO("[Pipeline] Filtering outliers using statistical method");
@@ -126,12 +128,21 @@ public:
               << imgs_data.distort_array_raw().data()[2] << " " << imgs_data.distort_array_raw().data()[3] << " "
               << imgs_data.distort_array_raw().data()[4] << std::endl;
     THIS_LOG_INFO("[Pipeline] Generating DSM");
-    return DSM{tri_res_vec2point_cloud(res), progress, DSM_RESOLUTION};
+    // return DSM{tri_res_vec2point_cloud(res), progress, DSM_RESOLUTION};
+    return tri_res_vec2point_cloud(res);
   }
 
-  void stitch(ImgsData& imgs_data, DSM& dsm) {
+  // void stitch(ImgsData& imgs_data, DSM& dsm) {
+  //   THIS_LOG_INFO("[Pipeline] Stitching images");
+  //   cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
+  //   fs::path panorama_path = output_dir / "stitched_image.jpg";
+  //   cv::imwrite(panorama_path.string(), texture);
+  //   THIS_LOG_INFO("[Pipeline] Stitched image saved to {}", panorama_path.string());
+  // }
+
+  void stitch(ImgsData& imgs_data, const pcl::PointCloud<pcl::PointXYZ>::Ptr& dsm) {
     THIS_LOG_INFO("[Pipeline] Stitching images");
-    cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
+    cv::Mat  texture       = TriMeshStitcher::stitch(imgs_data, dsm, progress);
     fs::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), texture);
     THIS_LOG_INFO("[Pipeline] Stitched image saved to {}", panorama_path.string());
