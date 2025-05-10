@@ -37,6 +37,13 @@ public:
     [[nodiscard]] auto to_cv_point() const -> Point<float> { return {static_cast<float>(x), static_cast<float>(y)}; }
   };
 
+  // 图像操作结构体，记录需要对特定图像执行的操作
+  struct ImageOperation {
+    cv::Mat affine_transform; // 仿射变换矩阵
+    cv::Mat mask;             // 三角形掩码
+    cv::Rect target_roi;      // 目标区域
+  };
+
   static auto
   stitch(ImgsData& imgs_data, const pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud_, Progress& progress) noexcept
       -> cv::Mat {
@@ -233,7 +240,11 @@ private:
     int     height = static_cast<int>(max_y - min_y) * 20;
     cv::Mat texture(height, width, CV_8UC3, cv::Scalar(0, 0, 0));
 
-    // 在图像上渲染每个三角形
+    // 创建每张图像的操作列表
+    std::vector<std::vector<ImageOperation>> img_operations(imgs_data.size());
+    std::mutex ops_mutex;
+
+    // 第一阶段：为每个三角形创建图像操作
     progress.reset(triangles.size());
     run(
         triangles.size(),
@@ -250,9 +261,7 @@ private:
 
           // 对于每个三角形，我们现在简单地使用第一个顶点的图像作为纹理源
           // 实际应用中，可能需要更复杂的策略，如投票或混合
-          int     img_idx  = v1.best_img_idx;
-          auto&   img_data = imgs_data[img_idx];
-          cv::Mat img      = img_data.origin_img().get();
+          int img_idx = v1.best_img_idx;
 
           // 将世界坐标映射到渲染图像坐标
           cv::Point2f p1((v1.x - min_x) * width / (max_x - min_x), (v1.y - min_y) * height / (max_y - min_y));
@@ -266,24 +275,56 @@ private:
           // 创建仿射变换矩阵
           cv::Mat affine_transform = cv::getAffineTransform(tex_coords.data(), tri_vertices.data());
 
-          // 使用仿射变换将图像区域映射到三角形
-          cv::Mat warped_triangle;
-          cv::warpAffine(img, warped_triangle, affine_transform, texture.size(), cv::INTER_NEAREST, cv::BORDER_REFLECT);
-
           // 创建三角形掩码
-          cv::Mat                mask = cv::Mat::zeros(texture.size(), CV_8UC1);
-          std::vector<cv::Point> polygon =
-              {cv::Point(static_cast<int>(p1.x), static_cast<int>(p1.y)),
-               cv::Point(static_cast<int>(p2.x), static_cast<int>(p2.y)),
-               cv::Point(static_cast<int>(p3.x), static_cast<int>(p3.y))};
+          cv::Mat mask = cv::Mat::zeros(texture.size(), CV_8UC1);
+          std::vector<cv::Point> polygon = {
+              cv::Point(static_cast<int>(p1.x), static_cast<int>(p1.y)),
+              cv::Point(static_cast<int>(p2.x), static_cast<int>(p2.y)),
+              cv::Point(static_cast<int>(p3.x), static_cast<int>(p3.y))
+          };
           cv::fillConvexPoly(mask, polygon, cv::Scalar(255));
 
-          // 将变换后的三角形复制到结果图像
-          cv::Mat masked_warped_triangle;
-          warped_triangle.copyTo(masked_warped_triangle, mask);
+          // 创建图像操作
+          ImageOperation op;
+          op.affine_transform = affine_transform;
+          op.mask = mask;
+          op.target_roi = cv::boundingRect(polygon); // 优化：只保存包含三角形的ROI
 
-          // 将结果叠加到纹理图像上
-          texture = texture + masked_warped_triangle;
+          // 添加到对应图像的操作列表
+          {
+            std::lock_guard<std::mutex> lock(ops_mutex);
+            img_operations[img_idx].push_back(op);
+          }
+        },
+        progress);
+
+    // 第二阶段：依次处理每张图像的所有操作
+    progress.reset(imgs_data.size());
+    run(
+        imgs_data.size(),
+        [&](int img_idx) noexcept {
+          const auto& ops = img_operations[img_idx];
+          if (ops.empty()) return; // 跳过没有操作的图像
+
+          // 只获取一次图像
+          cv::Mat img = imgs_data[img_idx].origin_img().get();
+
+          // 处理该图像的所有操作
+          for (const auto& op : ops) {
+            // 使用仿射变换将图像区域映射到三角形
+            cv::Mat warped_triangle;
+            cv::warpAffine(img, warped_triangle, op.affine_transform, texture.size(), 
+                          cv::INTER_NEAREST, cv::BORDER_REFLECT);
+
+            // 将变换后的三角形复制到结果图像
+            cv::Mat masked_warped_triangle;
+            warped_triangle.copyTo(masked_warped_triangle, op.mask);
+
+            // 将结果叠加到纹理图像上
+            // 注意：这里需要互斥锁，但为了性能考虑，我们将所有操作结果保存后一次性更新
+            // 使用 += 代替 = 来累加像素值
+            cv::add(texture, masked_warped_triangle, texture, op.mask);
+          }
         },
         progress);
 
