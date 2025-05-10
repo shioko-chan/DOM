@@ -120,8 +120,13 @@ public:
     BA::ba(imgs_data, &res);
     Filter::filter_outliers_radius(&res);
 #endif
+    std::cout << imgs_data.camera_array_raw().data()[0] << " " << imgs_data.camera_array_raw().data()[1] << " "
+              << imgs_data.camera_array_raw().data()[2] << " " << imgs_data.camera_array_raw().data()[3] << std::endl;
+    std::cout << imgs_data.distort_array_raw().data()[0] << " " << imgs_data.distort_array_raw().data()[1] << " "
+              << imgs_data.distort_array_raw().data()[2] << " " << imgs_data.distort_array_raw().data()[3] << " "
+              << imgs_data.distort_array_raw().data()[4] << std::endl;
     THIS_LOG_INFO("[Pipeline] Generating DSM");
-    return DSM{tri_res_vec2point_cloud(res), DSM_RESOLUTION};
+    return DSM{tri_res_vec2point_cloud(res), progress, DSM_RESOLUTION};
   }
 
   void stitch(ImgsData& imgs_data, DSM& dsm) {

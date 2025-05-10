@@ -5,12 +5,14 @@
 #include <pcl/kdtree/kdtree_flann.h>
 
 #include <cmath>
+#include <cstddef>
 #include <opencv2/core.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include "tools/log.hpp"
+#include "tools/progress.hpp"
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 #include "types/cv_alias.hpp"
@@ -22,7 +24,7 @@ public:
 
   DSM() noexcept = default;
 
-  explicit DSM(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, double resolution = 0.5) noexcept :
+  explicit DSM(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, Progress& progress, double resolution = 0.5) noexcept :
       resolution_(resolution) {
     if(cloud->empty()) {
       THIS_MESSAGE("Empty point cloud data, cannot generate DSM.");
@@ -35,7 +37,7 @@ public:
     auto max_pt = max_pt_.getVector3fMap();
     min_x       = min_pt.x();
     min_y       = min_pt.y();
-    height_map  = calculate_dsm(cloud, min_x, min_y, max_pt.x(), max_pt.y(), resolution);
+    height_map  = calculate_dsm(cloud, min_x, min_y, max_pt.x(), max_pt.y(), progress, resolution);
   }
 
   [[nodiscard]] auto operator[](int idx) const noexcept -> Point3<double> {
@@ -89,6 +91,7 @@ private:
       double                                     min_y,
       double                                     max_x,
       double                                     max_y,
+      Progress&                                  progress,
       double                                     resolution = 0.5,
       int                                        k_nn       = 16) noexcept -> cv::Mat {
     int cols = static_cast<int>(std::ceil((max_x - min_x) / resolution)) + 1;
@@ -103,32 +106,34 @@ private:
     kdtree.setInputCloud(cloud_xy);
     cv::Mat      dsm(rows, cols, CV_64F, std::numeric_limits<double>::quiet_NaN());
     const double max_distance = compute_average_spacing(cloud_xy) * 2.0;
-    for(int row = 0; row < rows; ++row) {
-      for(int col = 0; col < cols; ++col) {
-        double             cur_x = min_x + (col * resolution);
-        double             cur_y = min_y + (row * resolution);
-        pcl::PointXYZ      search_point{static_cast<float>(cur_x), static_cast<float>(cur_y), 0.0F};
-        std::vector<int>   point_idx(k_nn);
-        std::vector<float> point_dist(k_nn);
-        if(kdtree.radiusSearch(search_point, max_distance, point_idx, point_dist, k_nn) > 0) {
-          double sum_weights = 0.0;
-          double sum_values  = 0.0;
-          auto&  dsm_val     = dsm.at<double>(row, col);
-          for(auto&& [idx, dist] : std::views::zip(point_idx, point_dist)) {
-            if(dist < 1e-6) {
-              dsm_val = cloud->points[idx].getVector3fMap().z();
-              break;
+    run((static_cast<size_t>(rows * cols)),
+        [rows, cols, min_x, min_y, resolution, k_nn, max_distance, &dsm, &kdtree, &cloud](int cnt) noexcept {
+          int                row   = cnt / cols;
+          int                col   = cnt % cols;
+          double             cur_x = min_x + (col * resolution);
+          double             cur_y = min_y + (row * resolution);
+          pcl::PointXYZ      search_point{static_cast<float>(cur_x), static_cast<float>(cur_y), 0.0F};
+          std::vector<int>   point_idx(k_nn);
+          std::vector<float> point_dist(k_nn);
+          if(kdtree.radiusSearch(search_point, max_distance, point_idx, point_dist, k_nn) > 0) {
+            double sum_weights = 0.0;
+            double sum_values  = 0.0;
+            auto&  dsm_val     = dsm.at<double>(row, col);
+            for(auto&& [idx, dist] : std::views::zip(point_idx, point_dist)) {
+              if(dist < 1e-6) {
+                dsm_val = cloud->points[idx].getVector3fMap().z();
+                break;
+              }
+              double weight = 1.0 / std::pow(dist, 2);
+              sum_weights += weight;
+              sum_values += weight * cloud->points[idx].getVector3fMap().z();
             }
-            double weight = 1.0 / std::pow(dist, 2);
-            sum_weights += weight;
-            sum_values += weight * cloud->points[idx].getVector3fMap().z();
+            if(std::isnan(dsm_val)) {
+              dsm_val = sum_values / sum_weights;
+            }
           }
-          if(std::isnan(dsm_val)) {
-            dsm_val = sum_values / sum_weights;
-          }
-        }
-      }
-    }
+        },
+        progress);
     return dsm;
   }
 

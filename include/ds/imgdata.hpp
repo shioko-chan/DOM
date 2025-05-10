@@ -183,7 +183,7 @@ public:
     double north{};
     double upward{};
     local_cartesian.Forward(latitude, longitude, altitude, east, north, upward);
-    coord             = Point<double>{north, east};
+    auto    coord     = Point<double>{north, east};
     cv::Mat t_c2w_mat = (cv::Mat_<double>(3, 1) << coord.x, coord.y, -upward);
     cv::Mat t_w2c_mat = -R_w2c() * t_c2w_mat;
     t_w2c_array       = {t_w2c_mat.at<double>(0, 0), t_w2c_mat.at<double>(1, 0), t_w2c_mat.at<double>(2, 0)};
@@ -228,9 +228,11 @@ public:
 
   [[nodiscard]] auto get_kpnts() noexcept -> Kpnts& { return kpnts; }
 
-  [[nodiscard]] auto get_coord() const noexcept -> const Point<double>& {
+  [[nodiscard]] auto get_coord() const noexcept -> Point<double> {
     THIS_ASSERTION_SHOULD_TRUE(reference_set, "reference not set!");
-    return coord;
+    cv::Mat t_w2c_mat = (cv::Mat_<double>(3, 1) << t_w2c_array[0], t_w2c_array[1], t_w2c_array[2]);
+    cv::Mat t_c2w_mat = -R_c2w() * t_w2c_mat;
+    return {t_c2w_mat.at<double>(0, 0), t_c2w_mat.at<double>(1, 0)};
   }
 
 private:
@@ -245,8 +247,7 @@ private:
   Image       img_rotated;
   OriginImage img_origin;
 
-  double        latitude{}, longitude{}, altitude{};
-  Point<double> coord;
+  double latitude{}, longitude{}, altitude{};
 
   RotateAxisAngle A_w2c_array{std::numeric_limits<double>::quiet_NaN()};
   TranslateArray  t_w2c_array{std::numeric_limits<double>::quiet_NaN()};
