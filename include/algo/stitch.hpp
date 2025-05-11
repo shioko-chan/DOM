@@ -202,7 +202,7 @@ private:
             try {
               affine = cv::getAffineTransform(local_img_poly, local_large_tex_poly);
             } catch (const cv::Exception& e) {
-              report_error("OpenCV getAffineTransform failed: " + std::string(e.what()));
+              report_error(e, "OpenCV getAffineTransform failed");
               return;
             }
             
@@ -218,7 +218,7 @@ private:
             try {
               cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly_int, cv::Scalar(255));
             } catch (const cv::Exception& e) {
-              report_error("OpenCV fillConvexPoly failed: " + std::string(e.what()));
+              report_error(e, "OpenCV fillConvexPoly failed");
               return;
             }
             
@@ -227,18 +227,18 @@ private:
               cv::warpAffine(
                   img(img_roi_int), new_tex_local, affine, large_tex_roi_int.size(), cv::INTER_LANCZOS4, cv::BORDER_CONSTANT);
             } catch (const cv::Exception& e) {
-              report_error("OpenCV warpAffine failed: " + std::string(e.what()));
+              report_error(e, "OpenCV warpAffine failed");
               return;
             }
             
             try {
               new_tex_local.copyTo((*texture)(large_tex_roi_int), local_large_tex_mask);
             } catch (const cv::Exception& e) {
-              report_error("OpenCV copyTo failed: " + std::string(e.what()));
+              report_error(e, "OpenCV copyTo failed");
               return;
             }
           } catch (const std::exception& e) {
-            report_error("Unexpected error in put_triangle_texture: " + std::string(e.what()));
+            report_error(e, "Unexpected error in put_triangle_texture");
             return;
           }
         });
@@ -272,10 +272,10 @@ private:
       }
       return texture;
     } catch (const cv::Exception& e) {
-      report_error("OpenCV error in render_textured_mesh: " + std::string(e.what()));
+      report_error(e, "OpenCV error in render_textured_mesh");
       return cv::Mat();
     } catch (const std::exception& e) {
-      report_error("Unexpected error in render_textured_mesh: " + std::string(e.what()));
+      report_error(e, "Unexpected error in render_textured_mesh");
       return cv::Mat();
     }
   }
