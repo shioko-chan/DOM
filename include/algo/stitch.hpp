@@ -2,6 +2,8 @@
 #define SKYMERGE_ALGO_STITCH1_HPP
 
 #include <algorithm>
+#include <cmath>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <ranges>
@@ -10,6 +12,7 @@
 #include <CGAL/Delaunay_triangulation_2.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Triangulation_vertex_base_with_info_2.h>
+#include <pcl/segmentation/extract_clusters.h>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -20,7 +23,6 @@
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
-#include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 #include "types/common_types.hpp"
 #include "types/cv_alias.hpp"
@@ -210,79 +212,46 @@ private:
     run(triangle_indices.size(),
         [&img, &triangles, &triangle_indices, &vertices, &get_pixel, texture, resolution, min_x, min_y](
             int tri_idx) noexcept {
-          try {
-            auto tri_vert = triangles[triangle_indices[tri_idx]]
-                            | std::views::transform([&vertices](int idx) noexcept { return vertices[idx]; });
-            auto large_tex_view =
-                tri_vert
-                | std::views::transform([resolution, min_x, min_y](const auto& vertex) noexcept -> Point<double> {
-                    return {(vertex.x - min_x) * resolution, (vertex.y - min_y) * resolution};
-                  });
-            auto           img_view = tri_vert | std::views::transform([&get_pixel](const auto& vertex) noexcept {
-                              return get_pixel(vertex);
-                            });
-            Points<double> large_tex_poly{large_tex_view.begin(), large_tex_view.end()};
-            Points<double> img_poly{img_view.begin(), img_view.end()};
-            auto           large_tex_roi = bounding_rect(large_tex_poly);
-            auto           img_roi       = bounding_rect(img_poly);
-            Points<float>  local_large_tex_poly{
-                large_tex_poly[0] - large_tex_roi.tl(),
-                large_tex_poly[1] - large_tex_roi.tl(),
-                large_tex_poly[2] - large_tex_roi.tl()};
-            Points<float>
-                    local_img_poly{img_poly[0] - img_roi.tl(), img_poly[1] - img_roi.tl(), img_poly[2] - img_roi.tl()};
-            cv::Mat affine;
-            affine = cv::getAffineTransform(local_img_poly, local_large_tex_poly);
-            cv::Rect large_tex_roi_int{
-                static_cast<int>(std::round(large_tex_roi.x)),
-                static_cast<int>(std::round(large_tex_roi.y)),
-                static_cast<int>(std::round(large_tex_roi.width)),
-                static_cast<int>(std::round(large_tex_roi.height))};
-            cv::Rect img_roi_int{
-                static_cast<int>(std::round(img_roi.x)),
-                static_cast<int>(std::round(img_roi.y)),
-                static_cast<int>(std::round(img_roi.width)),
-                static_cast<int>(std::round(img_roi.height))};
-            // if(large_tex_roi_int.area() <= 0 || img_roi_int.area() <= 0 || large_tex_roi_int.x < 0
-            //    || large_tex_roi_int.y < 0 || img_roi_int.x < 0 || img_roi_int.y < 0
-            //    || large_tex_roi_int.x >= texture->cols || large_tex_roi_int.y >= texture->rows
-            //    || img_roi_int.x >= img.cols || img_roi_int.y >= img.rows) {
-            //   return;
-            // }
-            if(large_tex_roi_int.area() <= 0 || img_roi_int.area() <= 0) {
-              return;
-            }
-            try {
-              cv::Mat roi = (*texture)(large_tex_roi_int);
-            } catch(const cv::Exception& e) {
-              std::stringstream ss;
-              ss << large_tex_roi_int << " " << texture->size();
-              report_error(e, "texture {}", ss.str());
-              return;
-            }
-            try {
-              cv::Mat roi = img(img_roi_int);
-            } catch(const cv::Exception& e) {
-              std::stringstream ss;
-              ss << img_roi_int << " " << img.size();
-              report_error(e, "img {}", ss.str());
-              return;
-            }
-            cv::Mat     local_large_tex_mask = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC1);
-            Points<int> local_large_tex_poly_int;
-            {
-              auto view = convert_arithmetic_type<int>(local_large_tex_poly);
-              local_large_tex_poly_int.assign(view.begin(), view.end());
-            }
-            cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly_int, cv::Scalar(255));
-            cv::Mat new_tex_local = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC3);
-            cv::warpAffine(
-                img(img_roi_int), new_tex_local, affine, large_tex_roi_int.size(), cv::INTER_LANCZOS4, cv::BORDER_CONSTANT);
-            new_tex_local.copyTo((*texture)(large_tex_roi_int), local_large_tex_mask);
-          } catch(const std::exception& e) {
-            report_error(e, "Unexpected error in put_triangle_texture");
-            return;
+          auto tri_vert = triangles[triangle_indices[tri_idx]]
+                          | std::views::transform([&vertices](int idx) noexcept { return vertices[idx]; });
+          auto large_tex_view =
+              tri_vert | std::views::transform([resolution, min_x, min_y](const auto& vertex) noexcept -> Point<double> {
+                return {(vertex.x - min_x) * resolution, (vertex.y - min_y) * resolution};
+              });
+          auto img_view =
+              tri_vert | std::views::transform([&get_pixel](const auto& vertex) noexcept { return get_pixel(vertex); });
+          Points<double> large_tex_poly{large_tex_view.begin(), large_tex_view.end()};
+          Points<double> img_poly{img_view.begin(), img_view.end()};
+          auto           large_tex_roi = bounding_rect(large_tex_poly);
+          auto           img_roi       = bounding_rect(img_poly);
+          Points<float>  local_large_tex_poly{
+              large_tex_poly[0] - large_tex_roi.tl(),
+              large_tex_poly[1] - large_tex_roi.tl(),
+              large_tex_poly[2] - large_tex_roi.tl()};
+          Points<float> local_img_poly{img_poly[0] - img_roi.tl(), img_poly[1] - img_roi.tl(), img_poly[2] - img_roi.tl()};
+          cv::Mat affine;
+          affine = cv::getAffineTransform(local_img_poly, local_large_tex_poly);
+          cv::Rect large_tex_roi_int{
+              static_cast<int>(std::floor(large_tex_roi.x)),
+              static_cast<int>(std::floor(large_tex_roi.y)),
+              static_cast<int>(std::ceil(large_tex_roi.width)),
+              static_cast<int>(std::ceil(large_tex_roi.height))};
+          cv::Rect img_roi_int{
+              static_cast<int>(std::floor(img_roi.x)),
+              static_cast<int>(std::floor(img_roi.y)),
+              static_cast<int>(std::ceil(img_roi.width)),
+              static_cast<int>(std::ceil(img_roi.height))};
+          cv::Mat     local_large_tex_mask = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC1);
+          Points<int> local_large_tex_poly_int;
+          {
+            auto view = convert_arithmetic_type<int>(local_large_tex_poly);
+            local_large_tex_poly_int.assign(view.begin(), view.end());
           }
+          cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly_int, cv::Scalar(255));
+          cv::Mat new_tex_local = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC3);
+          cv::warpAffine(
+              img(img_roi_int), new_tex_local, affine, large_tex_roi_int.size(), cv::INTER_LANCZOS4, cv::BORDER_CONSTANT);
+          new_tex_local.copyTo((*texture)(large_tex_roi_int), local_large_tex_mask);
         });
   }
 
@@ -302,24 +271,17 @@ private:
     int    width  = static_cast<int>(std::ceil((max_x - min_x) * resolution));
     int    height = static_cast<int>(std::ceil((max_y - min_y) * resolution));
 
-    try {
-      cv::Mat texture{height, width, CV_8UC3, cv::Scalar(0, 0, 0)};
-      for(auto&& [idx, pair] : std::views::zip(imgs_data, img_tri_pairs) | std::views::enumerate) {
-        const auto& [img_data, tris] = pair;
-        if(!img_data.is_valid()) {
-          continue;
-        }
-        THIS_MESSAGE("Start stitching image {}/{}", idx, imgs_data.size());
-        put_triangle_texture(&texture, img_data, imgs_data, tris, triangles, vertices, min_x, min_y, resolution);
+    cv::Mat texture{height, width, CV_8UC3, cv::Scalar(0, 0, 0)};
+    THIS_MESSAGE("Start putting triangle texture");
+    progress.reset(static_cast<int>(imgs_data.size()));
+    for(auto&& [img_data, tris] : std::views::zip(imgs_data, img_tri_pairs)) {
+      if(!img_data.is_valid()) {
+        continue;
       }
-      return texture;
-    } catch(const cv::Exception& e) {
-      report_error(e, "OpenCV error in render_textured_mesh");
-      return {};
-    } catch(const std::exception& e) {
-      report_error(e, "Unexpected error in render_textured_mesh");
-      return {};
+      put_triangle_texture(&texture, img_data, imgs_data, tris, triangles, vertices, min_x, min_y, resolution);
+      progress.update();
     }
+    return texture;
   }
 };
 

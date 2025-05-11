@@ -127,7 +127,7 @@ public:
 
   void stitch(ImgsData& imgs_data, const pcl::PointCloud<pcl::PointXYZ>::Ptr& dsm) {
     THIS_LOG_INFO("[Pipeline] Stitching images");
-    cv::Mat  texture       = TriMeshStitcher::stitch(imgs_data, dsm, progress);
+    cv::Mat  texture       = TriMeshStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
     fs::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), texture);
     THIS_LOG_INFO("[Pipeline] Stitched image saved to {}", panorama_path.string());
