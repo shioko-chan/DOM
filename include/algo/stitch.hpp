@@ -1,6 +1,7 @@
 #ifndef SKYMERGE_ALGO_STITCH1_HPP
 #define SKYMERGE_ALGO_STITCH1_HPP
 
+#include <algorithm>
 #include <mutex>
 #include <optional>
 #include <ranges>
@@ -19,10 +20,10 @@
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
+#include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 #include "types/common_types.hpp"
 #include "types/cv_alias.hpp"
-#include "tools/report_error.hpp"
 
 namespace SkyMerge {
 
@@ -33,8 +34,6 @@ private:
   using Vb            = CGAL::Triangulation_vertex_base_with_info_2<int, K>;
   using Tds           = CGAL::Triangulation_data_structure_2<Vb>;
   using Triangulation = CGAL::Delaunay_triangulation_2<K, Tds>;
-
-  using BestPixel = std::pair<int, Point<double>>;
 
   using Triangle = std::array<int, 3>;
 
@@ -100,16 +99,15 @@ private:
     return {p_x.x(), p_x.y()};
   }
 
-  static auto find_best_texture_source(ImgsData& imgs_data, const Point3<double>& vertex, KNN<double>& knn) noexcept
-      -> std::optional<BestPixel> {
+  static auto find_texture_source(ImgsData& imgs_data, const Point3<double>& vertex, KNN<double>& knn) noexcept
+      -> std::vector<int> {
     if(std::isnan(vertex.z)) {
-      return std::nullopt;
+      return {};
     }
-    std::array<double, 3> world_pt{vertex.x, vertex.y, vertex.z};
-    Point3<double>        world_pt_{world_pt[0], world_pt[1], world_pt[2]};
-    BestPixel             best_pixel{-1, {0, 0}};
-    double                best_cos_angle = 0.0;
-    cv::Mat               normal         = (cv::Mat_<double>(3, 1) << 0, 0, -1);
+    std::array<double, 3>               world_pt{vertex.x, vertex.y, vertex.z};
+    Point3<double>                      world_pt_{world_pt[0], world_pt[1], world_pt[2]};
+    cv::Mat                             normal = (cv::Mat_<double>(3, 1) << 0, 0, -1);
+    std::vector<std::pair<double, int>> img_idxs;
     for(int img_idx : knn.find_nearest_neighbour(Point<double>{vertex.x, vertex.y})) {
       auto& img_data = imgs_data[img_idx];
       if(!img_data.is_valid()) {
@@ -118,19 +116,52 @@ private:
       cv::Mat view_vec = img_data.t_c2w() - world_pt_;
       THIS_ASSERTION_SHOULD_LEQ(1e-6, cv::norm(view_vec));
       cv::normalize(view_vec, view_vec);
-      double cos_angle = std::abs(view_vec.dot(normal));
-      if(cos_angle <= best_cos_angle) {
-        continue;
-      }
-      auto img_coord              = project_point(img_data, imgs_data, world_pt_);
+      double cos_angle            = std::abs(view_vec.dot(normal));
+      auto   img_coord            = project_point(img_data, imgs_data, world_pt_);
       const auto& [width, height] = img_data.origin_img().get_size();
       if(img_coord.x < 0 || img_coord.y < 0 || img_coord.x >= width || img_coord.y >= height) {
         continue;
       }
-      best_cos_angle = cos_angle;
-      best_pixel     = {img_idx, img_coord};
+      img_idxs.emplace_back(cos_angle, img_idx);
     }
-    return best_pixel.first != -1 ? std::make_optional(best_pixel) : std::nullopt;
+    std::ranges::sort(img_idxs, [](const auto& lhs, const auto& rhs) noexcept { return lhs.first > rhs.first; });
+    auto view = img_idxs | std::views::transform([](const auto& pair) noexcept { return pair.second; });
+    return {view.begin(), view.end()};
+  }
+
+  static auto
+  find_best_common_value(const std::vector<int>& v_1, const std::vector<int>& v_2, const std::vector<int>& v_3)
+      -> std::optional<int> {
+    std::unordered_map<int, int> a_pos;
+    std::unordered_map<int, int> b_pos;
+    std::unordered_map<int, int> c_pos;
+    for(int i = 0; i < v_1.size(); ++i) {
+      if(a_pos.find(v_1[i]) == a_pos.end()) {
+        a_pos[v_1[i]] = i;
+      }
+    }
+    for(int i = 0; i < v_2.size(); ++i) {
+      if(b_pos.find(v_2[i]) == b_pos.end()) {
+        b_pos[v_2[i]] = i;
+      }
+    }
+    for(int i = 0; i < v_3.size(); ++i) {
+      if(c_pos.find(v_3[i]) == c_pos.end()) {
+        c_pos[v_3[i]] = i;
+      }
+    }
+    int                min_sum = std::numeric_limits<int>::max();
+    std::optional<int> result;
+    for(const auto& [val, idx_a] : a_pos) {
+      if(b_pos.find(val) != b_pos.end() && c_pos.find(val) != c_pos.end()) {
+        int total_idx = idx_a + b_pos[val] + c_pos[val];
+        if(total_idx < min_sum) {
+          min_sum = total_idx;
+          result  = val;
+        }
+      }
+    }
+    return result;
   }
 
   static auto find_best_texture_for_each_triangle(
@@ -146,15 +177,15 @@ private:
     run(
         triangles.size(),
         [&mtxs, &imgs_data, &triangles, &vertices, &img_tri_pairs, &knn](int idx) noexcept {
-          auto tri_vert =
-              triangles[idx] | std::views::transform([&vertices](int idx) noexcept { return vertices[idx]; });
-          auto tri_center = avg(tri_vert);
-          auto res        = find_best_texture_source(imgs_data, tri_center, knn);
+          auto best1 = find_texture_source(imgs_data, vertices[triangles[idx][0]], knn);
+          auto best2 = find_texture_source(imgs_data, vertices[triangles[idx][1]], knn);
+          auto best3 = find_texture_source(imgs_data, vertices[triangles[idx][2]], knn);
+          auto res   = find_best_common_value(best1, best2, best3);
           if(!res) {
-            THIS_LOG_WARN("find_best_texture_source failed");
+            THIS_LOG_WARN("No common texture source found for triangle {}", idx);
             return;
           }
-          auto [img_idx, _] = *res;
+          int                         img_idx = *res;
           std::lock_guard<std::mutex> lock(mtxs[img_idx]);
           img_tri_pairs[img_idx].push_back(idx);
         },
@@ -183,11 +214,13 @@ private:
             auto tri_vert = triangles[triangle_indices[tri_idx]]
                             | std::views::transform([&vertices](int idx) noexcept { return vertices[idx]; });
             auto large_tex_view =
-                tri_vert | std::views::transform([resolution, min_x, min_y](const auto& vertex) noexcept -> Point<double> {
-                  return {std::max(0.0, (vertex.x - min_x)) * resolution, std::max(0.0, (vertex.y - min_y)) * resolution};
-                });
-            auto img_view =
-                tri_vert | std::views::transform([&get_pixel](const auto& vertex) noexcept { return get_pixel(vertex); });
+                tri_vert
+                | std::views::transform([resolution, min_x, min_y](const auto& vertex) noexcept -> Point<double> {
+                    return {(vertex.x - min_x) * resolution, (vertex.y - min_y) * resolution};
+                  });
+            auto           img_view = tri_vert | std::views::transform([&get_pixel](const auto& vertex) noexcept {
+                              return get_pixel(vertex);
+                            });
             Points<double> large_tex_poly{large_tex_view.begin(), large_tex_view.end()};
             Points<double> img_poly{img_view.begin(), img_view.end()};
             auto           large_tex_roi = bounding_rect(large_tex_poly);
@@ -196,48 +229,57 @@ private:
                 large_tex_poly[0] - large_tex_roi.tl(),
                 large_tex_poly[1] - large_tex_roi.tl(),
                 large_tex_poly[2] - large_tex_roi.tl()};
-            Points<float> local_img_poly{img_poly[0] - img_roi.tl(), img_poly[1] - img_roi.tl(), img_poly[2] - img_roi.tl()};
-            
+            Points<float>
+                    local_img_poly{img_poly[0] - img_roi.tl(), img_poly[1] - img_roi.tl(), img_poly[2] - img_roi.tl()};
             cv::Mat affine;
-            try {
-              affine = cv::getAffineTransform(local_img_poly, local_large_tex_poly);
-            } catch (const cv::Exception& e) {
-              report_error(e, "OpenCV getAffineTransform failed");
+            affine = cv::getAffineTransform(local_img_poly, local_large_tex_poly);
+            cv::Rect large_tex_roi_int{
+                static_cast<int>(std::round(large_tex_roi.x)),
+                static_cast<int>(std::round(large_tex_roi.y)),
+                static_cast<int>(std::round(large_tex_roi.width)),
+                static_cast<int>(std::round(large_tex_roi.height))};
+            cv::Rect img_roi_int{
+                static_cast<int>(std::round(img_roi.x)),
+                static_cast<int>(std::round(img_roi.y)),
+                static_cast<int>(std::round(img_roi.width)),
+                static_cast<int>(std::round(img_roi.height))};
+            // if(large_tex_roi_int.area() <= 0 || img_roi_int.area() <= 0 || large_tex_roi_int.x < 0
+            //    || large_tex_roi_int.y < 0 || img_roi_int.x < 0 || img_roi_int.y < 0
+            //    || large_tex_roi_int.x >= texture->cols || large_tex_roi_int.y >= texture->rows
+            //    || img_roi_int.x >= img.cols || img_roi_int.y >= img.rows) {
+            //   return;
+            // }
+            if(large_tex_roi_int.area() <= 0 || img_roi_int.area() <= 0) {
               return;
             }
-            
-            cv::Rect    large_tex_roi_int    = large_tex_roi;
-            cv::Rect    img_roi_int          = img_roi;
+            try {
+              cv::Mat roi = (*texture)(large_tex_roi_int);
+            } catch(const cv::Exception& e) {
+              std::stringstream ss;
+              ss << large_tex_roi_int << " " << texture->size();
+              report_error(e, "texture {}", ss.str());
+              return;
+            }
+            try {
+              cv::Mat roi = img(img_roi_int);
+            } catch(const cv::Exception& e) {
+              std::stringstream ss;
+              ss << img_roi_int << " " << img.size();
+              report_error(e, "img {}", ss.str());
+              return;
+            }
             cv::Mat     local_large_tex_mask = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC1);
             Points<int> local_large_tex_poly_int;
             {
               auto view = convert_arithmetic_type<int>(local_large_tex_poly);
               local_large_tex_poly_int.assign(view.begin(), view.end());
             }
-            
-            try {
-              cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly_int, cv::Scalar(255));
-            } catch (const cv::Exception& e) {
-              report_error(e, "OpenCV fillConvexPoly failed");
-              return;
-            }
-            
+            cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly_int, cv::Scalar(255));
             cv::Mat new_tex_local = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC3);
-            try {
-              cv::warpAffine(
-                  img(img_roi_int), new_tex_local, affine, large_tex_roi_int.size(), cv::INTER_LANCZOS4, cv::BORDER_CONSTANT);
-            } catch (const cv::Exception& e) {
-              report_error(e, "OpenCV warpAffine failed");
-              return;
-            }
-            
-            try {
-              new_tex_local.copyTo((*texture)(large_tex_roi_int), local_large_tex_mask);
-            } catch (const cv::Exception& e) {
-              report_error(e, "OpenCV copyTo failed");
-              return;
-            }
-          } catch (const std::exception& e) {
+            cv::warpAffine(
+                img(img_roi_int), new_tex_local, affine, large_tex_roi_int.size(), cv::INTER_LANCZOS4, cv::BORDER_CONSTANT);
+            new_tex_local.copyTo((*texture)(large_tex_roi_int), local_large_tex_mask);
+          } catch(const std::exception& e) {
             report_error(e, "Unexpected error in put_triangle_texture");
             return;
           }
@@ -257,8 +299,8 @@ private:
     double min_y  = SkyMerge::min_y(vertices);
     double max_x  = SkyMerge::max_x(vertices);
     double max_y  = SkyMerge::max_y(vertices);
-    int    width  = static_cast<int>((max_x - min_x) * resolution);
-    int    height = static_cast<int>((max_y - min_y) * resolution);
+    int    width  = static_cast<int>(std::ceil((max_x - min_x) * resolution));
+    int    height = static_cast<int>(std::ceil((max_y - min_y) * resolution));
 
     try {
       cv::Mat texture{height, width, CV_8UC3, cv::Scalar(0, 0, 0)};
@@ -271,12 +313,12 @@ private:
         put_triangle_texture(&texture, img_data, imgs_data, tris, triangles, vertices, min_x, min_y, resolution);
       }
       return texture;
-    } catch (const cv::Exception& e) {
+    } catch(const cv::Exception& e) {
       report_error(e, "OpenCV error in render_textured_mesh");
-      return cv::Mat();
-    } catch (const std::exception& e) {
+      return {};
+    } catch(const std::exception& e) {
       report_error(e, "Unexpected error in render_textured_mesh");
-      return cv::Mat();
+      return {};
     }
   }
 };
