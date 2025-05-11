@@ -207,7 +207,6 @@ public:
 
   [[nodiscard]] auto check_valid_pixel(HasXY auto point) const noexcept -> bool {
     if(pixel_span.empty()) {
-      std::cout << 12382194238467;
       return true;
     }
     return cv::pointPolygonTest(pixel_span, Point<double>{static_cast<double>(point.x), static_cast<double>(point.y)}, false)

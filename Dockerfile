@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     libgeographiclib-dev \
     geographiclib-tools \
     libpcl-dev \
+    libcgal-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt

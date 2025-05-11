@@ -6,6 +6,7 @@ list(APPEND CMAKE_MODULE_PATH "/usr/share/cmake/geographiclib")
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
 find_package(MPI REQUIRED)
+find_package(CGAL REQUIRED)
 
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
@@ -27,7 +28,7 @@ target_include_directories(skymerge PUBLIC
   ${MPI_INCLUDE_PATH}
 )
 
-target_link_directories(skymerge PUBLIC
+target_link_directories(skymerge PRIVATE
   ${onnxruntime_LIB_DIR}
   ${exiv2_LIB_DIR}
 )
@@ -47,19 +48,20 @@ if(ENABLE_ASSERTION)
   target_compile_definitions(skymerge PRIVATE ENABLE_ASSERTION)
 endif()
 
-target_link_libraries(skymerge PUBLIC
+target_link_libraries(skymerge PRIVATE
   exiv2
   ${OpenCV_LIBS}
   onnxruntime
   ceres
-  ${GeographicLib_LIBRARIES}
+  CGAL::CGAL
+  GeographicLib
   ${PCL_LIBRARIES}
 )
 
 if(ENABLE_PARALLEL)
   find_package(TBB REQUIRED)
   target_compile_definitions(skymerge PRIVATE ENABLE_PARALLEL)
-  target_link_libraries(skymerge PUBLIC
+  target_link_libraries(skymerge PRIVATE
     TBB::tbb
   )
 endif()

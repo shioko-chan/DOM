@@ -45,10 +45,10 @@ public:
     return std::vector<int>{view1.begin(), view1.end()};
   }
 
-  [[nodiscard]] auto find_nearest_neighbour(const Point<double> point) const -> std::vector<int> {
+  [[nodiscard]] auto find_nearest_neighbour(const Point<double> point0) const -> std::vector<int> {
     auto view0 = std::views::zip_transform(
-                     [&point](const int index, const Point<T>& point1) noexcept {
-                       return std::make_pair(euclidean_distance(point, point1), index);
+                     [&point0](const int index, const Point<T>& point1) noexcept {
+                       return std::make_pair(euclidean_distance(point0, point1), index);
                      },
                      std::views::iota(0),
                      dataset)

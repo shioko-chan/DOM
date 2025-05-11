@@ -2,21 +2,20 @@
 #define SKYMERGE_PIPELINE_HPP
 
 #include <filesystem>
-#include <pcl/impl/point_types.hpp>
 #include <ranges>
 #include <utility>
 #include <vector>
 
 #include <exiv2/exiv2.hpp>
 #include <opencv2/opencv.hpp>
+#include <pcl/impl/point_types.hpp>
 
 #include "algo/ba.hpp"
 #include "algo/filter.hpp"
 #include "algo/knn.hpp"
-#include "algo/stitch1.hpp"
+#include "algo/stitch.hpp"
 #include "algo/tri.hpp"
 #include "config.hpp"
-// #include "ds/dsm.hpp"
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
 #include "nn/matcher.hpp"
@@ -122,23 +121,9 @@ public:
     BA::ba(imgs_data, &res);
     Filter::filter_outliers_radius(&res);
 #endif
-    std::cout << imgs_data.camera_array_raw().data()[0] << " " << imgs_data.camera_array_raw().data()[1] << " "
-              << imgs_data.camera_array_raw().data()[2] << " " << imgs_data.camera_array_raw().data()[3] << std::endl;
-    std::cout << imgs_data.distort_array_raw().data()[0] << " " << imgs_data.distort_array_raw().data()[1] << " "
-              << imgs_data.distort_array_raw().data()[2] << " " << imgs_data.distort_array_raw().data()[3] << " "
-              << imgs_data.distort_array_raw().data()[4] << std::endl;
     THIS_LOG_INFO("[Pipeline] Generating DSM");
-    // return DSM{tri_res_vec2point_cloud(res), progress, DSM_RESOLUTION};
     return tri_res_vec2point_cloud(res);
   }
-
-  // void stitch(ImgsData& imgs_data, DSM& dsm) {
-  //   THIS_LOG_INFO("[Pipeline] Stitching images");
-  //   cv::Mat  texture       = DSMStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
-  //   fs::path panorama_path = output_dir / "stitched_image.jpg";
-  //   cv::imwrite(panorama_path.string(), texture);
-  //   THIS_LOG_INFO("[Pipeline] Stitched image saved to {}", panorama_path.string());
-  // }
 
   void stitch(ImgsData& imgs_data, const pcl::PointCloud<pcl::PointXYZ>::Ptr& dsm) {
     THIS_LOG_INFO("[Pipeline] Stitching images");
