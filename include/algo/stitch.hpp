@@ -12,11 +12,13 @@
 #include <CGAL/Delaunay_triangulation_2.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Triangulation_vertex_base_with_info_2.h>
+
+#include <pcl/common/centroid.h>
 #include <pcl/segmentation/extract_clusters.h>
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
-#include <pcl/impl/point_types.hpp>
 
 #include "algo/knn.hpp"
 #include "ds/imgdata.hpp"
@@ -62,8 +64,9 @@ public:
       THIS_LOG_ERROR("empty point cloud");
       return {};
     }
+    auto            new_point_cloud = euclidean_cluster_xy(point_cloud, 0.4);
     Point3s<double> vertices;
-    for(const auto& point : *point_cloud) {
+    for(const auto& point : *new_point_cloud) {
       auto pnt = point.getVector3fMap();
       vertices.emplace_back(pnt.x(), pnt.y(), pnt.z());
     }
@@ -92,6 +95,46 @@ public:
   }
 
 private:
+
+  static auto euclidean_cluster_xy(const pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud, double eps = 0.5) noexcept
+      -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
+    if(point_cloud->empty()) {
+      return std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    }
+    auto xy_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    xy_cloud->reserve(point_cloud->size());
+    for(size_t i = 0; i < point_cloud->size(); ++i) {
+      auto pnt = point_cloud->points[i].getVector3fMap();
+      xy_cloud->points.emplace_back(pnt.x(), pnt.y(), 0.0F);
+    }
+    std::vector<pcl::PointIndices> cluster_indices;
+    auto                           tree = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+    tree->setInputCloud(xy_cloud);
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> euclidean_cluster;
+    euclidean_cluster.setClusterTolerance(eps);
+    euclidean_cluster.setSearchMethod(tree);
+    euclidean_cluster.setInputCloud(xy_cloud);
+    euclidean_cluster.extract(cluster_indices);
+    THIS_MESSAGE("聚类完成，找到 " + std::to_string(cluster_indices.size()) + " 个簇");
+    auto result_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    for(const auto& indices : cluster_indices) {
+      if(indices.indices.empty()) {
+        continue;
+      }
+      auto cluster_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+      for(const auto& idx : indices.indices) {
+        cluster_cloud->push_back(point_cloud->points[idx]);
+      }
+      Eigen::Vector4f centroid;
+      pcl::compute3DCentroid(*cluster_cloud, centroid);
+      float z_min = std::numeric_limits<float>::max();
+      for(const auto& point : cluster_cloud->points) {
+        z_min = std::min(z_min, point.getArray3fMap().z());
+      }
+      result_cloud->emplace_back(centroid[0], centroid[1], z_min);
+    }
+    return result_cloud;
+  }
 
   static auto project_point(ImgData& img_data, ImgsData& imgs_data, const Point3<double>& world_pt_) noexcept
       -> Point<double> {
