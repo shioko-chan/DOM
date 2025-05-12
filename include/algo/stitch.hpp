@@ -7,7 +7,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <pcl/impl/point_types.hpp>
 #include <ranges>
 #include <sstream>
 #include <vector>
@@ -70,9 +69,7 @@ public:
       THIS_LOG_ERROR("empty point cloud");
       return {};
     }
-
-    auto new_point_cloud = grid_downsample_2d(point_cloud, 0.5);
-
+    auto            new_point_cloud = grid_downsample_2d(point_cloud, 1.0);
     Point3s<double> vertices;
     for(const auto& point : *new_point_cloud) {
       auto pnt = point.getVector3fMap();
@@ -99,7 +96,6 @@ public:
       return {};
     }
     THIS_MESSAGE("三角剖分完成，找到 " + std::to_string(triangles.size()) + " 个三角形");
-
     auto texture = render_textured_mesh(imgs_data, vertices, triangles, progress, resolution);
     cv::flip(texture, texture, 0);
     return texture;
@@ -239,7 +235,7 @@ private:
           auto best3 = find_texture_source(imgs_data, vertices[triangles[idx][2]], knn);
           auto res   = find_best_common_value(best1, best2, best3);
           if(!res) {
-            THIS_LOG_WARN("No common texture source found for triangle {}", idx);
+            THIS_LOG_INFO("No common texture source found for triangle {}", idx);
             return;
           }
           int                         img_idx = *res;
@@ -260,25 +256,33 @@ private:
       double                  min_x,
       double                  min_y,
       double                  resolution = 10.0) noexcept {
-    auto get_pixel = [&img_data, &imgs_data](const Point3<double>& world_pt_) noexcept -> Point<int> {
-      return project_point(img_data, imgs_data, world_pt_);
-    };
     auto img = img_data.origin_img().get();
+    auto get_pixel = [&img_data, &imgs_data, size = img.size()](const Point3<double>& world_pt_) noexcept -> Point<int> {
+      auto pnt = project_point(img_data, imgs_data, world_pt_);
+      return {
+          static_cast<int>(std::clamp(pnt.x, 0.0, static_cast<double>(size.width - 1))),
+          static_cast<int>(std::clamp(pnt.y, 0.0, static_cast<double>(size.height - 1)))};
+    };
+    auto get_large_tex = [resolution, min_x, min_y, size = texture->size()](const auto& vertex) noexcept -> Point<int> {
+      return {
+          static_cast<int>(std::clamp((vertex.x - min_x) * resolution, 0.0, static_cast<double>(size.width - 1))),
+          static_cast<int>(std::clamp((vertex.y - min_y) * resolution, 0.0, static_cast<double>(size.height - 1)))};
+    };
     run(triangle_indices.size(),
-        [&img, &triangles, &triangle_indices, &vertices, &get_pixel, texture, resolution, min_x, min_y](
+        [&img, &triangles, &triangle_indices, &vertices, &get_pixel, &get_large_tex, texture, resolution](
             int tri_idx) noexcept {
           auto tri_vert = triangles[triangle_indices[tri_idx]]
                           | std::views::transform([&vertices](int idx) noexcept { return vertices[idx]; });
-          auto large_tex_view =
-              tri_vert | std::views::transform([resolution, min_x, min_y](const auto& vertex) noexcept -> Point<int> {
-                return {
-                    static_cast<int>((vertex.x - min_x) * resolution),
-                    static_cast<int>((vertex.y - min_y) * resolution)};
-              });
-          auto img_view =
-              tri_vert | std::views::transform([&get_pixel](const auto& vertex) noexcept { return get_pixel(vertex); });
-          Points<int> large_tex_poly{large_tex_view.begin(), large_tex_view.end()};
-          Points<int> img_poly{img_view.begin(), img_view.end()};
+          Points<int> large_tex_poly;
+          {
+            auto view = tri_vert | std::views::transform(get_large_tex);
+            large_tex_poly.assign(view.begin(), view.end());
+          }
+          Points<int> img_poly;
+          {
+            auto view = tri_vert | std::views::transform(get_pixel);
+            img_poly.assign(view.begin(), view.end());
+          }
           auto        large_tex_roi = cv::boundingRect(large_tex_poly);
           auto        img_roi       = cv::boundingRect(img_poly);
           Points<int> local_large_tex_poly{
@@ -286,18 +290,16 @@ private:
               large_tex_poly[1] - large_tex_roi.tl(),
               large_tex_poly[2] - large_tex_roi.tl()};
           Points<int> local_img_poly{img_poly[0] - img_roi.tl(), img_poly[1] - img_roi.tl(), img_poly[2] - img_roi.tl()};
-
           cv::Mat affine;
           {
             auto local_img_poly_f       = convert_arithmetic_type_point<float>(local_img_poly);
             auto local_large_tex_poly_f = convert_arithmetic_type_point<float>(local_large_tex_poly);
             affine                      = cv::getAffineTransform(local_img_poly_f, local_large_tex_poly_f);
           }
-
           cv::Mat local_large_tex_mask = cv::Mat::zeros(large_tex_roi.size(), CV_8UC1);
           try {
             //
-            cv::polylines(img(img_roi), local_img_poly, true, cv::Scalar(255, 255, 255), 1);
+            // cv::polylines(img(img_roi), local_img_poly, true, cv::Scalar(255, 255, 255), 1);
             //
             cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly, cv::Scalar(255));
             cv::Mat new_tex_local = cv::Mat::zeros(large_tex_roi.size(), CV_8UC3);
@@ -326,8 +328,8 @@ private:
     double min_y  = SkyMerge::min_y(vertices);
     double max_x  = SkyMerge::max_x(vertices);
     double max_y  = SkyMerge::max_y(vertices);
-    int    width  = static_cast<int>(std::ceil((max_x - min_x) * resolution)) + 10;
-    int    height = static_cast<int>(std::ceil((max_y - min_y) * resolution)) + 10;
+    int    width  = static_cast<int>(std::ceil((max_x - min_x) * resolution));
+    int    height = static_cast<int>(std::ceil((max_y - min_y) * resolution));
 
     cv::Mat texture{height, width, CV_8UC3, cv::Scalar(0, 0, 0)};
     THIS_MESSAGE("Start putting triangle texture");
