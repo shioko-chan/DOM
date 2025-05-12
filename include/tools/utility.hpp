@@ -572,6 +572,13 @@ auto convert_arithmetic_type(const Range& points) noexcept {
   return points | std::views::transform([](const auto& point) noexcept { return NewType{point}; });
 }
 
+template <typename T, typename U>
+  requires std::is_arithmetic_v<T> && std::is_arithmetic_v<U>
+auto convert_arithmetic_type_point(const Points<U>& points) noexcept -> Points<T> {
+  auto view = points | std::views::transform([](const auto& point) noexcept -> Point<T> { return point; });
+  return {view.begin(), view.end()};
+}
+
 inline auto mat2point(cv::InputArray mat_input) noexcept -> Point<double> {
   cv::Mat mat = mat_input.getMat();
   THIS_ASSERTION_SHOULD_EQ(mat.cols, 1);

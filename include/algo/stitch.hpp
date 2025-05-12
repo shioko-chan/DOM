@@ -3,10 +3,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <pcl/impl/point_types.hpp>
 #include <ranges>
+#include <sstream>
 #include <vector>
 
 #include <CGAL/Delaunay_triangulation_2.h>
@@ -14,17 +17,20 @@
 #include <CGAL/Triangulation_vertex_base_with_info_2.h>
 
 #include <pcl/common/centroid.h>
-#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/common/common.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/point_cloud.h>
 
-#include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
 
 #include "algo/knn.hpp"
 #include "ds/imgdata.hpp"
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
+#include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 #include "types/common_types.hpp"
 #include "types/cv_alias.hpp"
@@ -64,13 +70,15 @@ public:
       THIS_LOG_ERROR("empty point cloud");
       return {};
     }
-    auto            new_point_cloud = euclidean_cluster_xy(point_cloud, 0.4);
+
+    auto new_point_cloud = grid_downsample_2d(point_cloud, 0.5);
+
     Point3s<double> vertices;
     for(const auto& point : *new_point_cloud) {
       auto pnt = point.getVector3fMap();
       vertices.emplace_back(pnt.x(), pnt.y(), pnt.z());
     }
-    THIS_MESSAGE("Start triangulation and stitching");
+    THIS_MESSAGE("开始三角剖分");
     auto point_2d_view = vertices | std::views::enumerate
                          | std::views::transform([](const auto& tuple) noexcept -> std::pair<K::Point_2, int> {
                              const auto& vertex = std::get<1>(tuple);
@@ -87,53 +95,57 @@ public:
       triangles.push_back({v_1, v_2, v_3});
     }
     if(triangles.empty()) {
-      THIS_LOG_ERROR("Delaunay triangulation failed");
+      THIS_LOG_ERROR("Delaunay三角剖分失败");
       return {};
     }
-    THIS_MESSAGE("triangulation completed, found " + std::to_string(triangles.size()) + " triangles");
-    return render_textured_mesh(imgs_data, vertices, triangles, progress, resolution);
+    THIS_MESSAGE("三角剖分完成，找到 " + std::to_string(triangles.size()) + " 个三角形");
+
+    auto texture = render_textured_mesh(imgs_data, vertices, triangles, progress, resolution);
+    cv::flip(texture, texture, 0);
+    return texture;
   }
 
 private:
 
-  static auto euclidean_cluster_xy(const pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud, double eps = 0.5) noexcept
+  static auto
+  grid_downsample_2d(const pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud, float distance_threshold = 0.5) noexcept
       -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
-    if(point_cloud->empty()) {
-      return std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    pcl::PointXYZ min_pnt;
+    pcl::PointXYZ max_pnt;
+    pcl::getMinMax3D(*point_cloud, min_pnt, max_pnt);
+    float start_x        = min_pnt.getVector3fMap().x();
+    float end_x          = max_pnt.getVector3fMap().x();
+    float start_y        = min_pnt.getVector3fMap().y();
+    float end_y          = max_pnt.getVector3fMap().y();
+    auto  point_cloud_2d = std::make_shared<pcl::PointCloud<pcl::PointXY>>();
+    point_cloud_2d->reserve(point_cloud->size());
+    for(const auto& point : *point_cloud) {
+      auto point_ = point.getVector3fMap();
+      point_cloud_2d->emplace_back(point_.x(), point_.y());
     }
-    auto xy_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    xy_cloud->reserve(point_cloud->size());
-    for(size_t i = 0; i < point_cloud->size(); ++i) {
-      auto pnt = point_cloud->points[i].getVector3fMap();
-      xy_cloud->points.emplace_back(pnt.x(), pnt.y(), 0.0F);
+    pcl::KdTreeFLANN<pcl::PointXY> kd_tree;
+    kd_tree.setInputCloud(point_cloud_2d);
+    const int x_steps    = static_cast<int>((end_x - start_x) / distance_threshold);
+    const int y_steps    = static_cast<int>((end_y - start_y) / distance_threshold);
+    auto      point_grid = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    for(int xi = 0; xi < x_steps; ++xi) {
+      float x_pos = start_x + (static_cast<float>(xi) * distance_threshold);
+      for(int yi = 0; yi < y_steps; ++yi) {
+        float              y_pos = start_y + (static_cast<float>(yi) * distance_threshold);
+        pcl::PointXY       search_point(x_pos, y_pos);
+        std::vector<int>   indices;
+        std::vector<float> distances;
+        kd_tree.radiusSearch(search_point, distance_threshold, indices, distances);
+        if(!indices.empty()) {
+          auto point =
+              point_cloud->points[*std::ranges::max_element(indices, [&point_cloud](int idx0, int idx1) noexcept {
+                return point_cloud->points[idx0].getVector3fMap().z() < point_cloud->points[idx1].getVector3fMap().z();
+              })];
+          point_grid->emplace_back(x_pos, y_pos, point.getVector3fMap().z());
+        }
+      }
     }
-    std::vector<pcl::PointIndices> cluster_indices;
-    auto                           tree = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
-    tree->setInputCloud(xy_cloud);
-    pcl::EuclideanClusterExtraction<pcl::PointXYZ> euclidean_cluster;
-    euclidean_cluster.setClusterTolerance(eps);
-    euclidean_cluster.setSearchMethod(tree);
-    euclidean_cluster.setInputCloud(xy_cloud);
-    euclidean_cluster.extract(cluster_indices);
-    THIS_MESSAGE("聚类完成，找到 " + std::to_string(cluster_indices.size()) + " 个簇");
-    auto result_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    for(const auto& indices : cluster_indices) {
-      if(indices.indices.empty()) {
-        continue;
-      }
-      auto cluster_cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-      for(const auto& idx : indices.indices) {
-        cluster_cloud->push_back(point_cloud->points[idx]);
-      }
-      Eigen::Vector4f centroid;
-      pcl::compute3DCentroid(*cluster_cloud, centroid);
-      float z_min = std::numeric_limits<float>::max();
-      for(const auto& point : cluster_cloud->points) {
-        z_min = std::min(z_min, point.getArray3fMap().z());
-      }
-      result_cloud->emplace_back(centroid[0], centroid[1], z_min);
-    }
-    return result_cloud;
+    return point_grid;
   }
 
   static auto project_point(ImgData& img_data, ImgsData& imgs_data, const Point3<double>& world_pt_) noexcept
@@ -248,7 +260,7 @@ private:
       double                  min_x,
       double                  min_y,
       double                  resolution = 10.0) noexcept {
-    auto get_pixel = [&img_data, &imgs_data](const Point3<double>& world_pt_) noexcept {
+    auto get_pixel = [&img_data, &imgs_data](const Point3<double>& world_pt_) noexcept -> Point<int> {
       return project_point(img_data, imgs_data, world_pt_);
     };
     auto img = img_data.origin_img().get();
@@ -258,43 +270,46 @@ private:
           auto tri_vert = triangles[triangle_indices[tri_idx]]
                           | std::views::transform([&vertices](int idx) noexcept { return vertices[idx]; });
           auto large_tex_view =
-              tri_vert | std::views::transform([resolution, min_x, min_y](const auto& vertex) noexcept -> Point<double> {
-                return {(vertex.x - min_x) * resolution, (vertex.y - min_y) * resolution};
+              tri_vert | std::views::transform([resolution, min_x, min_y](const auto& vertex) noexcept -> Point<int> {
+                return {
+                    static_cast<int>((vertex.x - min_x) * resolution),
+                    static_cast<int>((vertex.y - min_y) * resolution)};
               });
           auto img_view =
               tri_vert | std::views::transform([&get_pixel](const auto& vertex) noexcept { return get_pixel(vertex); });
-          Points<double> large_tex_poly{large_tex_view.begin(), large_tex_view.end()};
-          Points<double> img_poly{img_view.begin(), img_view.end()};
-          auto           large_tex_roi = bounding_rect(large_tex_poly);
-          auto           img_roi       = bounding_rect(img_poly);
-          Points<float>  local_large_tex_poly{
+          Points<int> large_tex_poly{large_tex_view.begin(), large_tex_view.end()};
+          Points<int> img_poly{img_view.begin(), img_view.end()};
+          auto        large_tex_roi = cv::boundingRect(large_tex_poly);
+          auto        img_roi       = cv::boundingRect(img_poly);
+          Points<int> local_large_tex_poly{
               large_tex_poly[0] - large_tex_roi.tl(),
               large_tex_poly[1] - large_tex_roi.tl(),
               large_tex_poly[2] - large_tex_roi.tl()};
-          Points<float> local_img_poly{img_poly[0] - img_roi.tl(), img_poly[1] - img_roi.tl(), img_poly[2] - img_roi.tl()};
+          Points<int> local_img_poly{img_poly[0] - img_roi.tl(), img_poly[1] - img_roi.tl(), img_poly[2] - img_roi.tl()};
+
           cv::Mat affine;
-          affine = cv::getAffineTransform(local_img_poly, local_large_tex_poly);
-          cv::Rect large_tex_roi_int{
-              static_cast<int>(std::floor(large_tex_roi.x)),
-              static_cast<int>(std::floor(large_tex_roi.y)),
-              static_cast<int>(std::ceil(large_tex_roi.width)),
-              static_cast<int>(std::ceil(large_tex_roi.height))};
-          cv::Rect img_roi_int{
-              static_cast<int>(std::floor(img_roi.x)),
-              static_cast<int>(std::floor(img_roi.y)),
-              static_cast<int>(std::ceil(img_roi.width)),
-              static_cast<int>(std::ceil(img_roi.height))};
-          cv::Mat     local_large_tex_mask = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC1);
-          Points<int> local_large_tex_poly_int;
           {
-            auto view = convert_arithmetic_type<int>(local_large_tex_poly);
-            local_large_tex_poly_int.assign(view.begin(), view.end());
+            auto local_img_poly_f       = convert_arithmetic_type_point<float>(local_img_poly);
+            auto local_large_tex_poly_f = convert_arithmetic_type_point<float>(local_large_tex_poly);
+            affine                      = cv::getAffineTransform(local_img_poly_f, local_large_tex_poly_f);
           }
-          cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly_int, cv::Scalar(255));
-          cv::Mat new_tex_local = cv::Mat::zeros(large_tex_roi_int.size(), CV_8UC3);
-          cv::warpAffine(
-              img(img_roi_int), new_tex_local, affine, large_tex_roi_int.size(), cv::INTER_LANCZOS4, cv::BORDER_CONSTANT);
-          new_tex_local.copyTo((*texture)(large_tex_roi_int), local_large_tex_mask);
+
+          cv::Mat local_large_tex_mask = cv::Mat::zeros(large_tex_roi.size(), CV_8UC1);
+          try {
+            //
+            cv::polylines(img(img_roi), local_img_poly, true, cv::Scalar(255, 255, 255), 1);
+            //
+            cv::fillConvexPoly(local_large_tex_mask, local_large_tex_poly, cv::Scalar(255));
+            cv::Mat new_tex_local = cv::Mat::zeros(large_tex_roi.size(), CV_8UC3);
+            cv::warpAffine(
+                img(img_roi), new_tex_local, affine, large_tex_roi.size(), cv::INTER_LANCZOS4, cv::BORDER_CONSTANT);
+            new_tex_local.copyTo((*texture)(large_tex_roi), local_large_tex_mask);
+          } catch(const cv::Exception& e) {
+            std::stringstream ss;
+            ss << img.size() << " " << img_roi << " " << texture->size() << " " << large_tex_roi;
+            report_error(e, "{}", ss.str());
+            return;
+          }
         });
   }
 
@@ -311,8 +326,8 @@ private:
     double min_y  = SkyMerge::min_y(vertices);
     double max_x  = SkyMerge::max_x(vertices);
     double max_y  = SkyMerge::max_y(vertices);
-    int    width  = static_cast<int>(std::ceil((max_x - min_x) * resolution));
-    int    height = static_cast<int>(std::ceil((max_y - min_y) * resolution));
+    int    width  = static_cast<int>(std::ceil((max_x - min_x) * resolution)) + 10;
+    int    height = static_cast<int>(std::ceil((max_y - min_y) * resolution)) + 10;
 
     cv::Mat texture{height, width, CV_8UC3, cv::Scalar(0, 0, 0)};
     THIS_MESSAGE("Start putting triangle texture");

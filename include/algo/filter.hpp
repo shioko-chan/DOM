@@ -110,7 +110,7 @@ public:
     mls.setInputCloud(cloud);
     mls.setNumberOfThreads(std::thread::hardware_concurrency());
     mls.setPolynomialOrder(polynomial_order);
-    mls.setSearchRadius(5.0 * compute_average_spacing(cloud));
+    mls.setSearchRadius(10.0 * compute_average_spacing(cloud));
     mls.setUpsamplingMethod(pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ>::NONE);
     mls.setSearchMethod(kdtree);
 

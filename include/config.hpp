@@ -26,7 +26,7 @@ enum method_t : uint8_t { SUPERPOINT, DISK };
 
 constexpr method_t FEATURE_EXTRACTION_METHOD{DISK};
 
-constexpr double TARGET_RESOLUTION{50.0}; // pixels per meter
+constexpr double TARGET_RESOLUTION{20.0}; // pixels per meter
 
 } // namespace SkyMerge
 
