@@ -20,20 +20,12 @@
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
-#include "types/common_types.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 
-inline auto triangulation(
-    const MatchPairs& match_img_pairs,
-    ImgsData&         imgs_data,
-    Progress&         progress
-#ifdef ENABLE_VISUALIZE_OUTPUT
-    ,
-    const fs::path& pcd_output_dir
-#endif
-    ) noexcept -> TriResVec {
-  if(imgs_data.empty() || match_img_pairs.empty()) {
+inline auto build_track(const MatchPairs& match_img_pairs, Progress& progress) -> Tracks {
+  if(match_img_pairs.empty()) {
     THIS_LOG_WARN("No input!");
     return {};
   }
@@ -52,23 +44,37 @@ inline auto triangulation(
     }
     progress.update();
   }
-  std::vector<PointIdxs> pntidx_vecs = tracks_maintainer.get_tracks();
+  return tracks_maintainer.get_tracks();
+}
 
+inline auto triangulation(
+    Tracks&   tracks,
+    ImgsData& imgs_data,
+    Progress& progress
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    ,
+    const fs::path& pcd_output_dir
+#endif
+    ) noexcept -> TrackPointVec {
+  if(imgs_data.empty()) {
+    THIS_LOG_WARN("No input!");
+    return {};
+  }
   THIS_MESSAGE("Start Triangulating.");
-  TriResVec  all_res;
-  std::mutex res_mtx;
+  TrackPointVec all_res;
+  std::mutex    res_mtx;
 #ifdef ENABLE_VISUALIZE_OUTPUT
   Point3s<double> points;
   std::mutex      points_mtx;
   run(
-      pntidx_vecs.size(),
-      [&all_res, &res_mtx, &pntidx_vecs, &imgs_data, &points, &points_mtx](int idx) noexcept {
+      tracks.size(),
+      [&all_res, &res_mtx, &tracks, &imgs_data, &points, &points_mtx](int idx) noexcept {
 #else
   run(
       pntidx_vecs.size(),
       [&all_res, &res_mtx, &pntidx_vecs, &imgs_data](int idx) noexcept {
 #endif
-        auto& pntidx_vec = pntidx_vecs[idx];
+        auto& pntidx_vec = tracks[idx];
         auto  len        = static_cast<int64_t>(pntidx_vec.size());
         if(len <= 1) {
           return;
@@ -101,7 +107,6 @@ inline auto triangulation(
         if(!x_vector.array().isFinite().all()) {
           return;
         }
-
 #ifdef ENABLE_VISUALIZE_OUTPUT
         {
           std::lock_guard<std::mutex> lock(points_mtx);

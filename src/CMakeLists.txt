@@ -7,6 +7,7 @@ find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
 find_package(MPI REQUIRED)
 find_package(CGAL REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
@@ -26,6 +27,7 @@ target_include_directories(skymerge PUBLIC
   ${GeographicLib_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
   ${MPI_INCLUDE_PATH}
+  ${EIGEN_INCLUDE_PATH}
 )
 
 target_link_directories(skymerge PRIVATE
@@ -56,6 +58,7 @@ target_link_libraries(skymerge PRIVATE
   CGAL::CGAL
   GeographicLib
   ${PCL_LIBRARIES}
+  Eigen3::Eigen
 )
 
 if(ENABLE_PARALLEL)

@@ -15,7 +15,7 @@
 #include "tools/mem.hpp"
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
-#include "types/cv_alias.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 
@@ -133,13 +133,10 @@ public:
   auto operator=(Image&&) noexcept -> Image&      = default;
   ~Image() noexcept                               = default;
 
-  explicit Image(fs::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span = Points<double>{}) noexcept
-      : path(std::move(temporary_save_path)), initialized(true) {
+  explicit Image(fs::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span) noexcept :
+      path(std::move(temporary_save_path)), initialized(true),
+      pixel_span(convert_arithmetic_type_point<float>(pixel_span)) {
     img_size = img.size();
-    if(!pixel_span.empty()) {
-      auto view = convert_arithmetic_type<float>(pixel_span);
-      this->pixel_span.assign(view.begin(), view.end());
-    }
     Mem::register_node(
         path.string(),
         std::make_unique<ImageMem>(std::move(img)),
@@ -157,20 +154,16 @@ public:
         });
   }
 
-  void delay_initialize(
-      fs::path              temporary_save_path,
-      cv::Mat&&             img,
-      const Points<double>& pixel_span = Points<double>{}) noexcept {
+  void delay_initialize(fs::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span) noexcept {
     if(initialized) {
       return;
     }
     *this = Image{std::move(temporary_save_path), std::move(img), pixel_span};
   }
 
-  [[nodiscard]] auto get() noexcept -> ImgRefGuard {
+  [[nodiscard]] auto get() const noexcept -> ImgRefGuard {
     check_init();
     auto guard = ImgRefGuard{*Mem::get_node(path.string())};
-    img_size   = guard.get().size();
     return guard;
   }
 
@@ -196,12 +189,8 @@ public:
 
   [[nodiscard]] auto is_initialized() const noexcept -> bool { return initialized; }
 
-  [[nodiscard]] auto get_size() noexcept -> cv::Size {
+  [[nodiscard]] auto get_size() const noexcept -> cv::Size {
     check_init();
-    if(img_size.empty()) {
-      auto guard = get();
-      img_size   = guard.get().size();
-    }
     return img_size;
   }
 

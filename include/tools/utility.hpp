@@ -10,19 +10,17 @@
 #include <fstream>
 #include <functional>
 #include <memory>
-#include <numeric>
-#include <opencv2/calib3d.hpp>
 #include <ranges>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
 
-#include <ceres/rotation.h>
-#include <opencv2/core/hal/interface.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 
 #include <Eigen/Dense>
+
+#include <ceres/rotation.h>
 
 #include <opencv2/core.hpp>
 #include <opencv2/core/eigen.hpp>
@@ -37,8 +35,7 @@
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
 #include "tools/report_error.hpp"
-#include "types/common_types.hpp"
-#include "types/cv_alias.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 
@@ -94,6 +91,12 @@ concept HasXYZ = HasXY<T> && requires(T point) {
   { point.z } -> arithmetic;
 };
 
+template <typename Func, typename... Args>
+concept NoexceptCallable = std::is_nothrow_invocable_v<Func, Args...>;
+
+template <typename Func, typename Ret, typename... Args>
+concept NoexceptCallableWithRet = std::is_nothrow_invocable_r_v<Ret, Func, Args...>;
+
 inline auto compute_average_spacing(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, int k_neighbors = 100) -> double {
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
   kdtree.setInputCloud(cloud);
@@ -111,7 +114,7 @@ inline auto compute_average_spacing(const pcl::PointCloud<pcl::PointXYZ>::Ptr& c
   return total_distance / static_cast<double>(cloud->size());
 }
 
-inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) noexcept -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
+inline auto tri_res_vec2point_cloud(const TrackPointVec& tri_res_vec) noexcept -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   cloud->resize(tri_res_vec.size());
   for(int i = 0; i < tri_res_vec.size(); ++i) {
@@ -124,20 +127,19 @@ inline auto tri_res_vec2point_cloud(const TriResVec& tri_res_vec) noexcept -> pc
 
 template <typename T>
 auto world2camera(const T* const axisangle, const T* const translation, const T* const point_3d) noexcept
-    -> Eigen::Matrix<T, 3, 1> {
-  Eigen::Map<const Eigen::Matrix<T, 3, 1>> transpose_eigen(translation);
-  Eigen::Matrix<T, 3, 1>                   point;
+    -> Eigen::Vector3<T> {
+  Eigen::Map<const Eigen::Vector3<T>> transpose_eigen(translation);
+  Eigen::Vector3<T>                   point;
   ceres::AngleAxisRotatePoint(axisangle, point_3d, point.data());
   point += transpose_eigen;
   return point;
 }
 
 template <typename T>
-auto camera2pixel(const T* const camera, const T* const distort, const T* const point_3d) noexcept
-    -> Eigen::Matrix<T, 2, 1> {
-  Eigen::Map<const Eigen::Matrix<T, 4, 1>> camera_eigen(camera);
+auto camera2pixel(const T* const camera, const T* const distort, const T* const point_3d) noexcept -> Eigen::Vector2<T> {
+  Eigen::Map<const Eigen::Vector4<T>>      camera_eigen(camera);
   Eigen::Map<const Eigen::Matrix<T, 5, 1>> distort_eigen(distort);
-  Eigen::Map<const Eigen::Matrix<T, 3, 1>> point(point_3d);
+  Eigen::Map<const Eigen::Vector3<T>>      point(point_3d);
 
   const T point_x = point(1);
   const T point_y = -point(0);
@@ -167,6 +169,16 @@ auto camera2pixel(const T* const camera, const T* const distort, const T* const 
   const T distorted_y =
       (norm_y * radial_distortion) + (T(2.0) * p_2 * norm_x * norm_y) + (p_1 * (r_2 + T(2.0) * norm_y * norm_y));
   return {(distorted_x * f_x) + c_x, (distorted_y * f_y) + c_y};
+}
+
+template <typename T>
+auto world2pixel(
+    const T* const axisangle,
+    const T* const translation,
+    const T* const camera,
+    const T* const distort,
+    const T* const point_3d) noexcept -> Eigen::Vector2<T> {
+  return camera2pixel(camera, distort, world2camera(axisangle, translation, point_3d).data());
 }
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
@@ -233,23 +245,9 @@ void print_run_time(const auto& start) noexcept {
       duration % 1us / 1ns);
 }
 
-template <typename F>
-auto make_timed(F&& func) noexcept {
-  return [func = std::forward<F>(func)](auto&&... args) noexcept {
-    auto start = std::chrono::high_resolution_clock::now();
-    if constexpr(std::is_same_v<void, std::invoke_result_t<F, decltype(args)...>>) {
-      std::invoke(func, std::forward<decltype(args)>(args)...);
-      print_run_time(start);
-    } else {
-      auto result = std::invoke(func, std::forward<decltype(args)>(args)...);
-      print_run_time(start);
-      return result;
-    }
-  };
-}
-
 template <typename Func, typename... Args>
-auto time_function(Func&& func, Args&&... args) noexcept {
+  requires NoexceptCallable<Func, Args...>
+auto time_function(Func&& func, Args&&... args) noexcept -> decltype(auto) {
   auto start = std::chrono::high_resolution_clock::now();
   if constexpr(std::is_same_v<void, std::invoke_result_t<Func, Args...>>) {
     std::invoke(std::forward<Func>(func), std::forward<Args>(args)...);
@@ -259,6 +257,13 @@ auto time_function(Func&& func, Args&&... args) noexcept {
     print_run_time(start);
     return result;
   }
+}
+
+template <typename F>
+auto make_timed(F&& func) noexcept {
+  return [func = std::forward<F>(func)](auto&&... args) noexcept -> decltype(auto) {
+    return time_function(func, std::forward<decltype(args)>(args)...);
+  };
 }
 
 template <typename Func>
@@ -532,7 +537,7 @@ inline auto abs_ceil(double input) noexcept -> double {
   return std::floor(input);
 }
 
-inline void decimate_keep_aspect_ratio(cv::Mat* img_, int resolution) noexcept {
+inline auto decimate_keep_aspect_ratio(cv::Mat* img_, int resolution) noexcept -> double {
   double scale = std::min(1. * resolution / img_->cols, 1. * resolution / img_->rows);
   if(scale < 1.) {
     const int width  = std::min(static_cast<int>(std::round(img_->cols * scale)), resolution);
@@ -542,7 +547,9 @@ inline void decimate_keep_aspect_ratio(cv::Mat* img_, int resolution) noexcept {
     } catch(cv::Exception& exception) {
       report_error(exception, "An error occurred when resizing a image.");
     }
+    return scale;
   }
+  return 1.;
 }
 
 inline void check_or_create_path(const fs::path& path) noexcept {

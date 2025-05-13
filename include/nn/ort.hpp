@@ -54,6 +54,7 @@ public:
     session_options.SetLogSeverityLevel(log_level);
     session_options.SetLogId(name.c_str());
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    session_options.EnableMemPattern();
     session = std::make_unique<Ort::Session>(ort_env(), model_path.c_str(), session_options);
     Ort::AllocatorWithDefaultOptions allocator;
     for(int i = 0; i < session->GetInputCount(); ++i) {
@@ -74,13 +75,12 @@ public:
   template <typename T>
     requires std::is_arithmetic_v<T>
   void set_input(const std::string& name, std::vector<T>& input, const std::vector<int64_t>& shape) {
-    size_t idx  = std::ranges::find(input_names, name) - input_names.begin();
-    inputs[idx] = std::move(Ort::Value::CreateTensor<T>(
-        Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeCPUInput),
-        input.data(),
-        input.size(),
-        shape.data(),
-        shape.size()));
+    size_t idx = std::ranges::find(input_names, name) - input_names.begin();
+    THIS_ASSERTION_SHOULD_NEQ(idx, input_names.size(), "Input key of tensor name did not found.");
+    static auto mem_info =
+        Ort::MemoryInfo("Cuda", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemType::OrtMemTypeDefault);
+    inputs[idx] =
+        std::move(Ort::Value::CreateTensor<T>(mem_info, input.data(), input.size(), shape.data(), shape.size()));
   }
 
   auto infer() noexcept -> OrtValues {

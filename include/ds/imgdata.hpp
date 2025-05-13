@@ -26,6 +26,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "algo/rotate_rectify.hpp"
+#include "config.hpp"
 #include "ds/image.hpp"
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
@@ -167,6 +168,11 @@ public:
     cv::Mat pers_mat_inv                    = pers_mat.inv();
     kpnts.set_convert_function([pers = pers_mat_inv, height](Point<double> point) noexcept -> Point<double> {
       return mat2point(pers * point);
+    });
+    double scale = decimate_keep_aspect_ratio(&rotate_img, FEATURE_EXTRACTOR_RESOLUTION_LIM);
+    std::ranges::for_each(pixel_span, [scale](Point<double>& point) noexcept {
+      point.x *= scale;
+      point.y *= scale;
     });
     this->img_rotated.delay_initialize(
         temp_save_path

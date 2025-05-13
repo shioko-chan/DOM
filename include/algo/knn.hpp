@@ -12,7 +12,7 @@
 
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
-#include "types/cv_alias.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 

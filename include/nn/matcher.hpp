@@ -20,8 +20,8 @@
 #include "ds/imgdata.hpp"
 #include "ds/matchpair.hpp"
 #include "nn/extractor.hpp"
+#include "nn/ort.hpp"
 #include "tools/log.hpp"
-#include "tools/ort.hpp"
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
 

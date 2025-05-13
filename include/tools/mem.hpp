@@ -15,7 +15,7 @@
 
 #include "config.hpp"
 #include "tools/log.hpp"
-#include "types/common_types.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 

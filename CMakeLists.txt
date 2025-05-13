@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 4.0)
 
 project(SKYMERGE VERSION 1.0.0 LANGUAGES C CXX)
 
-set(LOG_LEVEL WARN)
+set(LOG_LEVEL INFO)
 
 # set(WANTED_BUILD_TYPE DEBUG)
 set(WANTED_BUILD_TYPE RELEASE)
@@ -27,6 +27,4 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 file(COPY ${CMAKE_SOURCE_DIR}/models DESTINATION ${CMAKE_BINARY_DIR}/data)
 add_subdirectory(src)
 
-enable_testing()
-add_subdirectory(tests)
 

@@ -94,19 +94,27 @@ public:
   [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept
       -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    auto res = triangulation(match_pairs, imgs_data, progress, temporary_save_path);
+    auto tracks = build_track(match_pairs, progress);
+    Filter::filter_track_too_few_observations(&tracks, 4);
+    auto track_point_vec = triangulation(tracks, imgs_data, progress, temporary_save_path);
     THIS_MESSAGE("[Pipeline] Filtering outliers using statistical method");
-    Filter::filter_outliers_statistical(&res, temporary_save_path / "f1.pcd");
+    Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "f1.pcd");
     THIS_MESSAGE("[Pipeline] Filtering outliers using radius method");
-    Filter::filter_outliers_radius(&res, temporary_save_path / "f2.pcd");
-    Filter::filter_near_observes(imgs_data, &res);
-    Filter::filter_too_few_points(&res);
-    Filter::filter_invalid_image(res, imgs_data);
+    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f2.pcd");
+    Filter::filter_near_observations(&track_point_vec, imgs_data);
+    Filter::filter_track_too_few_observations(&track_point_vec);
+    Filter::filter_invalid_image(track_point_vec, imgs_data);
     THIS_MESSAGE("[Pipeline] Smoothing surface");
-    Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
-    BA::ba(imgs_data, &res);
-    export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(res));
-    Filter::filter_outliers_radius(&res, temporary_save_path / "f3.pcd");
+    time_function(Filter::smooth_surface, &track_point_vec, temporary_save_path / "s1.pcd", 2);
+    // Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
+    BA::ba(imgs_data, &track_point_vec);
+    export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(track_point_vec));
+    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
+    Filter::filter_reprojection_error(&track_point_vec, imgs_data);
+    Filter::filter_track_too_few_observations(&track_point_vec);
+    Filter::filter_invalid_image(track_point_vec, imgs_data);
+    BA::ba(imgs_data, &track_point_vec);
+    export_pcd(temporary_save_path / "ba1.pcd", tri_res_vec2point_cloud(track_point_vec));
 #else
     auto res = triangulation(match_pairs, imgs_data, progress);
     THIS_MESSAGE("[Pipeline] Filtering outliers using statistical method");
@@ -121,13 +129,16 @@ public:
     BA::ba(imgs_data, &res);
     Filter::filter_outliers_radius(&res);
 #endif
-    THIS_MESSAGE("[Pipeline] Generating DSM");
-    return tri_res_vec2point_cloud(res);
+    return tri_res_vec2point_cloud(track_point_vec);
   }
 
   void stitch(ImgsData& imgs_data, const pcl::PointCloud<pcl::PointXYZ>::Ptr& dsm) {
     THIS_MESSAGE("[Pipeline] Stitching images");
-    cv::Mat  texture       = TriMeshStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
+    cv::Mat texture = TriMeshStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
+    if(texture.empty()) {
+      THIS_LOG_ERROR("[Pipeline] Stitching failed");
+      return;
+    }
     fs::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), texture);
     THIS_MESSAGE("[Pipeline] Stitched image saved to {}", panorama_path.string());

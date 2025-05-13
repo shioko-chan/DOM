@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "tools/debug.hpp"
-#include "types/common_types.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 
@@ -181,9 +181,9 @@ public:
     check_and_remove_weak_match(idx0);
   }
 
-  auto get_tracks() const -> std::vector<PointIdxs> {
-    PointIdxUSet           visited;
-    std::vector<PointIdxs> result;
+  auto get_tracks() const -> Tracks {
+    PointIdxUSet visited;
+    Tracks       result;
     for(const auto& [pnt, _] : pnt_map) {
       if(visited.contains(pnt)) {
         continue;

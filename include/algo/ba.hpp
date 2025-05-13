@@ -10,7 +10,9 @@
 #include <Eigen/Dense>
 
 #include <ceres/ceres.h>
+#include <ceres/jet.h>
 #include <ceres/loss_function.h>
+#include <ceres/ordered_groups.h>
 #include <ceres/rotation.h>
 #include <ceres/solver.h>
 #include <ceres/types.h>
@@ -26,7 +28,7 @@ namespace SkyMerge {
 class BA {
 public:
 
-  static void ba(ImgsData& imgs_data, TriResVec* res) noexcept {
+  static void ba(ImgsData& imgs_data, TrackPointVec* const res) noexcept {
     if(res->empty() || imgs_data.empty()) {
       THIS_LOG_WARN("[BA] Empty input data");
       return;
@@ -34,14 +36,13 @@ public:
     THIS_LOG_INFO("[BA] Starting Bundle Adjustment");
     auto imgs_data_filtered =
         imgs_data | std::views::filter([](const auto& img_data) noexcept { return img_data.is_valid(); });
-    std::erase_if(*res, [](const TriRes& tri_res) noexcept { return tri_res.pnt2d_idx_vec.size() < 2; });
 
     ceres::Problem         problem;
     ceres::Solver::Options options;
     ceres::Solver::Summary summary;
 
     options.num_threads        = static_cast<int>(std::thread::hardware_concurrency());
-    options.max_num_iterations = 2000;
+    options.max_num_iterations = 1000;
 
     options.minimizer_progress_to_stdout      = true;
     options.check_gradients                   = false;
@@ -51,13 +52,14 @@ public:
     options.linear_solver_type         = ceres::SPARSE_SCHUR;
     options.use_inner_iterations       = true;
 
+    options.dense_linear_algebra_library_type = ceres::CUDA;
+
     add_parameter_block(problem, imgs_data.camera_array_raw());
     add_parameter_block(problem, imgs_data.distort_array_raw());
     for(auto& img_data : imgs_data_filtered) {
       add_parameter_block(problem, img_data.A_w2c_array_raw());
       add_parameter_block(problem, img_data.t_w2c_array_raw());
     }
-
     for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
       add_parameter_block(problem, pnt3d);
       for(const auto& pnt2d_idx : pnt2d_idx_vec) {
@@ -74,6 +76,7 @@ public:
             pnt3d.data());
       }
     }
+
     // Firstly, optimize the camera extrinsic
     // Make [K, d, pnt3d] constant
     //      [R, t] variable
@@ -91,6 +94,7 @@ public:
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 1);
     }
+
     // Secondly, optimize the intrinsic
     // Make [R, t, pnt3d] constant
     //      [K, d] variable
@@ -108,6 +112,7 @@ public:
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 2);
     }
+
     // Thirdly, optimize the 3d points
     // Make [R, t, K, d] constant
     //      [pnt3d] variable
@@ -125,6 +130,7 @@ public:
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 3);
     }
+
     // Fourthly, optimize the 3d points and extrinsic
     // Make [K, d] constant
     //      [pnt3d, R, t] variable
@@ -142,6 +148,7 @@ public:
       ceres::Solve(options, &problem, &summary);
       check_summary(summary, 4);
     }
+
     // Finally, optimize all together
     {
       THIS_LOG_INFO("[BA] Step 5: Optimizing all parameters together");
@@ -158,6 +165,26 @@ public:
       check_summary(summary, 5);
     }
     THIS_LOG_INFO("[BA] Bundle Adjustment completed");
+    double sum = 0;
+    int    cnt = 0;
+    for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
+      for(const auto& pnt2d_idx : pnt2d_idx_vec) {
+        auto& img_data           = imgs_data[pnt2d_idx.img_idx];
+        const auto& [ob_x, ob_y] = img_data.get_kpnts().get(pnt2d_idx.pnt_idx);
+        ReprojectionError     reprojection_error(ob_x, ob_y);
+        std::array<double, 2> residuals{};
+        reprojection_error(
+            img_data.A_w2c_array_raw().data(),
+            img_data.t_w2c_array_raw().data(),
+            imgs_data.camera_array_raw().data(),
+            imgs_data.distort_array_raw().data(),
+            pnt3d.data(),
+            residuals.data());
+        sum += std::hypot(residuals[0], residuals[1]);
+        cnt++;
+      }
+    }
+    std::cout << "Average reprojection error: " << sum / cnt << '\n';
   }
 
 private:
@@ -176,8 +203,7 @@ private:
         const T* const distort,
         const T* const point_3d,
         T*             residuals) const noexcept -> bool {
-      auto         point = world2camera(axisangle, translation, point_3d);
-      auto         pixel = camera2pixel(camera, distort, point.data());
+      auto         pixel = world2pixel(axisangle, translation, camera, distort, point_3d);
       std::span<T> resid{residuals, 2};
       T            predict_x = pixel(0);
       T            predict_y = pixel(1);

@@ -6,7 +6,7 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "types/common_types.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 

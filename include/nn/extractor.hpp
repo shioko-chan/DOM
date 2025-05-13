@@ -20,9 +20,9 @@
 
 #include "config.hpp"
 #include "ds/imgdata.hpp"
+#include "nn/ort.hpp"
 #include "tools/log.hpp"
 #include "tools/mem.hpp"
-#include "tools/ort.hpp"
 #include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 
@@ -196,8 +196,6 @@ protected:
     check_or_create_path(temporary_save_path);
   }
 
-  void reshape(cv::Mat* img) const noexcept { decimate_keep_aspect_ratio(img, FEATURE_EXTRACTOR_RESOLUTION_LIM); }
-
   virtual inline void preprocess(cv::Mat* img) const noexcept = 0;
 
   [[nodiscard]] virtual constexpr auto get_channels() const noexcept -> int64_t = 0;
@@ -268,7 +266,6 @@ public:
     auto    img_guard     = img_rotated.get();
     cv::Mat img_processed = img_guard.get().clone();
     img_guard.unlock();
-    reshape(&img_processed);
     preprocess(&img_processed);
     const auto [width, height] = img_rotated.get_size();
     std::vector<float> img_vec{img_processed.begin<float>(), img_processed.end<float>()};
@@ -291,7 +288,7 @@ public:
         std::views::iota(0UL, cnt) | std::views::filter([this, &scores_span, &img_rotated, &kps_span](const auto& idx) {
           return scores_span[idx] >= get_threshold()
                  && img_rotated.check_valid_pixel(
-                     Point<double>{static_cast<double>(kps_span[idx * 2]), static_cast<double>(kps_span[(idx * 2) + 1])});
+                     Point<float>{static_cast<float>(kps_span[idx * 2]), static_cast<float>(kps_span[(idx * 2) + 1])});
         });
     std::vector<size_t> indices(view0.begin(), view0.end());
     if(indices.size() > get_keypoint_maxcnt()) {
