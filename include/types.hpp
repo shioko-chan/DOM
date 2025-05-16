@@ -14,6 +14,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include <pcl/common/common.h>
+
 namespace SkyMerge {
 
 template <typename T>
@@ -136,5 +138,7 @@ template <typename T>
   requires std::is_arithmetic_v<T>
 using Point3USet = std::unordered_set<Point3<T>, Point3Hasher<T>>;
 
+using PointCloudPtr = typename pcl::PointCloud<pcl::PointXYZ>::Ptr;
+using PointCloud    = pcl::PointCloud<pcl::PointXYZ>;
 } // namespace SkyMerge
 #endif

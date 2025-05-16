@@ -35,7 +35,7 @@ public:
       THIS_LOG_WARN("[Filter] Empty input data, cannot filter outliers");
       return;
     }
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
+    PointCloudPtr cloud = tri_res_vec2point_cloud(*tri_res_vec);
 
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor{true};
     sor.setInputCloud(cloud);
@@ -69,7 +69,7 @@ public:
       return;
     }
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = tri_res_vec2point_cloud(*tri_res_vec);
+    PointCloudPtr cloud = tri_res_vec2point_cloud(*tri_res_vec);
 
     pcl::RadiusOutlierRemoval<pcl::PointXYZ> ror{true};
     ror.setInputCloud(cloud);
@@ -146,7 +146,7 @@ public:
     for(auto& [pnt3d, pnt2d_idx_vec] : *tri_res_vec) {
       std::erase_if(pnt2d_idx_vec, [&imgs_data, &pnt3d, threshold](const auto& pnt2d_idx) noexcept {
         const auto& img_data     = imgs_data[pnt2d_idx.img_idx];
-        const auto& [ob_x, ob_y] = img_data.get_kpnts().get(pnt2d_idx.pnt_idx);
+        const auto& [ob_x, ob_y] = img_data.get_kpnts()[pnt2d_idx.pnt_idx];
         auto pnt                 = world2pixel(
             img_data.A_w2c_array_raw().data(),
             img_data.t_w2c_array_raw().data(),
@@ -158,16 +158,6 @@ public:
     }
   }
 
-  static void filter_track_too_few_observations(TrackPointVec* tri_res_vec, int min_points = 2) {
-    std::erase_if(*tri_res_vec, [min_points](const auto& tri_res) noexcept {
-      return tri_res.pnt2d_idx_vec.size() < min_points;
-    });
-  }
-
-  static void filter_track_too_few_observations(Tracks* tracks, int min_points = 2) {
-    std::erase_if(*tracks, [min_points](const auto& tri_res) noexcept { return tri_res.size() < min_points; });
-  }
-
   static void filter_near_observations(TrackPointVec* tri_res_vec, ImgsData& imgs_data, double threshold = 5.0) {
     for(auto& [pnt3d, pnt2d_idx_vec] : *tri_res_vec) {
       std::erase_if(pnt2d_idx_vec, [&imgs_data, &pnt3d, threshold](const auto& pnt2d_idx) noexcept {
@@ -176,6 +166,28 @@ public:
         return pnt[2] < threshold;
       });
     }
+  }
+
+  static void filter_track_too_few_observations(TrackPointVec* tri_res_vec, int min_points = 2) {
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    int cnt = tri_res_vec->size();
+#endif
+    std::erase_if(*tri_res_vec, [min_points](const auto& tri_res) noexcept {
+      return tri_res.pnt2d_idx_vec.size() < min_points;
+    });
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    THIS_LOG_INFO("[Filter] Too few observations filtering: {} points before, {} points after", cnt, tri_res_vec->size());
+#endif
+  }
+
+  static void filter_track_too_few_observations(Tracks* tracks, int min_points = 2) {
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    int cnt = tracks->size();
+#endif
+    std::erase_if(*tracks, [min_points](const auto& tri_res) noexcept { return tri_res.size() < min_points; });
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    THIS_LOG_INFO("[Filter] Too few observations filtering: {} points before, {} points after", cnt, tracks->size());
+#endif
   }
 
   static void filter_invalid_image(const TrackPointVec& tri_res_vec, ImgsData& imgs_data) {
@@ -192,9 +204,8 @@ public:
     }
   }
 
-  static auto
-  grid_downsample_2d(const pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud, float distance_threshold = 0.5) noexcept
-      -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
+  static auto grid_downsample_2d(const PointCloudPtr& point_cloud, float distance_threshold = 0.5) noexcept
+      -> PointCloudPtr {
     pcl::PointXYZ min_pnt;
     pcl::PointXYZ max_pnt;
     pcl::getMinMax3D(*point_cloud, min_pnt, max_pnt);

@@ -7,7 +7,6 @@
 #include <opencv2/opencv.hpp>
 
 #include "config.hpp"
-#include "tools/debug.hpp"
 #include "tools/utility.hpp"
 #include "types.hpp"
 
@@ -21,12 +20,8 @@ struct alignas(128) RectifyResult {
 
 inline auto rotate_rectify(const cv::Mat& R_cam2world, const cv::Mat& img) noexcept -> RectifyResult {
   auto [width, height] = img.size();
-  THIS_ASSERTION_SHOULD_LEQ(4, width, "Image size is too small");
-  THIS_ASSERTION_SHOULD_LEQ(4, height, "Image size is too small");
   Points<double> src{{0., 0.}, {1. * (width - 1), 0.}, {1. * (width - 1), 1. * (height - 1)}, {0., 1. * (height - 1)}};
-  // Points<double>
-  //      pixel_span{{2., 2.}, {1. * (width - 3), 2.}, {1. * (width - 3), 1. * (height - 3)}, {2., 1. * (height - 3)}};
-  double         isize = 10;
+  double         isize = 5;
   Points<double> pixel_span{
       {isize, isize},
       {1. * (width - 1 - isize), isize},
@@ -61,11 +56,6 @@ inline auto rotate_rectify(const cv::Mat& R_cam2world, const cv::Mat& img) noexc
   cv::warpPerspective(img, img_res, perspective_mat, size, cv::INTER_CUBIC);
   Points<double> pixel_span_after;
   cv::perspectiveTransform(pixel_span, pixel_span_after, perspective_mat);
-
-  // auto p = convert_arithmetic_type_point<int>(pixel_span_after);
-  // cv::polylines(img_res, p, true, cv::Scalar(0, 255, 0), 2);
-  // cv::imshow("pixel_span", img_res);
-  // cv::waitKey(0);
 
   if(perspective_mat.type() != CV_64F) {
     perspective_mat.convertTo(perspective_mat, CV_64F);

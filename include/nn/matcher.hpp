@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <Eigen/Dense>
+
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
@@ -207,7 +208,6 @@ public:
                     rhs_img.rotated_img().get_img_stem().string()),
             draw_matchlines(lhs_img, rhs_img, matches, lhs_features, rhs_features));
 #endif
-        const uint64_t len = matches.size();
         THIS_LOG_DEBUG(
             "Image {} and image {} have {} matches after threshold filter!",
             lhs_img.get_img_name().string(),
@@ -221,27 +221,25 @@ public:
               matches.size());
           continue;
         }
-        auto kpnt_lhs =
+        auto kpnt_lhs_v =
             matches
             | std::views::transform([&lhs_features](const auto& match) noexcept { return lhs_features[match.lhs]; })
             | normalized2pixel<Feature>(lhs_img.rotated_img().get_size());
-        auto kpnt_rhs =
+        auto kpnt_rhs_v =
             matches
             | std::views::transform([&rhs_features](const auto& match) noexcept { return rhs_features[match.rhs]; })
             | normalized2pixel<Feature>(rhs_img.rotated_img().get_size());
-        auto score     = matches | std::views::transform([](const auto& match) noexcept { return match.score; });
-        auto idx_lhs   = lhs_img.get_kpnts().append(kpnt_lhs);
-        auto idx_rhs   = rhs_img.get_kpnts().append(kpnt_rhs);
-        auto matches_v = std::views::zip(idx_lhs, idx_rhs, score) | std::views::transform([](auto&& idx) noexcept {
-                           auto&& [i0, i1, score] = idx;
-                           return Match{i0, i1, score};
-                         });
-        pair.matches.assign(matches_v.begin(), matches_v.end());
-        // Points<double> kpnt_lhs_f;
-        // Points<double> kpnt_rhs_f;
-        // std::ranges::copy(kpnt_lhs, std::back_inserter(kpnt_lhs_f));
-        // std::ranges::copy(kpnt_rhs, std::back_inserter(kpnt_rhs_f));
-        // pair.M     = cv::estimateAffinePartial2D(kpnt_lhs_f, kpnt_rhs_f);
+        auto score_v = matches | std::views::transform([](const auto& match) noexcept { return match.score; });
+        Points<double>      kpnt_lhs{kpnt_lhs_v.begin(), kpnt_lhs_v.end()};
+        Points<double>      kpnt_rhs{kpnt_rhs_v.begin(), kpnt_rhs_v.end()};
+        std::vector<double> score{score_v.begin(), score_v.end()};
+        cv::Mat             mask;
+        cv::findFundamentalMat(kpnt_lhs, kpnt_rhs, cv::FM_RANSAC, 3.0, 0.99, mask);
+        for(int idx = 0; idx < matches.size(); ++idx) {
+          if(mask.at<uchar>(idx, 0) != 0) {
+            pair.matches.push_back(std::move(matches[idx]));
+          }
+        }
         pair.valid = true;
       }
       progress.update(batch_cnt);

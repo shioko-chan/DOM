@@ -22,6 +22,7 @@
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
 #include "tools/utility.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 
@@ -91,11 +92,10 @@ public:
     return {view.begin(), view.end()};
   }
 
-  [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept
-      -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
+  [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept {
 #ifdef ENABLE_VISUALIZE_OUTPUT
     auto tracks = build_track(match_pairs, progress);
-    Filter::filter_track_too_few_observations(&tracks, 4);
+    Filter::filter_track_too_few_observations(&tracks, 3);
     auto track_point_vec = triangulation(tracks, imgs_data, progress, temporary_save_path);
     THIS_MESSAGE("[Pipeline] Filtering outliers using statistical method");
     Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "f1.pcd");
@@ -104,17 +104,21 @@ public:
     Filter::filter_near_observations(&track_point_vec, imgs_data);
     Filter::filter_track_too_few_observations(&track_point_vec);
     Filter::filter_invalid_image(track_point_vec, imgs_data);
-    THIS_MESSAGE("[Pipeline] Smoothing surface");
+    // THIS_MESSAGE("[Pipeline] Smoothing surface");
     time_function(Filter::smooth_surface, &track_point_vec, temporary_save_path / "s1.pcd", 2);
     // Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
     BA::ba(imgs_data, &track_point_vec);
     export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(track_point_vec));
-    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
-    Filter::filter_reprojection_error(&track_point_vec, imgs_data);
+    Filter::filter_reprojection_error(&track_point_vec, imgs_data, 3.0);
     Filter::filter_track_too_few_observations(&track_point_vec);
+    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
     Filter::filter_invalid_image(track_point_vec, imgs_data);
     BA::ba(imgs_data, &track_point_vec);
     export_pcd(temporary_save_path / "ba1.pcd", tri_res_vec2point_cloud(track_point_vec));
+    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
+    Filter::filter_reprojection_error(&track_point_vec, imgs_data, 1.0);
+    Filter::filter_track_too_few_observations(&track_point_vec);
+    Filter::filter_invalid_image(track_point_vec, imgs_data);
 #else
     auto res = triangulation(match_pairs, imgs_data, progress);
     THIS_MESSAGE("[Pipeline] Filtering outliers using statistical method");
@@ -130,11 +134,12 @@ public:
     Filter::filter_outliers_radius(&res);
 #endif
     return tri_res_vec2point_cloud(track_point_vec);
+    // return track_point_vec;
   }
 
-  void stitch(ImgsData& imgs_data, const pcl::PointCloud<pcl::PointXYZ>::Ptr& dsm) {
+  void stitch(ImgsData& imgs_data, const PointCloudPtr& point_cloud) {
     THIS_MESSAGE("[Pipeline] Stitching images");
-    cv::Mat texture = TriMeshStitcher::stitch(imgs_data, dsm, progress, TARGET_RESOLUTION);
+    cv::Mat texture = Stitcher::stitch(imgs_data, point_cloud, progress);
     if(texture.empty()) {
       THIS_LOG_ERROR("[Pipeline] Stitching failed");
       return;
@@ -143,6 +148,20 @@ public:
     cv::imwrite(panorama_path.string(), texture);
     THIS_MESSAGE("[Pipeline] Stitched image saved to {}", panorama_path.string());
   }
+
+  // void stitch(ImgsData& imgs_data, const TrackPointVec& point_cloud) {
+  //   THIS_MESSAGE("[Pipeline] Stitching images");
+  //   cv::Mat texture = TriMeshStitcher::stitch(imgs_data, point_cloud, progress, TARGET_RESOLUTION);
+  //   // DSM     dsm{point_cloud, progress};
+  //   // cv::Mat texture = DSMStitcher::stitch(imgs_data, dsm, progress, 0.05);
+  //   if(texture.empty()) {
+  //     THIS_LOG_ERROR("[Pipeline] Stitching failed");
+  //     return;
+  //   }
+  //   fs::path panorama_path = output_dir / "stitched_image.jpg";
+  //   cv::imwrite(panorama_path.string(), texture);
+  //   THIS_MESSAGE("[Pipeline] Stitched image saved to {}", panorama_path.string());
+  // }
 };
 
 } // namespace SkyMerge

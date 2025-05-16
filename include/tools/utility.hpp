@@ -97,7 +97,7 @@ concept NoexceptCallable = std::is_nothrow_invocable_v<Func, Args...>;
 template <typename Func, typename Ret, typename... Args>
 concept NoexceptCallableWithRet = std::is_nothrow_invocable_r_v<Ret, Func, Args...>;
 
-inline auto compute_average_spacing(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, int k_neighbors = 100) -> double {
+inline auto compute_average_spacing(const PointCloudPtr& cloud, int k_neighbors = 100) -> double {
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
   kdtree.setInputCloud(cloud);
   double total_distance = 0.0;
@@ -114,8 +114,8 @@ inline auto compute_average_spacing(const pcl::PointCloud<pcl::PointXYZ>::Ptr& c
   return total_distance / static_cast<double>(cloud->size());
 }
 
-inline auto tri_res_vec2point_cloud(const TrackPointVec& tri_res_vec) noexcept -> pcl::PointCloud<pcl::PointXYZ>::Ptr {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+inline auto tri_res_vec2point_cloud(const TrackPointVec& tri_res_vec) noexcept -> PointCloudPtr {
+  PointCloudPtr cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   cloud->resize(tri_res_vec.size());
   for(int i = 0; i < tri_res_vec.size(); ++i) {
     const auto& point = tri_res_vec[i].pnt3d;
@@ -201,7 +201,7 @@ inline void export_pcd(const fs::path& path, const Point3s<double>& points) noex
   file.close();
 }
 
-inline void export_pcd(const fs::path& path, const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) noexcept {
+inline void export_pcd(const fs::path& path, const PointCloudPtr& cloud) noexcept {
   pcl::io::savePCDFileASCII(path.string(), *cloud);
 }
 #endif

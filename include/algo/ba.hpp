@@ -52,8 +52,6 @@ public:
     options.linear_solver_type         = ceres::SPARSE_SCHUR;
     options.use_inner_iterations       = true;
 
-    options.dense_linear_algebra_library_type = ceres::CUDA;
-
     add_parameter_block(problem, imgs_data.camera_array_raw());
     add_parameter_block(problem, imgs_data.distort_array_raw());
     for(auto& img_data : imgs_data_filtered) {
@@ -64,8 +62,8 @@ public:
       add_parameter_block(problem, pnt3d);
       for(const auto& pnt2d_idx : pnt2d_idx_vec) {
         auto& img_data           = imgs_data[pnt2d_idx.img_idx];
-        auto  loss               = std::make_unique<ceres::HuberLoss>(1.0);
-        const auto& [ob_x, ob_y] = img_data.get_kpnts().get(pnt2d_idx.pnt_idx);
+        auto  loss               = std::make_unique<ceres::HuberLoss>(0.1);
+        const auto& [ob_x, ob_y] = img_data.get_kpnts()[pnt2d_idx.pnt_idx];
         problem.AddResidualBlock(
             ReprojectionError::create(ob_x, ob_y).release(),
             loss.release(),
@@ -170,7 +168,7 @@ public:
     for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
       for(const auto& pnt2d_idx : pnt2d_idx_vec) {
         auto& img_data           = imgs_data[pnt2d_idx.img_idx];
-        const auto& [ob_x, ob_y] = img_data.get_kpnts().get(pnt2d_idx.pnt_idx);
+        const auto& [ob_x, ob_y] = img_data.get_kpnts()[pnt2d_idx.pnt_idx];
         ReprojectionError     reprojection_error(ob_x, ob_y);
         std::array<double, 2> residuals{};
         reprojection_error(

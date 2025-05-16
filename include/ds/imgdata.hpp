@@ -7,12 +7,10 @@
 #include <concepts>
 #include <cstdint>
 #include <filesystem>
-#include <functional>
 #include <iostream>
 #include <limits>
 #include <mutex>
 #include <numbers>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -31,7 +29,6 @@
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
-#include "tools/report_error.hpp"
 #include "tools/utility.hpp"
 
 namespace SkyMerge {
@@ -67,51 +64,6 @@ private:
   double value = 0.;
 };
 
-struct alignas(128) Kpnts {
-public:
-
-  template <typename Func>
-    requires std::is_nothrow_invocable_r_v<Point<double>, Func, Point<double>>
-  void set_convert_function(Func&& convert_func) noexcept {
-    this->convert_func = std::forward<Func>(convert_func);
-  }
-
-  template <typename T>
-    requires HasXY<T>
-  auto append(const T& kpnt_input) noexcept -> size_t {
-    Point<double> kpnt           = convert_func({kpnt_input.x, kpnt_input.y});
-    auto          kpnts_map_iter = kpnts_map.find(kpnt);
-    if(kpnts_map_iter == kpnts_map.end()) {
-      size_t idx = kpnts_map.size();
-      kpnts_map.emplace(kpnt, idx);
-      kpnts_map_rev.emplace(idx, kpnt);
-      return idx;
-    }
-    return kpnts_map_iter->second;
-  }
-
-  template <std::ranges::range R>
-  auto append(const R& kpnts) noexcept {
-    return kpnts | std::views::transform([this](const auto& kpnt) noexcept { return append(kpnt); });
-  }
-
-  auto get(size_t idx) const noexcept -> Point<double> {
-    auto kpnts_map_rev_iter = kpnts_map_rev.find(idx);
-    if(kpnts_map_rev_iter == kpnts_map_rev.end()) {
-      report_error("Keypoint not found");
-    }
-    return kpnts_map_rev_iter->second;
-  }
-
-  auto size() noexcept -> size_t { return kpnts_map.size(); }
-
-private:
-
-  std::function<Point<double>(Point<double>)> convert_func;
-  PointUMap<double, size_t>                   kpnts_map;
-  PointUMapRev<size_t, double>                kpnts_map_rev;
-};
-
 class ImgData {
   friend class ImgsData;
   friend class ImgDataFactory;
@@ -140,17 +92,17 @@ public:
     A_w2c_array = rotate2axisangle(R_v_w2c.t());
   }
 
-  auto is_valid() const noexcept -> bool { return valid; }
+  [[nodiscard]] auto is_valid() const noexcept -> bool { return valid; }
 
   void set_invalid() noexcept { valid = false; }
 
   void set_valid() noexcept { valid = true; }
 
-  auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
+  [[nodiscard]] auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
 
   auto origin_img() noexcept -> OriginImage& { return img_origin; }
 
-  auto rotated_img() const noexcept -> const Image& {
+  [[nodiscard]] auto rotated_img() const noexcept -> const Image& {
     THIS_ASSERTION_SHOULD_TRUE(rotated_rectified, "Not rectified yet!");
     return img_rotated;
   }
@@ -165,11 +117,8 @@ public:
     auto img                                = img_origin.get();
     const auto [width, height]              = img.size();
     auto [rotate_img, pixel_span, pers_mat] = SkyMerge::rotate_rectify(R_c2w(), img);
-    cv::Mat pers_mat_inv                    = pers_mat.inv();
-    kpnts.set_convert_function([pers = pers_mat_inv, height](Point<double> point) noexcept -> Point<double> {
-      return mat2point(pers * point);
-    });
-    double scale = decimate_keep_aspect_ratio(&rotate_img, FEATURE_EXTRACTOR_RESOLUTION_LIM);
+    perspective_mat                         = pers_mat.inv();
+    double scale                            = decimate_keep_aspect_ratio(&rotate_img, FEATURE_EXTRACTOR_RESOLUTION_LIM);
     std::ranges::for_each(pixel_span, [scale](Point<double>& point) noexcept {
       point.x *= scale;
       point.y *= scale;
@@ -230,9 +179,9 @@ public:
     return t_w2c_array;
   }
 
-  [[nodiscard]] auto get_kpnts() const noexcept -> const Kpnts& { return kpnts; }
+  [[nodiscard]] auto get_kpnts() const noexcept -> const Points<double>& { return kpnts; }
 
-  [[nodiscard]] auto get_kpnts() noexcept -> Kpnts& { return kpnts; }
+  void set_kpnts(const Points<double>& points) noexcept { cv::perspectiveTransform(points, kpnts, perspective_mat); }
 
   [[nodiscard]] auto get_coord() const noexcept -> Point<double> {
     THIS_ASSERTION_SHOULD_TRUE(reference_set, "reference not set!");
@@ -245,7 +194,9 @@ private:
 
   bool valid{true};
 
-  Kpnts kpnts;
+  Points<double> kpnts;
+
+  cv::Mat perspective_mat;
 
   bool reference_set{false}, rotated_rectified{false};
 

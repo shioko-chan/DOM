@@ -15,7 +15,6 @@ public:
 
   int     first{}, second{};
   bool    valid = false;
-  cv::Mat M;
   Matches matches;
 
   MatchPair() = default;

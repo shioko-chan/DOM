@@ -5,8 +5,8 @@
 
 namespace SkyMerge {
 
-constexpr double LIGHTGLUE_THRESHOLD{0.8};
-constexpr int    MATCH_CNT_THRESHOLD{150};
+constexpr double LIGHTGLUE_THRESHOLD{0.75};
+constexpr int    MATCH_CNT_THRESHOLD{50};
 
 constexpr int ORIGIN_RESOLUTION_LIM{10240};
 
@@ -26,7 +26,7 @@ enum method_t : uint8_t { SUPERPOINT, DISK };
 
 constexpr method_t FEATURE_EXTRACTION_METHOD{DISK};
 
-constexpr double GRID_LENGTH{1.0}; // meters
+constexpr double GRID_LENGTH{5.0}; // meters
 
 constexpr double TARGET_RESOLUTION{20.0}; // pixels per meter
 

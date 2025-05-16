@@ -8,6 +8,7 @@
 
 #include <Eigen/Dense>
 
+#include <Eigen/src/Core/util/Constants.h>
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
 #include <opencv2/core/eigen.hpp>
@@ -86,7 +87,7 @@ inline auto triangulation(
         for(int64_t i = 0; i < len; ++i) {
           const auto& [img_idx, pnt_idx] = pntidx_vec[i];
           const auto&     img_data       = imgs_data[img_idx];
-          const auto&     kpnt           = img_data.get_kpnts().get(pnt_idx);
+          const auto&     kpnt           = img_data.get_kpnts()[pnt_idx];
           auto            kpnt_uni       = mat2point(imgs_data.M().inv() * kpnt);
           double          x_uni          = kpnt_uni.x;
           double          y_uni          = kpnt_uni.y;
@@ -102,7 +103,7 @@ inline auto triangulation(
           b_vector(i * 2)                      = x_uni * t_z - t_x;
           b_vector((i * 2) + 1)                = y_uni * t_z - t_y;
         }
-        Eigen::VectorXd x_vector = A_matrix.colPivHouseholderQr().solve(b_vector);
+        Eigen::VectorXd x_vector = A_matrix.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV).solve(b_vector);
         THIS_ASSERTION_SHOULD_TRUE(x_vector.array().isFinite().all());
         if(!x_vector.array().isFinite().all()) {
           return;

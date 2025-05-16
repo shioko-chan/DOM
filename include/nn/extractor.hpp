@@ -246,21 +246,8 @@ public:
         temporary_save_path / std::format("{}_{}.desc", img_data.rotated_img().get_img_stem().string(), get_name());
     auto elem = Mem::get_node(path.string());
     if(elem) {
-      auto&&   elem_guard = *elem;
-      Features features{elem_guard.get<FeaturesMem>().features()};
-      return features;
-    }
-    if(fs::exists(path)) {
-      std::ifstream ifs(path.string(), std::ios::binary);
-      if(ifs.is_open()) {
-        Features features;
-        ifs >> features;
-        ifs.close();
-        if(!ifs.fail()) {
-          register_node(path, features);
-          return features;
-        }
-      }
+      auto&& elem_guard = *elem;
+      return elem_guard.get<FeaturesMem>().features();
     }
     auto&   img_rotated   = img_data.rotated_img();
     auto    img_guard     = img_rotated.get();
@@ -313,14 +300,10 @@ public:
     const Features filtered_features(view1.begin(), view1.end());
     THIS_LOG_DEBUG(
         "Image {} has {} keypoints after filter.", img_data.get_img_name().string(), filtered_features.size() / 2);
-    if(!fs::exists(path)) {
-      std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
-      if(ofs.is_open()) {
-        ofs << filtered_features;
-        ofs.close();
-      }
-    }
     register_node(path, filtered_features);
+    auto           kpnt_v = filtered_features | normalized2pixel<Feature>(img_data.rotated_img().get_size());
+    Points<double> kpnts{kpnt_v.begin(), kpnt_v.end()};
+    img_data.set_kpnts(kpnts);
     return filtered_features;
   }
 };
