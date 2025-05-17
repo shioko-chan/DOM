@@ -128,16 +128,20 @@ private:
   List                    lru_list;
   UMap                    k_v;
 
+  void swap_out_node(Unit& unit) {
+    if(unit.ptr) {
+      std::unique_lock<std::mutex> unit_lock(unit.mtx, std::try_to_lock);
+      if(!unit_lock.owns_lock()) {
+        return;
+      }
+      occupied -= unit.ptr->size();
+      unit.swap_out(std::move(unit.ptr));
+    }
+  }
+
   auto ensure_space(const size_t size) -> bool {
     for(auto iter = lru_list.rbegin(); occupied + size > capacity && iter != lru_list.rend(); ++iter) {
-      if(iter->ptr) {
-        std::unique_lock<std::mutex> lock(iter->mtx, std::try_to_lock);
-        if(!lock.owns_lock()) {
-          continue;
-        }
-        occupied -= iter->ptr->size();
-        iter->swap_out(std::move(iter->ptr));
-      }
+      swap_out_node(*iter);
     }
     return occupied + size <= capacity;
   }
@@ -199,6 +203,16 @@ private:
       }
     }
   }
+
+  void release_node_mem(const std::string& key) noexcept {
+    std::unique_lock<std::mutex> lock(lru_mtx);
+    auto                         k_v_iter = k_v.find(key);
+    if(k_v_iter == k_v.end()) {
+      return;
+    }
+    auto iter = k_v_iter->second;
+    swap_out_node(*iter);
+  }
 };
 
 class Mem {
@@ -212,6 +226,8 @@ public:
   }
 
   static auto get_node(const std::string& key) noexcept -> std::optional<RefGuard> { return mem.get_node(key); }
+
+  static void release_node_mem(const std::string& key) noexcept { mem.release_node_mem(key); }
 
 private:
 

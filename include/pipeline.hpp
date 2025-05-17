@@ -89,6 +89,9 @@ public:
       return {};
     }
     auto view = match_pairs_ | std::views::filter([](auto&& pair) noexcept { return pair.valid; });
+    for(const auto& img_data : imgs_data) {
+      img_data.rotated_img().release_mem();
+    }
     return {view.begin(), view.end()};
   }
 
@@ -97,27 +100,24 @@ public:
     auto tracks = build_track(match_pairs, progress);
     Filter::filter_track_too_few_observations(&tracks, 3);
     auto track_point_vec = triangulation(tracks, imgs_data, progress, temporary_save_path);
-    THIS_MESSAGE("[Pipeline] Filtering outliers using statistical method");
+    THIS_LOG_INFO("[Pipeline] Filtering outliers using statistical method");
     Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "f1.pcd");
-    THIS_MESSAGE("[Pipeline] Filtering outliers using radius method");
+    THIS_LOG_INFO("[Pipeline] Filtering outliers using radius method");
     Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f2.pcd");
     Filter::filter_near_observations(&track_point_vec, imgs_data);
     Filter::filter_track_too_few_observations(&track_point_vec);
     Filter::filter_invalid_image(track_point_vec, imgs_data);
-    // THIS_MESSAGE("[Pipeline] Smoothing surface");
-    time_function(Filter::smooth_surface, &track_point_vec, temporary_save_path / "s1.pcd", 2);
-    // Filter::smooth_surface(&res, temporary_save_path / "s1.pcd");
-    BA::ba(imgs_data, &track_point_vec);
+    BA::ba(imgs_data, &track_point_vec, 3.0);
     export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(track_point_vec));
     Filter::filter_reprojection_error(&track_point_vec, imgs_data, 3.0);
     Filter::filter_track_too_few_observations(&track_point_vec);
     Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
     Filter::filter_invalid_image(track_point_vec, imgs_data);
-    BA::ba(imgs_data, &track_point_vec);
+    BA::ba(imgs_data, &track_point_vec, -1);
     export_pcd(temporary_save_path / "ba1.pcd", tri_res_vec2point_cloud(track_point_vec));
-    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
     Filter::filter_reprojection_error(&track_point_vec, imgs_data, 1.0);
     Filter::filter_track_too_few_observations(&track_point_vec);
+    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
     Filter::filter_invalid_image(track_point_vec, imgs_data);
 #else
     auto res = triangulation(match_pairs, imgs_data, progress);

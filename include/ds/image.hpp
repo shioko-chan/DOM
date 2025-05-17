@@ -202,6 +202,12 @@ public:
            >= 0;
   }
 
+  void release_mem() const noexcept {
+    if(initialized) {
+      Mem::release_node_mem(path.string());
+    }
+  }
+
 private:
 
   void check_init() const noexcept {

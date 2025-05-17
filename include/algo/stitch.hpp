@@ -4,6 +4,7 @@
 #include <opencv2/core/hal/interface.h>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <mutex>
 #include <numeric>
@@ -29,6 +30,11 @@
 namespace SkyMerge {
 
 class Stitcher {
+private:
+
+  using PixelPair  = std::pair<Point<int>, Point<int>>;
+  using PixelPairs = std::vector<PixelPair>;
+
 public:
 
   static auto
@@ -38,14 +44,40 @@ public:
       THIS_LOG_ERROR("empty imgs_data or dsm");
       return {};
     }
-
     THIS_MESSAGE("start stitching");
-
     auto [start_x, end_x, start_y, end_y] = get_min_max_xy(point_cloud);
+    auto width                            = static_cast<int>(std::ceil((end_x - start_x) / grid_length));
+    auto height                           = static_cast<int>(std::ceil((end_y - start_y) / grid_length));
+    auto height_map    = height_map_by_grid(point_cloud, width, height, start_x, start_y, grid_length, progress);
+    auto pixel_img_map = find_pixel_map(imgs_data, height_map, width, height, start_x, start_y, grid_length, progress);
+    cv::Mat texture    = cv::Mat::zeros(height, width, CV_8UC3);
+    run(
+        imgs_data.size(),
+        [&](int idx) noexcept {
+          auto& img_data  = imgs_data[idx];
+          auto& pixel_map = pixel_img_map[idx];
+          if(!img_data.is_valid() || pixel_img_map.empty()) {
+            return;
+          }
+          auto img = img_data.origin_img().get();
+          for(const auto& [texture_pixel, img_pixel] : pixel_map) {
+            texture.at<cv::Vec3b>(texture_pixel.y, texture_pixel.x) = img.at<cv::Vec3b>(img_pixel.y, img_pixel.x);
+          }
+        },
+        progress);
+    return texture;
+  }
 
-    auto width  = static_cast<int>(std::ceil((end_x - start_x) / grid_length));
-    auto height = static_cast<int>(std::ceil((end_y - start_y) / grid_length));
+private:
 
+  static auto height_map_by_grid(
+      PointCloudPtr point_cloud,
+      int           width,
+      int           height,
+      float         start_x,
+      float         start_y,
+      float         grid_length,
+      Progress&     progress) noexcept -> cv::Mat {
     auto calculate_weight = [](float dist) { return 1.0F / (dist * dist * dist); };
     auto calculate_z      = [&point_cloud, calculate_weight](std::vector<int> indices, std::vector<float> distances) {
       float z_sum   = 0.0;
@@ -61,7 +93,6 @@ public:
       }
       return z_sum / divisor;
     };
-
     auto point_cloud_2d = std::make_shared<pcl::PointCloud<pcl::PointXY>>();
     point_cloud_2d->reserve(point_cloud->size());
     for(const auto& point : *point_cloud) {
@@ -71,7 +102,7 @@ public:
     cv::Mat height_map = cv::Mat::zeros(height, width, CV_32FC1);
     run(
         width,
-        [&](int x_i) noexcept {
+        [start_x, start_y, grid_length, width, height, &point_cloud_2d, &height_map, &calculate_z](int x_i) noexcept {
           pcl::KdTreeFLANN<pcl::PointXY> kd_tree;
           kd_tree.setInputCloud(point_cloud_2d);
           float x_pos = start_x + (static_cast<float>(x_i) * grid_length);
@@ -88,15 +119,26 @@ public:
           }
         },
         progress);
+    return height_map;
+  }
+
+  static auto find_pixel_map(
+      ImgsData&      imgs_data,
+      const cv::Mat& height_map,
+      int            width,
+      int            height,
+      float          start_x,
+      float          start_y,
+      float          grid_length,
+      Progress&      progress) noexcept -> std::vector<PixelPairs> {
     auto knn = KNN<double>(16, imgs_data.get() | std::views::transform([](const auto& data) noexcept {
                                  return data.get_coord();
                                }) | std::views::common);
-    std::vector<std::vector<std::pair<Point<int>, Point<int>>>> pixel_img_map{imgs_data.size()};
-    std::vector<std::mutex>                                     mtxs{imgs_data.size()};
-    cv::Mat texture_source = cv::Mat::zeros(height, width, CV_32SC4);
-    progress.reset(width * height);
+    std::vector<PixelPairs> pixel_img_map{imgs_data.size()};
+    std::vector<std::mutex> mtxs{imgs_data.size()};
+    cv::Mat                 texture_source = cv::Mat::zeros(height, width, CV_32SC4);
     run(
-        width * height,
+        static_cast<int64_t>(width) * height,
         [&](int idx) noexcept {
           int   x_i   = idx / height;
           int   y_i   = idx % height;
@@ -131,21 +173,8 @@ public:
           }
         },
         progress);
-
-    cv::Mat texture = cv::Mat::zeros(height, width, CV_8UC3);
-    progress.reset(imgs_data.size());
-    for(auto&& [img_data, pixel_map] : std::views::zip(imgs_data, pixel_img_map)) {
-      auto img = img_data.origin_img().get();
-      run(pixel_map.size(), [&texture, &img, &pixel_map](int idx) noexcept {
-        const auto& [texture_pixel, img_pixel]                  = pixel_map[idx];
-        texture.at<cv::Vec3b>(texture_pixel.y, texture_pixel.x) = img.at<cv::Vec3b>(img_pixel.y, img_pixel.x);
-      });
-      progress.update();
-    }
-    return texture;
+    return pixel_img_map;
   }
-
-private:
 
   static auto project_point(ImgData& img_data, ImgsData& imgs_data, const Point3<double>& world_pt_) noexcept
       -> Point<double> {

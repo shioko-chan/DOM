@@ -38,9 +38,9 @@ namespace fs = std::filesystem;
 struct Angle {
 public:
 
-  explicit Angle() = default;
+  explicit Angle() noexcept = default;
 
-  explicit Angle(const double& degrees) : value(to_radians(degrees)) {}
+  explicit Angle(const double& degrees) noexcept : value(to_radians(degrees)) {}
 
   [[nodiscard]] auto radians() const noexcept -> double { return value; }
 
@@ -70,7 +70,7 @@ class ImgData {
 
 public:
 
-  ImgData() = default;
+  ImgData() noexcept = default;
 
   ImgData(
       double          yaw_,
@@ -100,14 +100,14 @@ public:
 
   [[nodiscard]] auto origin_img() const noexcept -> const OriginImage& { return img_origin; }
 
-  auto origin_img() noexcept -> OriginImage& { return img_origin; }
+  [[nodiscard]] auto origin_img() noexcept -> OriginImage& { return img_origin; }
 
   [[nodiscard]] auto rotated_img() const noexcept -> const Image& {
     THIS_ASSERTION_SHOULD_TRUE(rotated_rectified, "Not rectified yet!");
     return img_rotated;
   }
 
-  auto rotated_img() noexcept -> Image& {
+  [[nodiscard]] auto rotated_img() noexcept -> Image& {
     THIS_ASSERTION_SHOULD_TRUE(rotated_rectified, "Not rectified yet!");
     return img_rotated;
   }

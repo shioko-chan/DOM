@@ -30,10 +30,19 @@ auto hash(const Args&... args) noexcept -> uint64_t {
   return seed;
 }
 
-using RotateAxisAngle = std::array<double, 3>;
-using CameraArray     = std::array<double, 4>;
-using DistortArray    = std::array<double, 5>;
-using TranslateArray  = std::array<double, 3>;
+constexpr size_t RotateAxisAngleSize = 3;
+constexpr size_t TranslateArraySize  = 3;
+constexpr size_t CameraArraySize     = 4;
+constexpr size_t DistortArraySize    = 5;
+
+constexpr size_t ResidualBlockSize = 2;
+constexpr size_t Point3DSize       = 3;
+
+using RotateAxisAngle = std::array<double, RotateAxisAngleSize>;
+using TranslateArray  = std::array<double, TranslateArraySize>;
+using CameraArray     = std::array<double, CameraArraySize>;
+using DistortArray    = std::array<double, DistortArraySize>;
+
 template <typename T>
 using USets = std::vector<std::unordered_set<T>>;
 

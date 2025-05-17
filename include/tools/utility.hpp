@@ -372,9 +372,9 @@ inline auto camera2array(cv::InputArray K_mat_input) noexcept -> CameraArray {
 inline auto array2camera(const CameraArray& k_array) noexcept -> cv::Mat {
   // clang-format off
   cv::Mat K_mat =  (cv::Mat_<double>(3, 3) << 
-    k_array[0], 0,    k_array[2],
-    0,    k_array[1], k_array[3], 
-    0,    0,    1);
+    k_array[0], 0,          k_array[2],
+    0,          k_array[1], k_array[3], 
+    0,          0,          1);
   // clang-format on
   return K_mat;
 }

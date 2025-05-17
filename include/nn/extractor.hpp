@@ -270,7 +270,7 @@ public:
     const std::span<const float>   scores_span{res[env.get_output_index("scores")].GetTensorData<float>(), cnt};
     const std::span<const float>
         descs_span{res[env.get_output_index("descriptors")].GetTensorData<float>(), cnt * descriptor_size};
-    THIS_LOG_DEBUG("Image {} has {} keypoints detected!", img_data.get_img_name().string(), cnt);
+    THIS_LOG_DEBUG("Image {} has {} keypoints detected!", img_data.rotated_img().get_img_name().string(), cnt);
     auto view0 =
         std::views::iota(0UL, cnt) | std::views::filter([this, &scores_span, &img_rotated, &kps_span](const auto& idx) {
           return scores_span[idx] >= get_threshold()
@@ -299,7 +299,9 @@ public:
                  });
     const Features filtered_features(view1.begin(), view1.end());
     THIS_LOG_DEBUG(
-        "Image {} has {} keypoints after filter.", img_data.get_img_name().string(), filtered_features.size() / 2);
+        "Image {} has {} keypoints after filter.",
+        img_data.rotated_img().get_img_name().string(),
+        filtered_features.size() / 2);
     register_node(path, filtered_features);
     auto           kpnt_v = filtered_features | normalized2pixel<Feature>(img_data.rotated_img().get_size());
     Points<double> kpnts{kpnt_v.begin(), kpnt_v.end()};

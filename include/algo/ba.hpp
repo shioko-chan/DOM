@@ -1,6 +1,7 @@
 #ifndef SKYMERGE_BA_HPP
 #define SKYMERGE_BA_HPP
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <memory>
@@ -22,18 +23,20 @@
 #include "ds/imgdata.hpp"
 #include "tools/log.hpp"
 #include "tools/utility.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 
 class BA {
 public:
 
-  static void ba(ImgsData& imgs_data, TrackPointVec* const res) noexcept {
+  static void ba(ImgsData& imgs_data, TrackPointVec* const res, double huber_threshold = 3.0) noexcept {
     if(res->empty() || imgs_data.empty()) {
       THIS_LOG_WARN("[BA] Empty input data");
       return;
     }
     THIS_LOG_INFO("[BA] Starting Bundle Adjustment");
+
     auto imgs_data_filtered =
         imgs_data | std::views::filter([](const auto& img_data) noexcept { return img_data.is_valid(); });
 
@@ -62,11 +65,10 @@ public:
       add_parameter_block(problem, pnt3d);
       for(const auto& pnt2d_idx : pnt2d_idx_vec) {
         auto& img_data           = imgs_data[pnt2d_idx.img_idx];
-        auto  loss               = std::make_unique<ceres::HuberLoss>(0.1);
         const auto& [ob_x, ob_y] = img_data.get_kpnts()[pnt2d_idx.pnt_idx];
         problem.AddResidualBlock(
             ReprojectionError::create(ob_x, ob_y).release(),
-            loss.release(),
+            (huber_threshold > 0 ? std::make_unique<ceres::HuberLoss>(huber_threshold).release() : nullptr),
             img_data.A_w2c_array_raw().data(),
             img_data.t_w2c_array_raw().data(),
             imgs_data.camera_array_raw().data(),
@@ -163,26 +165,26 @@ public:
       check_summary(summary, 5);
     }
     THIS_LOG_INFO("[BA] Bundle Adjustment completed");
-    double sum = 0;
-    int    cnt = 0;
-    for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
-      for(const auto& pnt2d_idx : pnt2d_idx_vec) {
-        auto& img_data           = imgs_data[pnt2d_idx.img_idx];
-        const auto& [ob_x, ob_y] = img_data.get_kpnts()[pnt2d_idx.pnt_idx];
-        ReprojectionError     reprojection_error(ob_x, ob_y);
-        std::array<double, 2> residuals{};
-        reprojection_error(
-            img_data.A_w2c_array_raw().data(),
-            img_data.t_w2c_array_raw().data(),
-            imgs_data.camera_array_raw().data(),
-            imgs_data.distort_array_raw().data(),
-            pnt3d.data(),
-            residuals.data());
-        sum += std::hypot(residuals[0], residuals[1]);
-        cnt++;
-      }
-    }
-    std::cout << "Average reprojection error: " << sum / cnt << '\n';
+
+#ifdef LOGLEVEL_INFO
+    std::vector<double> residuals;
+    problem.Evaluate(ceres::Problem::EvaluateOptions{}, nullptr, &residuals, nullptr, nullptr);
+    auto len  = residuals.size() / 2;
+    auto view = std::views::iota(0UL, len) | std::views::transform([&residuals](const auto& idx) noexcept {
+                  return std::hypot(residuals[idx * 2], residuals[(idx * 2) + 1]);
+                });
+    std::vector<double> pixel_loss(view.begin(), view.end());
+    auto                minmax = std::ranges::minmax_element(pixel_loss);
+    THIS_LOG_INFO("=============");
+    THIS_LOG_INFO(
+        "[BA] Average residual block norm: {}",
+        std::accumulate(pixel_loss.begin(), pixel_loss.end(), 0.0) / static_cast<double>(len));
+    THIS_LOG_INFO("[BA] Min residual block norm: {}", *minmax.min);
+    THIS_LOG_INFO("[BA] Max residual block norm: {}", *minmax.max);
+    std::ranges::sort(pixel_loss);
+    THIS_LOG_INFO("[BA] Middle residual block norm: {}", pixel_loss[len / 2]);
+    THIS_LOG_INFO("=============");
+#endif
   }
 
 private:
@@ -212,7 +214,14 @@ private:
 
     static auto create(double observe_x, double observe_y) noexcept -> std::unique_ptr<ceres::CostFunction> {
       auto error_ptr = std::make_unique<ReprojectionError>(observe_x, observe_y);
-      return std::make_unique<ceres::AutoDiffCostFunction<ReprojectionError, 2, 3, 3, 4, 5, 3>>(error_ptr.release());
+      return std::make_unique<ceres::AutoDiffCostFunction<
+          ReprojectionError,
+          ResidualBlockSize,
+          RotateAxisAngleSize,
+          TranslateArraySize,
+          CameraArraySize,
+          DistortArraySize,
+          Point3DSize>>(error_ptr.release());
     }
 
   private:
@@ -255,7 +264,7 @@ private:
 
   static void check_summary(const ceres::Solver::Summary& summary, int step) {
     if(summary.IsSolutionUsable()) {
-      THIS_LOG_INFO("[BA] Step {} completed: {}", step, summary.BriefReport());
+      THIS_LOG_INFO("[BA] Step {} completed: {}", step, summary.FullReport());
     } else {
       THIS_LOG_ERROR("[BA] Step {} failed: {}", step, summary.FullReport());
     }

@@ -210,9 +210,9 @@ public:
 #endif
         THIS_LOG_DEBUG(
             "Image {} and image {} have {} matches after threshold filter!",
-            lhs_img.get_img_name().string(),
-            rhs_img.get_img_name().string(),
-            len);
+            lhs_img.rotated_img().get_img_name().string(),
+            rhs_img.rotated_img().get_img_name().string(),
+            matches.size());
         if(matches.size() < MATCH_CNT_THRESHOLD) {
           THIS_LOG_INFO(
               "Image {} and image {} have too few matches after threshold filter: {}",
@@ -239,6 +239,19 @@ public:
           if(mask.at<uchar>(idx, 0) != 0) {
             pair.matches.push_back(std::move(matches[idx]));
           }
+        }
+        THIS_LOG_DEBUG(
+            "Image {} and image {} have {} matches after RANSAC filter!",
+            lhs_img.rotated_img().get_img_name().string(),
+            rhs_img.rotated_img().get_img_name().string(),
+            pair.matches.size());
+        if(pair.matches.size() < MATCH_CNT_THRESHOLD) {
+          THIS_LOG_INFO(
+              "Image {} and image {} have too few matches after RANSAC filter: {}",
+              lhs_img.rotated_img().get_img_name().string(),
+              rhs_img.rotated_img().get_img_name().string(),
+              pair.matches.size());
+          continue;
         }
         pair.valid = true;
       }
