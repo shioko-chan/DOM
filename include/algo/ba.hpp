@@ -30,8 +30,8 @@ namespace SkyMerge {
 class BA {
 public:
 
-  static void ba(ImgsData& imgs_data, TrackPointVec* const res, double huber_threshold = 3.0) noexcept {
-    if(res->empty() || imgs_data.empty()) {
+  static void ba(ImgsData& imgs_data, TrackPointVec* const track_point_vec, double huber_threshold = 3.0) noexcept {
+    if(track_point_vec->empty() || imgs_data.empty()) {
       THIS_LOG_WARN("[BA] Empty input data");
       return;
     }
@@ -61,7 +61,7 @@ public:
       add_parameter_block(problem, img_data.A_w2c_array_raw());
       add_parameter_block(problem, img_data.t_w2c_array_raw());
     }
-    for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
+    for(auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
       add_parameter_block(problem, pnt3d);
       for(const auto& pnt2d_idx : pnt2d_idx_vec) {
         auto& img_data           = imgs_data[pnt2d_idx.img_idx];
@@ -88,7 +88,7 @@ public:
       }
       set_parameter_block_constant(problem, imgs_data.camera_array_raw());
       set_parameter_block_constant(problem, imgs_data.distort_array_raw());
-      for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
+      for(const auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
         set_parameter_block_constant(problem, pnt3d);
       }
       ceres::Solve(options, &problem, &summary);
@@ -106,7 +106,7 @@ public:
       }
       set_parameter_block_variable(problem, imgs_data.camera_array_raw());
       set_parameter_block_variable(problem, imgs_data.distort_array_raw());
-      for(const auto& [pnt3d, pnt2d_idx_vec] : *res) {
+      for(const auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
         set_parameter_block_constant(problem, pnt3d);
       }
       ceres::Solve(options, &problem, &summary);
@@ -124,7 +124,7 @@ public:
       }
       set_parameter_block_constant(problem, imgs_data.camera_array_raw());
       set_parameter_block_constant(problem, imgs_data.distort_array_raw());
-      for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
+      for(auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
         set_parameter_block_variable(problem, pnt3d);
       }
       ceres::Solve(options, &problem, &summary);
@@ -142,7 +142,7 @@ public:
       }
       set_parameter_block_constant(problem, imgs_data.camera_array_raw());
       set_parameter_block_constant(problem, imgs_data.distort_array_raw());
-      for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
+      for(auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
         set_parameter_block_variable(problem, pnt3d);
       }
       ceres::Solve(options, &problem, &summary);
@@ -158,7 +158,7 @@ public:
       }
       set_parameter_block_variable(problem, imgs_data.camera_array_raw());
       set_parameter_block_variable(problem, imgs_data.distort_array_raw());
-      for(auto& [pnt3d, pnt2d_idx_vec] : *res) {
+      for(auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
         set_parameter_block_variable(problem, pnt3d);
       }
       ceres::Solve(options, &problem, &summary);
@@ -185,6 +185,29 @@ public:
     THIS_LOG_INFO("[BA] Middle residual block norm: {}", pixel_loss[len / 2]);
     THIS_LOG_INFO("=============");
 #endif
+  }
+
+  static void print_mean_reprojection_error(const TrackPointVec& track_point_vec, ImgsData& imgs_data) noexcept {
+    double sum = 0;
+    int    cnt = 0;
+    for(const auto& [pnt3d, pnt2d_idx_vec] : track_point_vec) {
+      for(const auto& pnt2d_idx : pnt2d_idx_vec) {
+        auto& img_data           = imgs_data[pnt2d_idx.img_idx];
+        const auto& [ob_x, ob_y] = img_data.get_kpnts()[pnt2d_idx.pnt_idx];
+        ReprojectionError     reprojection_error(ob_x, ob_y);
+        std::array<double, 2> residuals{};
+        reprojection_error(
+            img_data.A_w2c_array_raw().data(),
+            img_data.t_w2c_array_raw().data(),
+            imgs_data.camera_array_raw().data(),
+            imgs_data.distort_array_raw().data(),
+            pnt3d.data(),
+            residuals.data());
+        sum += std::hypot(residuals[0], residuals[1]);
+      }
+      cnt += static_cast<int>(pnt2d_idx_vec.size());
+    }
+    THIS_LOG_INFO("Mean reprojection error: {} pixels, {} points", sum / static_cast<double>(cnt), cnt);
   }
 
 private:
