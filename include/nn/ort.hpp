@@ -2,19 +2,20 @@
 #define SKYMERGE_ONNXRUNTIME_HPP
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
+#include <onnxruntime_c_api.h>
 #include <onnxruntime_cxx_api.h>
 
 #include "tools/debug.hpp"
-#include "tools/report_error.hpp"
+#include "tools/report.hpp"
 
 namespace SkyMerge {
-
-namespace fs = std::filesystem;
 
 using OrtValues = std::vector<Ort::Value>;
 
@@ -39,8 +40,8 @@ public:
       const std::string&    name,
       const std::string&    model_path,
       const OrtLoggingLevel log_level = ORT_LOGGING_LEVEL_ERROR) {
-    fs::path model_path_(model_path);
-    if(!fs::exists(model_path_)) {
+    std::filesystem::path model_path_(model_path);
+    if(!std::filesystem::exists(model_path_)) {
       throw std::runtime_error("Error: " + model_path_.string() + " does not exist");
     }
     Ort::SessionOptions    session_options;
@@ -74,13 +75,22 @@ public:
 
   template <typename T>
     requires std::is_arithmetic_v<T>
-  void set_input(const std::string& name, std::vector<T>& input, const std::vector<int64_t>& shape) {
+  void set_input(const std::string& name, std::vector<T>& input, const std::vector<std::int64_t>& shape) {
+    size_t idx = std::ranges::find(input_names, name) - input_names.begin();
+    THIS_ASSERTION_SHOULD_NEQ(idx, input_names.size(), "Input key of tensor name did not found.");
+    static auto mem_info =
+        Ort::MemoryInfo::CreateCpu(OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeDefault);
+    inputs[idx] = Ort::Value::CreateTensor<T>(mem_info, input.data(), input.size(), shape.data(), shape.size());
+  }
+
+  template <typename T>
+    requires std::is_arithmetic_v<T>
+  void set_input(const std::string& name, std::span<T> input, const std::vector<std::int64_t>& shape) {
     size_t idx = std::ranges::find(input_names, name) - input_names.begin();
     THIS_ASSERTION_SHOULD_NEQ(idx, input_names.size(), "Input key of tensor name did not found.");
     static auto mem_info =
         Ort::MemoryInfo("Cuda", OrtAllocatorType::OrtDeviceAllocator, 0, OrtMemType::OrtMemTypeDefault);
-    inputs[idx] =
-        std::move(Ort::Value::CreateTensor<T>(mem_info, input.data(), input.size(), shape.data(), shape.size()));
+    inputs[idx] = Ort::Value::CreateTensor<T>(mem_info, input.data(), input.size(), shape.data(), shape.size());
   }
 
   auto infer() noexcept -> OrtValues {
@@ -93,7 +103,7 @@ public:
           output_names_cstr.data(),
           output_names.size());
     } catch(const Ort::Exception& exception) {
-      report_error(exception, "An error occurred during inference");
+      terminate_with_error(exception, "An error occurred during inference");
     }
   }
 

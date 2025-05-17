@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "tools/ansi.hpp"
+#include "types.hpp"
 
 namespace SkyMerge {
 
@@ -17,7 +18,7 @@ inline auto stream_mtx() -> std::mutex& {
 
 template <typename... Args>
 void log(std::ostream& ostream, const std::string& prefix, std::string_view format, const Args&... args) {
-  std::lock_guard<std::mutex> lock(stream_mtx());
+  TempLock lock(stream_mtx());
   ostream << prefix << std::vformat(format, std::make_format_args(args...)) << ansi::RESET << "\n";
 }
 

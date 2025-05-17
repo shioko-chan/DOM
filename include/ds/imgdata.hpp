@@ -33,8 +33,6 @@
 
 namespace SkyMerge {
 
-namespace fs = std::filesystem;
-
 struct Angle {
 public:
 
@@ -73,14 +71,14 @@ public:
   ImgData() noexcept = default;
 
   ImgData(
-      double          yaw_,
-      double          pitch_,
-      double          roll_,
-      double          latitude_,
-      double          longitude_,
-      double          altitude_,
-      fs::path        img_path,
-      const fs::path& temp_save_path) noexcept :
+      double                       yaw_,
+      double                       pitch_,
+      double                       roll_,
+      double                       latitude_,
+      double                       longitude_,
+      double                       altitude_,
+      std::filesystem::path        img_path,
+      const std::filesystem::path& temp_save_path) noexcept :
       latitude{latitude_}, longitude{longitude_}, altitude{altitude_}, temp_save_path{temp_save_path},
       img_origin{std::move(img_path)} {
     check_or_create_path(temp_save_path);
@@ -200,9 +198,9 @@ private:
 
   bool reference_set{false}, rotated_rectified{false};
 
-  fs::path    temp_save_path;
-  Image       img_rotated;
-  OriginImage img_origin;
+  std::filesystem::path temp_save_path;
+  Image                 img_rotated;
+  OriginImage           img_origin;
 
   double latitude{}, longitude{}, altitude{};
 
@@ -224,8 +222,8 @@ private:
 
 public:
 
-  static auto check_path(const fs::path& path) noexcept -> bool {
-    if(!fs::is_regular_file(path)
+  static auto check_path(const std::filesystem::path& path) noexcept -> bool {
+    if(!std::filesystem::is_regular_file(path)
        || std::ranges::find(img_extensions, path.extension().string()) == img_extensions.end()) {
       THIS_LOG_WARN("Error: {} is not a valid image file", path.string());
       return false;
@@ -246,7 +244,7 @@ public:
            && validate_xmp(XmpKey::latitude) && validate_xmp(XmpKey::longitude) && validate_xmp(XmpKey::altitude);
   }
 
-  static auto build(const fs::path& path, const fs::path& temp_save_path) noexcept -> ImgData {
+  static auto build(const std::filesystem::path& path, const std::filesystem::path& temp_save_path) noexcept -> ImgData {
     ExifXmp exif_xmp{path};
     auto&   xmp_data  = exif_xmp.xmp_data();
     auto&   exif_data = exif_xmp.exif_data();
@@ -267,7 +265,10 @@ public:
 
   ImgsData() noexcept = delete;
 
-  ImgsData(const std::vector<fs::path>& img_paths, const fs::path& temporary_save_path, Progress& progress) noexcept {
+  ImgsData(
+      const std::vector<std::filesystem::path>& img_paths,
+      const std::filesystem::path&              temporary_save_path,
+      Progress&                                 progress) noexcept {
     if(img_paths.empty()) {
       THIS_LOG_WARN("No image input!");
       return;
@@ -328,17 +329,17 @@ public:
   [[nodiscard]] auto empty() const noexcept -> bool { return imgs_data.empty(); }
 
   void resize(size_t size) noexcept {
-    std::lock_guard<std::mutex> lock(mutex);
+    TempLock lock(mutex);
     imgs_data.resize(size);
   }
 
   void clear() noexcept {
-    std::lock_guard<std::mutex> lock(mutex);
+    TempLock lock(mutex);
     imgs_data.clear();
   }
 
   void reserve(size_t size) noexcept {
-    std::lock_guard<std::mutex> lock(mutex);
+    TempLock lock(mutex);
     imgs_data.reserve(size);
   }
 
@@ -369,12 +370,12 @@ public:
   template <typename T>
     requires std::same_as<std::decay_t<T>, ImgData>
   void push_back(T&& data) noexcept {
-    std::lock_guard<std::mutex> lock(mutex);
+    TempLock lock(mutex);
     imgs_data.push_back(std::forward<T>(data));
   }
 
   void pop_back() noexcept {
-    std::lock_guard<std::mutex> lock(mutex);
+    TempLock lock(mutex);
     imgs_data.pop_back();
   }
 
@@ -440,9 +441,9 @@ public:
   }
 
   void find_and_set_reference_coord() noexcept {
-    std::lock_guard<std::mutex> lock(mutex);
-    std::vector<double>         latitudes;
-    std::vector<double>         longitudes;
+    TempLock            lock(mutex);
+    std::vector<double> latitudes;
+    std::vector<double> longitudes;
     if(imgs_data.empty()) {
       return;
     }
@@ -450,7 +451,7 @@ public:
       latitudes.push_back(data.latitude);
       longitudes.push_back(data.longitude);
     }
-    auto nth = static_cast<int64_t>(latitudes.size()) / 2;
+    auto nth = static_cast<std::int64_t>(latitudes.size()) / 2;
     std::nth_element(latitudes.begin(), latitudes.begin() + nth, latitudes.end());
     std::nth_element(longitudes.begin(), longitudes.begin() + nth, longitudes.end());
     double latitude_ref  = latitudes[nth];

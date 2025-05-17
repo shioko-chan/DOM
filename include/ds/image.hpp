@@ -12,21 +12,19 @@
 #include <utility>
 
 #include "config.hpp"
-#include "tools/mem.hpp"
-#include "tools/report_error.hpp"
+#include "ds/mem.hpp"
+#include "tools/report.hpp"
 #include "tools/utility.hpp"
 #include "types.hpp"
 
 namespace SkyMerge {
 
-namespace fs = std::filesystem;
-
-class ImageMem : public ManageAble {
+class ImageManaged : public Managed {
 public:
 
   template <typename T>
     requires std::same_as<std::decay_t<T>, cv::Mat>
-  explicit ImageMem(T&& img) noexcept : img(std::forward<T>(img)) {}
+  explicit ImageManaged(T&& img) noexcept : img(std::forward<T>(img)) {}
 
   [[nodiscard]] auto size() const noexcept -> size_t override {
     if(img.empty()) {
@@ -43,15 +41,17 @@ private:
 };
 
 struct ImgRefGuard {
+  ImgRefGuard(ImgRefGuard&&) noexcept = default;
+
   ImgRefGuard(const ImgRefGuard&)                    = delete;
-  ImgRefGuard(ImgRefGuard&&) noexcept                = default;
   auto operator=(const ImgRefGuard&) -> ImgRefGuard& = delete;
   auto operator=(ImgRefGuard&&) -> ImgRefGuard&      = delete;
-  ~ImgRefGuard() noexcept                            = default;
+
+  ~ImgRefGuard() noexcept = default;
 
   explicit ImgRefGuard(RefGuard&& refguard) noexcept : refguard(std::move(refguard)) {}
 
-  auto get() noexcept -> cv::Mat& { return refguard.get<ImageMem>().get(); }
+  auto get() noexcept -> cv::Mat& { return refguard.get<ImageManaged>().get(); }
 
   void unlock() noexcept { refguard.unlock(); }
 
@@ -71,10 +71,10 @@ public:
   auto operator=(OriginImage&&) noexcept -> OriginImage&      = default;
   ~OriginImage() noexcept                                     = default;
 
-  explicit OriginImage(fs::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) noexcept :
+  explicit OriginImage(std::filesystem::path img_read_path, cv::ImreadModes mode = cv::IMREAD_COLOR) noexcept :
       path(std::move(img_read_path)), mode(mode) {
-    if(!fs::exists(path)) {
-      report_error("Image path \"{}\" is not exist.", img_read_path.string());
+    if(!std::filesystem::exists(path)) {
+      terminate_with_error("Image path \"{}\" is not exist.", img_read_path.string());
     }
   }
 
@@ -85,13 +85,13 @@ public:
     return img;
   }
 
-  [[nodiscard]] auto get_img_path() const noexcept -> const fs::path& { return path; }
+  [[nodiscard]] auto get_img_path() const noexcept -> const std::filesystem::path& { return path; }
 
-  [[nodiscard]] auto get_img_name() const noexcept -> fs::path { return path.filename(); }
+  [[nodiscard]] auto get_img_name() const noexcept -> std::filesystem::path { return path.filename(); }
 
-  [[nodiscard]] auto get_img_stem() const noexcept -> fs::path { return path.stem(); }
+  [[nodiscard]] auto get_img_stem() const noexcept -> std::filesystem::path { return path.stem(); }
 
-  [[nodiscard]] auto get_img_extension() const noexcept -> fs::path { return path.extension(); }
+  [[nodiscard]] auto get_img_extension() const noexcept -> std::filesystem::path { return path.extension(); }
 
   [[nodiscard]] auto get_size() noexcept -> cv::Size {
     if(img_size.empty()) {
@@ -102,24 +102,24 @@ public:
 
 private:
 
-  [[nodiscard]] static auto read(const fs::path& path, cv::ImreadModes mode) noexcept -> cv::Mat {
+  [[nodiscard]] static auto read(const std::filesystem::path& path, cv::ImreadModes mode) noexcept -> cv::Mat {
     cv::Mat img;
     try {
       img = cv::imread(path.string(), mode);
     } catch(const cv::Exception& cv_exception) {
-      report_error(cv_exception, "{} could not be read.", path.string());
+      terminate_with_error(cv_exception, "{} could not be read.", path.string());
     } catch(const std::exception& exception) {
-      report_error(exception, "{} could not be read.", path.string());
+      terminate_with_error(exception, "{} could not be read.", path.string());
     }
     if(img.empty()) {
-      report_error("{} could not be read. Image is empty after cv::imread().", path.string());
+      terminate_with_error("{} could not be read. Image is empty after cv::imread().", path.string());
     }
     return img;
   }
 
-  cv::Size        img_size;
-  fs::path        path;
-  cv::ImreadModes mode{cv::IMREAD_COLOR};
+  cv::Size              img_size;
+  std::filesystem::path path;
+  cv::ImreadModes       mode{cv::IMREAD_COLOR};
 };
 
 class Image {
@@ -133,28 +133,31 @@ public:
   auto operator=(Image&&) noexcept -> Image&      = default;
   ~Image() noexcept                               = default;
 
-  explicit Image(fs::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span) noexcept :
+  explicit Image(std::filesystem::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span) noexcept :
       path(std::move(temporary_save_path)), initialized(true),
       pixel_span(convert_arithmetic_type_point<float>(pixel_span)) {
     img_size = img.size();
-    Mem::register_node(
+    HostMem::register_node(
         path.string(),
-        std::make_unique<ImageMem>(std::move(img)),
-        [path = this->path] noexcept { return std::make_unique<ImageMem>(std::move(read(path, cv::IMREAD_UNCHANGED))); },
-        [path = this->path](ManageAblePtr ptr) noexcept {
+        std::make_unique<ImageManaged>(std::move(img)),
+        [path = this->path] noexcept {
+          return std::make_unique<ImageManaged>(std::move(read(path, cv::IMREAD_UNCHANGED)));
+        },
+        [path = this->path](ManagedPtr ptr) noexcept {
           if(ptr) {
-            ImageMem* img_ptr{};
+            ImageManaged* img_ptr{};
             try {
-              img_ptr = dynamic_cast<ImageMem*>(ptr.get());
+              img_ptr = dynamic_cast<ImageManaged*>(ptr.get());
             } catch(const std::exception& exception) {
-              report_error(exception, "dynamic_cast failed while writing back image {}", path.string());
+              terminate_with_error(exception, "dynamic_cast failed while writing back image {}", path.string());
             }
             write(path, img_ptr->get());
           }
         });
   }
 
-  void delay_initialize(fs::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span) noexcept {
+  void
+  delay_initialize(std::filesystem::path temporary_save_path, cv::Mat&& img, const Points<double>& pixel_span) noexcept {
     if(initialized) {
       return;
     }
@@ -163,26 +166,25 @@ public:
 
   [[nodiscard]] auto get() const noexcept -> ImgRefGuard {
     check_init();
-    auto guard = ImgRefGuard{*Mem::get_node(path.string())};
-    return guard;
+    return ImgRefGuard{*HostMem::get_node(path.string())};
   }
 
-  [[nodiscard]] auto get_img_path() const noexcept -> const fs::path& {
+  [[nodiscard]] auto get_img_path() const noexcept -> const std::filesystem::path& {
     check_init();
     return path;
   }
 
-  [[nodiscard]] auto get_img_name() const noexcept -> fs::path {
+  [[nodiscard]] auto get_img_name() const noexcept -> std::filesystem::path {
     check_init();
     return path.filename();
   }
 
-  [[nodiscard]] auto get_img_stem() const noexcept -> fs::path {
+  [[nodiscard]] auto get_img_stem() const noexcept -> std::filesystem::path {
     check_init();
     return path.stem();
   }
 
-  [[nodiscard]] auto get_img_extension() const noexcept -> fs::path {
+  [[nodiscard]] auto get_img_extension() const noexcept -> std::filesystem::path {
     check_init();
     return path.extension();
   }
@@ -204,7 +206,7 @@ public:
 
   void release_mem() const noexcept {
     if(initialized) {
-      Mem::release_node_mem(path.string());
+      HostMem::release_node_mem(path.string());
     }
   }
 
@@ -212,42 +214,42 @@ private:
 
   void check_init() const noexcept {
     if(!initialized) {
-      report_error("Image not initialized but an operation was called on it.");
+      terminate_with_error("Image not initialized but an operation was called on it.");
     }
   }
 
-  [[nodiscard]] static auto read(const fs::path& path, cv::ImreadModes mode) noexcept -> cv::Mat {
+  [[nodiscard]] static auto read(const std::filesystem::path& path, cv::ImreadModes mode) noexcept -> cv::Mat {
     cv::Mat img;
     try {
       img = cv::imread(path.string(), mode);
     } catch(const cv::Exception& cv_exception) {
-      report_error(cv_exception, "{} could not be read.", path.string());
+      terminate_with_error(cv_exception, "{} could not be read.", path.string());
     } catch(const std::exception& exception) {
-      report_error(exception, "{} could not be read.", path.string());
+      terminate_with_error(exception, "{} could not be read.", path.string());
     }
     if(img.empty()) {
-      report_error("{} could not be read. Image is empty after cv::imread().", path.string());
+      terminate_with_error("{} could not be read. Image is empty after cv::imread().", path.string());
     }
     return img;
   }
 
-  static void write(const fs::path& path, const cv::Mat& img) noexcept {
+  static void write(const std::filesystem::path& path, const cv::Mat& img) noexcept {
     try {
       cv::imwrite(path.string(), img);
     } catch(const cv::Exception& cv_exception) {
-      report_error(cv_exception, "{} could not be written.", path.string());
+      terminate_with_error(cv_exception, "{} could not be written.", path.string());
     } catch(const std::exception& exception) {
-      report_error(exception, "{} could not be written.", path.string());
+      terminate_with_error(exception, "{} could not be written.", path.string());
     }
-    if(!fs::exists(path)) {
-      report_error("{} could not be written. Path still does not exist after cv::imwrite().", path.string());
+    if(!std::filesystem::exists(path)) {
+      terminate_with_error("{} could not be written. Path still does not exist after cv::imwrite().", path.string());
     }
   }
 
-  cv::Size      img_size;
-  Points<float> pixel_span;
-  fs::path      path;
-  bool          initialized{false};
+  cv::Size              img_size;
+  Points<float>         pixel_span;
+  std::filesystem::path path;
+  bool                  initialized{false};
 };
 
 class ExifXmp {
@@ -255,7 +257,7 @@ public:
 
   ExifXmp() noexcept = default;
 
-  explicit ExifXmp(fs::path img_read_path) noexcept : path(std::move(img_read_path)) {}
+  explicit ExifXmp(std::filesystem::path img_read_path) noexcept : path(std::move(img_read_path)) {}
 
   [[nodiscard]] auto exif_data() noexcept -> Exiv2::ExifData& {
     check_and_load_exif_xmp();
@@ -267,13 +269,13 @@ public:
     return xmp_;
   }
 
-  [[nodiscard]] auto get_img_path() const noexcept -> const fs::path& { return path; }
+  [[nodiscard]] auto get_img_path() const noexcept -> const std::filesystem::path& { return path; }
 
 private:
 
-  fs::path        path;
-  Exiv2::ExifData exif_;
-  Exiv2::XmpData  xmp_;
+  std::filesystem::path path;
+  Exiv2::ExifData       exif_;
+  Exiv2::XmpData        xmp_;
 
   void check_and_load_exif_xmp() {
     if(!exif_.empty() && !xmp_.empty()) {
@@ -282,13 +284,13 @@ private:
     try {
       auto image_info = Exiv2::ImageFactory::open(path.string());
       if(!image_info) {
-        report_error("Image with path \"{}\" could not be opened by Exiv2", path.string());
+        terminate_with_error("Image with path \"{}\" could not be opened by Exiv2", path.string());
       }
       image_info->readMetadata();
       exif_ = image_info->exifData();
       xmp_  = image_info->xmpData();
     } catch(const std::exception& e) {
-      report_error(e, "An error occur while reading Metadata of image with path \"{}\"", path.string());
+      terminate_with_error(e, "An error occur while reading Metadata of image with path \"{}\"", path.string());
     }
   }
 };

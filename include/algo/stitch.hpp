@@ -23,7 +23,7 @@
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
-#include "tools/report_error.hpp"
+#include "tools/report.hpp"
 #include "tools/utility.hpp"
 #include "types.hpp"
 
@@ -138,7 +138,7 @@ private:
     std::vector<std::mutex> mtxs{imgs_data.size()};
     cv::Mat                 texture_source = cv::Mat::zeros(height, width, CV_32SC4);
     run(
-        static_cast<int64_t>(width) * height,
+        static_cast<std::int64_t>(width) * height,
         [&](int idx) noexcept {
           int   x_i   = idx / height;
           int   y_i   = idx % height;

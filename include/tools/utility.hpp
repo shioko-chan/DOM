@@ -34,68 +34,10 @@
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
-#include "tools/report_error.hpp"
+#include "tools/report.hpp"
 #include "types.hpp"
 
 namespace SkyMerge {
-
-namespace fs = std::filesystem;
-
-template <typename>
-struct extract_arg_type;
-
-template <template <typename> class Template, typename Arg>
-struct extract_arg_type<Template<Arg>> {
-  using type = Arg;
-};
-
-template <typename T>
-using extract_arg_type_t = typename extract_arg_type<T>::type;
-
-template <typename>
-struct rebind_template;
-
-template <template <typename> class Template, typename Arg>
-struct rebind_template<Template<Arg>> {
-  template <typename NewArg>
-  using type = Template<NewArg>;
-};
-
-template <typename T, typename Arg>
-using rebind_template_t = typename rebind_template<T>::template type<Arg>;
-
-template <template <typename...> class, typename>
-struct is_specialization_of : std::false_type {};
-
-template <template <typename...> class Template, typename... Args>
-struct is_specialization_of<Template, Template<Args...>> : std::true_type {};
-
-template <template <typename...> class Template, typename T>
-inline constexpr bool is_specialization_of_v = is_specialization_of<Template, T>::value;
-
-template <template <typename...> class Template, typename T>
-concept specialization_of = is_specialization_of<Template, T>::value;
-
-template <typename T>
-
-concept arithmetic = std::is_arithmetic_v<std::remove_cvref_t<T>>;
-
-template <typename T>
-concept HasXY = requires(T point) {
-  { point.x } -> arithmetic;
-  { point.y } -> arithmetic;
-};
-
-template <typename T>
-concept HasXYZ = HasXY<T> && requires(T point) {
-  { point.z } -> arithmetic;
-};
-
-template <typename Func, typename... Args>
-concept NoexceptCallable = std::is_nothrow_invocable_v<Func, Args...>;
-
-template <typename Func, typename Ret, typename... Args>
-concept NoexceptCallableWithRet = std::is_nothrow_invocable_r_v<Ret, Func, Args...>;
 
 inline auto compute_average_spacing(const PointCloudPtr& cloud, int k_neighbors = 100) -> double {
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
@@ -114,11 +56,11 @@ inline auto compute_average_spacing(const PointCloudPtr& cloud, int k_neighbors 
   return total_distance / static_cast<double>(cloud->size());
 }
 
-inline auto tri_res_vec2point_cloud(const TrackPointVec& tri_res_vec) noexcept -> PointCloudPtr {
+inline auto track_point_vec2point_cloud(const TrackPointVec& track_point_vec) noexcept -> PointCloudPtr {
   PointCloudPtr cloud = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-  cloud->resize(tri_res_vec.size());
-  for(int i = 0; i < tri_res_vec.size(); ++i) {
-    const auto& point = tri_res_vec[i].pnt3d;
+  cloud->resize(track_point_vec.size());
+  for(int i = 0; i < track_point_vec.size(); ++i) {
+    const auto& point = track_point_vec[i].pnt3d;
     (*cloud)[i].getVector3fMap() =
         Eigen::Vector3f{static_cast<float>(point[0]), static_cast<float>(point[1]), static_cast<float>(point[2])};
   }
@@ -182,7 +124,7 @@ auto world2pixel(
 }
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
-inline void export_pcd(const fs::path& path, const Point3s<double>& points) noexcept {
+inline void export_pcd(const std::filesystem::path& path, const Point3s<double>& points) noexcept {
   std::ofstream file(path);
   file << "# .PCD v7 - Point Cloud Data\n";
   file << "VERSION .7\n";
@@ -201,7 +143,7 @@ inline void export_pcd(const fs::path& path, const Point3s<double>& points) noex
   file.close();
 }
 
-inline void export_pcd(const fs::path& path, const PointCloudPtr& cloud) noexcept {
+inline void export_pcd(const std::filesystem::path& path, const PointCloudPtr& cloud) noexcept {
   pcl::io::savePCDFileASCII(path.string(), *cloud);
 }
 #endif
@@ -545,18 +487,18 @@ inline auto decimate_keep_aspect_ratio(cv::Mat* img_, int resolution) noexcept -
     try {
       cv::resize(*img_, *img_, cv::Size(width, height), 0.0, 0.0, cv::INTER_NEAREST);
     } catch(cv::Exception& exception) {
-      report_error(exception, "An error occurred when resizing a image.");
+      terminate_with_error(exception, "An error occurred when resizing a image.");
     }
     return scale;
   }
   return 1.;
 }
 
-inline void check_or_create_path(const fs::path& path) noexcept {
+inline void check_or_create_path(const std::filesystem::path& path) noexcept {
   std::error_code error_code;
-  fs::create_directories(path, error_code);
+  std::filesystem::create_directories(path, error_code);
   if(error_code) {
-    report_error("{}", error_code.message());
+    terminate_with_error("{}", error_code.message());
   }
 }
 

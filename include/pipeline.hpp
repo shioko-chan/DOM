@@ -14,6 +14,7 @@
 #include "algo/filter.hpp"
 #include "algo/knn.hpp"
 #include "algo/stitch.hpp"
+#include "algo/tracks.hpp"
 #include "algo/tri.hpp"
 #include "config.hpp"
 #include "ds/imgdata.hpp"
@@ -25,8 +26,6 @@
 #include "types.hpp"
 
 namespace SkyMerge {
-
-namespace fs = std::filesystem;
 
 class Pipeline {
 private:
@@ -42,16 +41,19 @@ private:
     ~Exiv2XmpParserInitializer() noexcept { Exiv2::XmpParser::terminate(); }
   };
 
-  Progress                  progress;
-  std::vector<fs::path>     img_paths;
-  fs::path                  output_dir, temporary_save_path;
-  Exiv2XmpParserInitializer exiv2_xmp_parser_initializer;
+  Progress                           progress;
+  std::vector<std::filesystem::path> img_paths;
+  std::filesystem::path              output_dir, temporary_save_path;
+  Exiv2XmpParserInitializer          exiv2_xmp_parser_initializer;
 
 public:
 
-  Pipeline(const fs::path& input_dir, fs::path output_dir, fs::path temporary_save_path) noexcept :
+  Pipeline(
+      const std::filesystem::path& input_dir,
+      std::filesystem::path        output_dir,
+      std::filesystem::path        temporary_save_path) noexcept :
       output_dir(std::move(output_dir)), temporary_save_path(std::move(temporary_save_path)) {
-    for(const auto& entry : fs::directory_iterator(input_dir)) {
+    for(const auto& entry : std::filesystem::directory_iterator(input_dir)) {
       img_paths.push_back(entry.path());
     }
   }
@@ -98,7 +100,7 @@ public:
   [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept {
 #ifdef ENABLE_VISUALIZE_OUTPUT
     auto tracks = build_track(match_pairs, progress);
-    Filter::filter_track_too_few_observations(&tracks, 3);
+    Filter::filter_track_too_few_observations(&tracks, 2);
     auto track_point_vec = triangulation(tracks, imgs_data, progress, temporary_save_path);
     THIS_LOG_INFO("[Pipeline] Filtering outliers using statistical method");
     Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "f1.pcd");
@@ -108,13 +110,13 @@ public:
     Filter::filter_track_too_few_observations(&track_point_vec);
     Filter::filter_invalid_image(track_point_vec, imgs_data);
     BA::ba(imgs_data, &track_point_vec, 3.0);
-    export_pcd(temporary_save_path / "ba.pcd", tri_res_vec2point_cloud(track_point_vec));
+    export_pcd(temporary_save_path / "ba.pcd", track_point_vec2point_cloud(track_point_vec));
     Filter::filter_reprojection_error(&track_point_vec, imgs_data, 3.0);
     Filter::filter_track_too_few_observations(&track_point_vec);
     Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
     Filter::filter_invalid_image(track_point_vec, imgs_data);
     BA::ba(imgs_data, &track_point_vec, -1);
-    export_pcd(temporary_save_path / "ba1.pcd", tri_res_vec2point_cloud(track_point_vec));
+    export_pcd(temporary_save_path / "ba1.pcd", track_point_vec2point_cloud(track_point_vec));
     Filter::filter_reprojection_error(&track_point_vec, imgs_data, 1.0);
     Filter::filter_track_too_few_observations(&track_point_vec);
     Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
@@ -133,7 +135,7 @@ public:
     BA::ba(imgs_data, &res);
     Filter::filter_outliers_radius(&res);
 #endif
-    return tri_res_vec2point_cloud(track_point_vec);
+    return track_point_vec2point_cloud(track_point_vec);
     // return track_point_vec;
   }
 
@@ -144,7 +146,7 @@ public:
       THIS_LOG_ERROR("[Pipeline] Stitching failed");
       return;
     }
-    fs::path panorama_path = output_dir / "stitched_image.jpg";
+    std::filesystem::path panorama_path = output_dir / "stitched_image.jpg";
     cv::imwrite(panorama_path.string(), texture);
     THIS_MESSAGE("[Pipeline] Stitched image saved to {}", panorama_path.string());
   }
@@ -158,7 +160,7 @@ public:
   //     THIS_LOG_ERROR("[Pipeline] Stitching failed");
   //     return;
   //   }
-  //   fs::path panorama_path = output_dir / "stitched_image.jpg";
+  //   std::filesystem::path panorama_path = output_dir / "stitched_image.jpg";
   //   cv::imwrite(panorama_path.string(), texture);
   //   THIS_MESSAGE("[Pipeline] Stitched image saved to {}", panorama_path.string());
   // }

@@ -2,7 +2,6 @@
 #define SKYMERGE_FEATURE_EXTRACTOR_HPP
 
 #include <algorithm>
-#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -12,140 +11,27 @@
 #include <fstream>
 #include <memory>
 #include <ranges>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
 
+#include <cuda_runtime.h>
+
 #include "config.hpp"
 #include "ds/imgdata.hpp"
+#include "ds/mem.hpp"
 #include "nn/ort.hpp"
+#include "tools/debug.hpp"
 #include "tools/log.hpp"
-#include "tools/mem.hpp"
-#include "tools/report_error.hpp"
+#include "tools/report.hpp"
 #include "tools/utility.hpp"
 
 namespace SkyMerge {
 
-namespace fs = std::filesystem;
-
 template <size_t N>
-struct alignas(128) Feature {
-  static constexpr size_t descriptor_size = N;
-
-  using Desc   = std::array<float, descriptor_size>;
-  using Buffer = std::array<char, (N * sizeof(float)) + (2 * sizeof(double))>;
-  double x, y;
-  Desc   desc;
-
-  friend auto operator<<(std::ofstream& ofs, const Feature& feature) noexcept -> std::ofstream& {
-    Buffer buffer;
-    std::memcpy(buffer.data(), &feature.x, sizeof(double));
-    std::memcpy(buffer.data() + sizeof(double), &feature.y, sizeof(double));
-    std::memcpy(buffer.data() + (2 * sizeof(double)), feature.desc.data(), N * sizeof(float));
-    ofs.write(buffer.data(), buffer.size());
-    return ofs;
-  }
-
-  friend auto operator>>(std::ifstream& ifs, Feature& feature) noexcept -> std::ifstream& {
-    Buffer buffer;
-    ifs.read(buffer.data(), buffer.size());
-    std::memcpy(&feature.x, buffer.data(), sizeof(double));
-    std::memcpy(&feature.y, buffer.data() + sizeof(double), sizeof(double));
-    std::memcpy(feature.desc.data(), buffer.data() + (2 * sizeof(double)), N * sizeof(float));
-    return ifs;
-  }
-};
-
-template <typename F>
-  requires std::same_as<F, Feature<F::descriptor_size>>
-struct Features {
-public:
-
-  Features() = default;
-
-  Features(std::initializer_list<F> init) : features(init) {}
-
-  template <std::input_iterator I>
-  Features(I first, I last) noexcept : features(first, last) {}
-
-  auto operator[](size_t idx) noexcept -> F& { return features[idx]; }
-
-  auto operator[](size_t idx) const noexcept -> const F& { return features[idx]; }
-
-  auto get() noexcept -> std::vector<F>& { return features; }
-
-  auto get() const noexcept -> const std::vector<F>& { return features; }
-
-  [[nodiscard]] auto size() const noexcept -> size_t { return features.size(); }
-
-  [[nodiscard]] auto empty() const noexcept -> bool { return features.empty(); }
-
-  void resize(size_t size) noexcept { features.resize(size); }
-
-  void clear() noexcept { features.clear(); }
-
-  void reserve(size_t size) noexcept { features.reserve(size); }
-
-  auto begin() noexcept { return features.begin(); }
-
-  auto end() noexcept { return features.end(); }
-
-  auto begin() const noexcept { return features.begin(); }
-
-  auto end() const noexcept { return features.end(); }
-
-  auto cbegin() const noexcept { return features.cbegin(); }
-
-  auto cend() const noexcept { return features.cend(); }
-
-  auto rbegin() noexcept { return features.rbegin(); }
-
-  auto rend() noexcept { return features.rend(); }
-
-  auto rbegin() const noexcept { return features.rbegin(); }
-
-  auto rend() const noexcept { return features.rend(); }
-
-  auto crbegin() const noexcept { return features.crbegin(); }
-
-  auto crend() const noexcept { return features.crend(); }
-
-  template <typename T>
-    requires std::same_as<std::decay_t<T>, F>
-  void push_back(T&& feature) noexcept {
-    features.push_back(std::forward<T>(feature));
-  }
-
-  void pop_back() noexcept { features.pop_back(); }
-
-  friend auto operator<<(std::ofstream& ofs, const Features& features) noexcept -> std::ofstream& {
-    size_t len = features.get().size();
-    ofs << len;
-    for(auto&& feature : features) {
-      ofs << feature;
-    }
-    return ofs;
-  }
-
-  friend auto operator>>(std::ifstream& ifs, Features& features) noexcept -> std::ifstream& {
-    size_t len = 0;
-    ifs >> len;
-    features.resize(len);
-    for(auto&& feature : features) {
-      ifs >> feature;
-    }
-    return ifs;
-  }
-
-private:
-
-  std::vector<F> features;
-};
-
-template <typename F>
-  requires std::same_as<F, Feature<F::descriptor_size>>
 class Extractor {
 public:
 
@@ -154,109 +40,82 @@ public:
   auto operator=(const Extractor&) -> Extractor& = delete;
   auto operator=(Extractor&&) -> Extractor&      = delete;
 
-  using Feature  = F;
-  using Features = SkyMerge::Features<F>;
+  struct alignas(64) Features {
+  public:
 
-  static constexpr size_t descriptor_size = Feature::descriptor_size;
+    Features() noexcept = default;
+
+    Features(size_t len, std::vector<float> kpnts, std::vector<float> descs) noexcept :
+        len(len), kpnts(std::move(kpnts)), descs(std::move(descs)) {
+      THIS_ASSERTION_SHOULD_EQ(this->kpnts.size(), len * 2, "Keypoints size mismatch!");
+      THIS_ASSERTION_SHOULD_EQ(this->descs.size(), len * N, "Descriptors size mismatch!");
+    }
+
+    friend auto operator<<(std::ofstream& ofs, const Features& features) noexcept -> std::ofstream& {
+      ofs.write(reinterpret_cast<const char*>(&features.len), sizeof(size_t));
+      ofs.write(reinterpret_cast<const char*>(features.kpnts.data()), features.kpnts.size() * sizeof(float));
+      ofs.write(reinterpret_cast<const char*>(features.descs.data()), features.descs.size() * sizeof(float));
+      return ofs;
+    }
+
+    friend auto operator>>(std::ifstream& ifs, Features& features) noexcept -> std::ifstream& {
+      ifs.read(reinterpret_cast<char*>(&features.len), sizeof(size_t));
+      features.kpnts.resize(features.len * 2);
+      features.descs.resize(features.len * N);
+      ifs.read(reinterpret_cast<char*>(features.kpnts.data()), features.kpnts.size() * sizeof(float));
+      ifs.read(reinterpret_cast<char*>(features.descs.data()), features.descs.size() * sizeof(float));
+      return ifs;
+    }
+
+    size_t             len{};
+    std::vector<float> kpnts;
+    std::vector<float> descs;
+  };
+
+  static constexpr size_t descriptor_size = N;
 
   virtual ~Extractor() = default;
 
 private:
 
-  InferEnv env;
-  fs::path temporary_save_path;
+  InferEnv              env;
+  std::filesystem::path temporary_save_path;
 
-  class FeaturesMem : public ManageAble {
+  class FeaturesManaged : public Managed {
   public:
 
     template <typename T>
       requires std::same_as<std::decay_t<T>, Features>
-    explicit FeaturesMem(T&& features) noexcept : features_(std::forward<T>(features)) {}
+    explicit FeaturesManaged(T&& features) noexcept : features(std::forward<T>(features)) {}
 
     [[nodiscard]] auto size() const noexcept -> size_t override {
-      if(features_.empty()) {
-        return 0;
-      }
-      return features_.size() * sizeof(Feature);
+      return features.len * (descriptor_size + 2) * sizeof(float);
     }
 
-    auto features() const noexcept -> const Features& { return features_; }
-
-    auto features() noexcept -> Features& { return features_; }
-
-  private:
-
-    Features features_;
+    Features features;
   };
 
-protected:
+  class FeaturesDeviceManaged : public Managed {
+  public:
 
-  Extractor(const fs::path& temporary_save_path, const std::string& name, const std::string& model_path) noexcept :
-      temporary_save_path(temporary_save_path), env(std::format("[{}]", name), model_path) {
-    check_or_create_path(temporary_save_path);
-  }
+    FeaturesDeviceManaged(size_t len, float* kpnts, float* descs) noexcept : len(len), kpnts(kpnts), descs(descs) {}
 
-  virtual inline void preprocess(cv::Mat* img) const noexcept = 0;
+    [[nodiscard]] auto size() const noexcept -> size_t override { return len * (descriptor_size + 2) * sizeof(float); }
 
-  [[nodiscard]] virtual constexpr auto get_channels() const noexcept -> int64_t = 0;
+    size_t len;
+    float* kpnts{nullptr};
+    float* descs{nullptr};
+  };
 
-  [[nodiscard]] virtual constexpr auto get_threshold() const noexcept -> double = 0;
-
-  [[nodiscard]] virtual constexpr auto get_keypoint_maxcnt() const noexcept -> int64_t = 0;
-
-  [[nodiscard]] virtual constexpr auto get_name() const noexcept -> std::string = 0;
-
-public:
-
-  void register_node(const fs::path& path, const Features& features) noexcept {
-    Mem::register_node(
-        path.string(),
-        std::make_unique<FeaturesMem>(features),
-        [path] noexcept {
-          std::ifstream ifs(path.string(), std::ios::binary);
-          if(!ifs.is_open()) {
-            report_error("{} could not be opened.", path.string());
-          }
-          Features features;
-          ifs >> features;
-          ifs.close();
-          if(ifs.fail()) {
-            report_error("{} could not be read.", path.string());
-          }
-          return std::make_unique<FeaturesMem>(std::move(features));
-        },
-        [path](ManageAblePtr ptr) noexcept {
-          if(ptr) {
-            std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
-            if(!ofs.is_open()) {
-              report_error("{} could not be opened.", path.string());
-            }
-            auto& features = dynamic_cast<FeaturesMem*>(ptr.get())->features();
-            ofs << features;
-            if(ofs.fail()) {
-              report_error("{} could not be written.", path.string());
-            }
-            ofs.close();
-          }
-        });
-  }
-
-  auto get_features(ImgData& img_data) -> Features {
-    fs::path path =
-        temporary_save_path / std::format("{}_{}.desc", img_data.rotated_img().get_img_stem().string(), get_name());
-    auto elem = Mem::get_node(path.string());
-    if(elem) {
-      auto&& elem_guard = *elem;
-      return elem_guard.get<FeaturesMem>().features();
-    }
-    auto&   img_rotated   = img_data.rotated_img();
-    auto    img_guard     = img_rotated.get();
-    cv::Mat img_processed = img_guard.get().clone();
+  auto infer(ImgData& img_data) -> Features {
+    const auto& img_rotated   = img_data.rotated_img();
+    auto        img_guard     = img_rotated.get();
+    cv::Mat     img_processed = img_guard.get().clone();
     img_guard.unlock();
     preprocess(&img_processed);
     const auto [width, height] = img_rotated.get_size();
     std::vector<float> img_vec{img_processed.begin<float>(), img_processed.end<float>()};
-    env.set_input("image", img_vec, std::vector<int64_t>{1, get_channels(), height, width});
+    env.set_input("image", img_vec, std::vector<std::int64_t>{1, get_channels(), height, width});
     if(img_vec.empty()) {
       throw std::runtime_error("Error: Image is empty");
     }
@@ -266,8 +125,9 @@ public:
     }
     img_vec.clear();
     const size_t cnt = res[env.get_output_index("keypoints")].GetTensorTypeAndShapeInfo().GetShape()[1];
-    const std::span<const int64_t> kps_span{res[env.get_output_index("keypoints")].GetTensorData<int64_t>(), cnt * 2};
-    const std::span<const float>   scores_span{res[env.get_output_index("scores")].GetTensorData<float>(), cnt};
+    const std::span<const std::int64_t>
+        kps_span{res[env.get_output_index("keypoints")].GetTensorData<std::int64_t>(), cnt * 2};
+    const std::span<const float> scores_span{res[env.get_output_index("scores")].GetTensorData<float>(), cnt};
     const std::span<const float>
         descs_span{res[env.get_output_index("descriptors")].GetTensorData<float>(), cnt * descriptor_size};
     THIS_LOG_DEBUG("Image {} has {} keypoints detected!", img_data.rotated_img().get_img_name().string(), cnt);
@@ -286,31 +146,181 @@ public:
           [&scores_span](const size_t& lhs, const size_t& rhs) { return scores_span[lhs] > scores_span[rhs]; });
       indices.resize(get_keypoint_maxcnt());
     }
-    const double   wf2   = width / 2.0;
-    const double   hf2   = height / 2.0;
-    const double   max2  = std::max(wf2, hf2);
-    auto           view1 = indices | std::views::transform([&kps_span, &descs_span, wf2, hf2, max2](const size_t& idx) {
-                   std::array<float, descriptor_size> descriptor;
-                   std::copy_n(&descs_span[idx * descriptor_size], descriptor_size, descriptor.begin());
-                   return Feature{
-                                 .x    = (static_cast<double>(kps_span[idx * 2]) - wf2) / max2,
-                                 .y    = (static_cast<double>(kps_span[(idx * 2) + 1]) - hf2) / max2,
-                                 .desc = std::move(descriptor)};
-                 });
-    const Features filtered_features(view1.begin(), view1.end());
+
+    auto kpnt_v =
+        indices | std::views::transform([&kps_span](const size_t& idx) {
+          return Point<double>{static_cast<double>(kps_span[idx * 2]), static_cast<double>(kps_span[(idx * 2) + 1])};
+        });
+    Points<double> kpnts{kpnt_v.begin(), kpnt_v.end()};
+    img_data.set_kpnts(kpnts);
+
+    const float wf2  = static_cast<float>(width) / 2.0F;
+    const float hf2  = static_cast<float>(height) / 2.0F;
+    const float max2 = std::max(wf2, hf2);
+
+    std::vector<float> kpnts_filtered;
+    kpnts_filtered.reserve(indices.size() * 2);
+    std::vector<float> descs_filtered;
+    descs_filtered.reserve(indices.size() * descriptor_size);
+    for(auto idx : indices) {
+      kpnts_filtered.push_back((static_cast<float>(kps_span[idx * 2]) - wf2) / max2);
+      kpnts_filtered.push_back((static_cast<float>(kps_span[(idx * 2) + 1]) - hf2) / max2);
+      descs_filtered
+          .insert(descs_filtered.end(), &descs_span[idx * descriptor_size], &descs_span[(idx + 1) * descriptor_size]);
+    }
+    Features filtered_features{indices.size(), std::move(kpnts_filtered), std::move(descs_filtered)};
     THIS_LOG_DEBUG(
         "Image {} has {} keypoints after filter.",
         img_data.rotated_img().get_img_name().string(),
         filtered_features.size() / 2);
-    register_node(path, filtered_features);
-    auto           kpnt_v = filtered_features | normalized2pixel<Feature>(img_data.rotated_img().get_size());
-    Points<double> kpnts{kpnt_v.begin(), kpnt_v.end()};
-    img_data.set_kpnts(kpnts);
     return filtered_features;
+  }
+
+  void register_node(const std::filesystem::path& path, const Features& features) const noexcept {
+    HostMem::register_node(
+        path.string(),
+        std::make_unique<FeaturesManaged>(features),
+        [path] noexcept {
+          std::ifstream ifs(path.string(), std::ios::binary);
+          if(!ifs.is_open()) {
+            terminate_with_error("{} could not be opened.", path.string());
+          }
+          Features features;
+          ifs >> features;
+          ifs.close();
+          if(ifs.fail()) {
+            terminate_with_error("{} could not be read.", path.string());
+          }
+          return std::make_unique<FeaturesManaged>(std::move(features));
+        },
+        [path](ManagedPtr ptr) noexcept {
+          if(ptr) {
+            std::ofstream ofs(path.string(), std::ios::binary | std::ios::trunc);
+            if(!ofs.is_open()) {
+              terminate_with_error("{} could not be opened.", path.string());
+            }
+            auto& features = dynamic_cast<FeaturesManaged*>(ptr.get())->features;
+            ofs << features;
+            if(ofs.fail()) {
+              terminate_with_error("{} could not be written.", path.string());
+            }
+            ofs.close();
+          }
+        });
+
+    DeviceMem::register_node(
+        path.string(),
+        nullptr,
+        [path] noexcept {
+          auto guard = HostMem::get_node(path.string());
+          if(!guard) {
+            terminate_with_error("{} not found in host memory.", path.string());
+          }
+          const auto& features = guard->get<FeaturesManaged>().features;
+          float*      kpnts    = nullptr;
+          float*      descs    = nullptr;
+
+          cudaError_t err = cudaSuccess;
+          err             = cudaMalloc(&kpnts, features.kpnts.size() * sizeof(float));
+          if(err != cudaSuccess) {
+            terminate_with_error("cudaMalloc failed for kpnts: {}", cudaGetErrorString(err));
+          }
+          err = cudaMalloc(&descs, features.descs.size() * sizeof(float));
+          if(err != cudaSuccess) {
+            cudaFree(kpnts);
+            terminate_with_error("cudaMalloc failed for descs: {}", cudaGetErrorString(err));
+          }
+          err = cudaMemcpy(kpnts, features.kpnts.data(), features.kpnts.size() * sizeof(float), cudaMemcpyHostToDevice);
+          if(err != cudaSuccess) {
+            cudaFree(kpnts);
+            cudaFree(descs);
+            terminate_with_error("cudaMemcpy failed for kpnts: {}", cudaGetErrorString(err));
+          }
+          err = cudaMemcpy(descs, features.descs.data(), features.descs.size() * sizeof(float), cudaMemcpyHostToDevice);
+          if(err != cudaSuccess) {
+            cudaFree(kpnts);
+            cudaFree(descs);
+            terminate_with_error("cudaMemcpy failed for descs: {}", cudaGetErrorString(err));
+          }
+          return std::make_unique<FeaturesDeviceManaged>(features.len, kpnts, descs);
+        },
+        [path](ManagedPtr ptr) noexcept {
+          if(ptr) {
+            auto* features = dynamic_cast<FeaturesDeviceManaged*>(ptr.get());
+            cudaFree(features->kpnts);
+            cudaFree(features->descs);
+          }
+        });
+  }
+
+protected:
+
+  Extractor(const std::filesystem::path& temporary_save_path, const std::string& name, const std::string& model_path) noexcept
+      : temporary_save_path(temporary_save_path), env(std::format("[{}]", name), model_path) {
+    check_or_create_path(temporary_save_path);
+  }
+
+  virtual inline void preprocess(cv::Mat* img) const noexcept = 0;
+
+  [[nodiscard]] virtual constexpr auto get_channels() const noexcept -> std::int64_t = 0;
+
+  [[nodiscard]] virtual constexpr auto get_threshold() const noexcept -> double = 0;
+
+  [[nodiscard]] virtual constexpr auto get_keypoint_maxcnt() const noexcept -> std::int64_t = 0;
+
+public:
+
+  auto extract_features(ImgData& img_data) -> bool {
+    std::filesystem::path path =
+        temporary_save_path / std::format("{}.desc", img_data.rotated_img().get_img_stem().string());
+    if(HostMem::contain_node(path.string())) {
+      return true;
+    }
+    auto filtered_features = infer(img_data);
+    if(filtered_features.len == 0) {
+      THIS_LOG_INFO("Image {} has no valid feature!", img_data.rotated_img().get_img_name().string());
+      return false;
+    }
+    register_node(path, filtered_features);
+    return true;
+  }
+
+  struct DeviceFeaturesRefGuard {
+    DeviceFeaturesRefGuard(DeviceFeaturesRefGuard&&) noexcept = default;
+
+    DeviceFeaturesRefGuard(const DeviceFeaturesRefGuard&)                    = delete;
+    auto operator=(const DeviceFeaturesRefGuard&) -> DeviceFeaturesRefGuard& = delete;
+    auto operator=(DeviceFeaturesRefGuard&&) -> DeviceFeaturesRefGuard&      = delete;
+
+    ~DeviceFeaturesRefGuard() noexcept = default;
+
+    explicit DeviceFeaturesRefGuard(RefGuard&& refguard) noexcept : refguard(std::move(refguard)) {}
+
+    auto get_descs() noexcept -> std::span<float> {
+      return {refguard.get<FeaturesDeviceManaged>().descs, refguard.get<FeaturesDeviceManaged>().len * descriptor_size};
+    }
+
+    auto get_kpnts() noexcept -> std::span<float> {
+      return {refguard.get<FeaturesDeviceManaged>().kpnts, refguard.get<FeaturesDeviceManaged>().len * 2};
+    }
+
+    auto get_len() noexcept -> size_t { return refguard.get<FeaturesDeviceManaged>().len; }
+
+    void unlock() noexcept { refguard.unlock(); }
+
+  private:
+
+    RefGuard refguard;
+  };
+
+  [[nodiscard]] auto get_features_on_device(const ImgData& img_data) const -> DeviceFeaturesRefGuard {
+    std::filesystem::path path =
+        temporary_save_path / std::format("{}.desc", img_data.rotated_img().get_img_stem().string());
+    return DeviceFeaturesRefGuard{*DeviceMem::get_node(path.string())};
   }
 };
 
-class SuperPointExtractor : public Extractor<Feature<256>> {
+class SuperPointExtractor : public Extractor<256> {
 private:
 
   void preprocess(cv::Mat* img) const noexcept override {
@@ -318,23 +328,21 @@ private:
     img->convertTo(*img, CV_32FC1, 1.F / 255.F);
   }
 
-  [[nodiscard]] constexpr auto get_channels() const noexcept -> int64_t override { return 1; }
+  [[nodiscard]] constexpr auto get_channels() const noexcept -> std::int64_t override { return 1; }
 
   [[nodiscard]] constexpr auto get_threshold() const noexcept -> double override { return SUPERPOINT_THRESHOLD; }
 
-  [[nodiscard]] constexpr auto get_keypoint_maxcnt() const noexcept -> int64_t override {
+  [[nodiscard]] constexpr auto get_keypoint_maxcnt() const noexcept -> std::int64_t override {
     return SUPERPOINT_KEYPOINT_MAXCNT;
   }
 
-  [[nodiscard]] constexpr auto get_name() const noexcept -> std::string override { return "superpoint"; }
-
 public:
 
-  explicit SuperPointExtractor(const fs::path& temporary_save_path) :
+  explicit SuperPointExtractor(const std::filesystem::path& temporary_save_path) :
       Extractor(temporary_save_path, "superpoint", SUPERPOINT_WEIGHT) {}
 };
 
-class DiskExtractor : public Extractor<Feature<128>> {
+class DiskExtractor : public Extractor<128> {
 private:
 
   void preprocess(cv::Mat* img) const noexcept override {
@@ -349,17 +357,18 @@ private:
     channels[0].reshape(1, 1).convertTo(img->row(2), CV_32FC1, 1.F / 255.F);
   }
 
-  [[nodiscard]] constexpr auto get_channels() const noexcept -> int64_t override { return 3; }
+  [[nodiscard]] constexpr auto get_channels() const noexcept -> std::int64_t override { return 3; }
 
   [[nodiscard]] constexpr auto get_threshold() const noexcept -> double override { return DISK_THRESHOLD; }
 
-  [[nodiscard]] constexpr auto get_keypoint_maxcnt() const noexcept -> int64_t override { return DISK_KEYPOINT_MAXCNT; }
-
-  [[nodiscard]] constexpr auto get_name() const noexcept -> std::string override { return "disk"; }
+  [[nodiscard]] constexpr auto get_keypoint_maxcnt() const noexcept -> std::int64_t override {
+    return DISK_KEYPOINT_MAXCNT;
+  }
 
 public:
 
-  explicit DiskExtractor(const fs::path& temporary_save_path) : Extractor(temporary_save_path, "disk", DISK_WEIGHT) {}
+  explicit DiskExtractor(const std::filesystem::path& temporary_save_path) :
+      Extractor(temporary_save_path, "disk", DISK_WEIGHT) {}
 };
 
 } // namespace SkyMerge

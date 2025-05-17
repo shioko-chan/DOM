@@ -19,13 +19,13 @@
 namespace SkyMerge {
 
 template <typename T>
-void hash_append(uint64_t& seed, const T& val) noexcept {
+void hash_append(std::uint64_t& seed, const T& val) noexcept {
   seed ^= std::hash<T>()(val) + 0x9e3779b9 + (seed << 6U) + (seed >> 2U);
 }
 
 template <typename... Args>
-auto hash(const Args&... args) noexcept -> uint64_t {
-  uint64_t seed = 0;
+auto hash(const Args&... args) noexcept -> std::uint64_t {
+  std::uint64_t seed = 0;
   (hash_append(seed, args), ...);
   return seed;
 }
@@ -69,7 +69,7 @@ struct alignas(16) PointIdx {
 };
 
 struct PointIdxHasher {
-  auto operator()(const PointIdx& point_idx) const noexcept -> uint64_t {
+  auto operator()(const PointIdx& point_idx) const noexcept -> std::uint64_t {
     return hash(point_idx.img_idx, point_idx.pnt_idx);
   }
 };
@@ -84,7 +84,8 @@ using PointIdxUSet = std::unordered_set<PointIdx, PointIdxHasher>;
 
 using PointIdxs = std::vector<PointIdx>;
 
-using Lock = std::unique_lock<std::mutex>;
+using TempLock = std::lock_guard<std::mutex>;
+using Lock     = std::unique_lock<std::mutex>;
 
 using Tracks = std::vector<PointIdxs>;
 
@@ -102,7 +103,7 @@ using Point = cv::Point_<T>;
 template <typename T>
   requires std::is_arithmetic_v<T>
 struct PointHasher {
-  auto operator()(const Point<T>& point) const -> uint64_t { return hash(point.x, point.y); }
+  auto operator()(const Point<T>& point) const -> std::uint64_t { return hash(point.x, point.y); }
 };
 
 template <typename T>
@@ -132,7 +133,7 @@ using Point3 = cv::Point3_<T>;
 template <typename T>
   requires std::is_arithmetic_v<T>
 struct Point3Hasher {
-  auto operator()(const Point3<T>& point) const -> uint64_t { return hash(point.x, point.y, point.z); }
+  auto operator()(const Point3<T>& point) const -> std::uint64_t { return hash(point.x, point.y, point.z); }
 };
 
 template <typename T>
@@ -149,5 +150,61 @@ using Point3USet = std::unordered_set<Point3<T>, Point3Hasher<T>>;
 
 using PointCloudPtr = typename pcl::PointCloud<pcl::PointXYZ>::Ptr;
 using PointCloud    = pcl::PointCloud<pcl::PointXYZ>;
+
+template <typename>
+struct extract_arg_type;
+
+template <template <typename> class Template, typename Arg>
+struct extract_arg_type<Template<Arg>> {
+  using type = Arg;
+};
+
+template <typename T>
+using extract_arg_type_t = typename extract_arg_type<T>::type;
+
+template <typename>
+struct rebind_template;
+
+template <template <typename> class Template, typename Arg>
+struct rebind_template<Template<Arg>> {
+  template <typename NewArg>
+  using type = Template<NewArg>;
+};
+
+template <typename T, typename Arg>
+using rebind_template_t = typename rebind_template<T>::template type<Arg>;
+
+template <template <typename...> class, typename>
+struct is_specialization_of : std::false_type {};
+
+template <template <typename...> class Template, typename... Args>
+struct is_specialization_of<Template, Template<Args...>> : std::true_type {};
+
+template <template <typename...> class Template, typename T>
+inline constexpr bool is_specialization_of_v = is_specialization_of<Template, T>::value;
+
+template <template <typename...> class Template, typename T>
+concept specialization_of = is_specialization_of<Template, T>::value;
+
+template <typename T>
+concept arithmetic = std::is_arithmetic_v<std::remove_cvref_t<T>>;
+
+template <typename T>
+concept HasXY = requires(T point) {
+  { point.x } -> arithmetic;
+  { point.y } -> arithmetic;
+};
+
+template <typename T>
+concept HasXYZ = HasXY<T> && requires(T point) {
+  { point.z } -> arithmetic;
+};
+
+template <typename Func, typename... Args>
+concept NoexceptCallable = std::is_nothrow_invocable_v<Func, Args...>;
+
+template <typename Func, typename Ret, typename... Args>
+concept NoexceptCallableWithRet = std::is_nothrow_invocable_r_v<Ret, Func, Args...>;
+
 } // namespace SkyMerge
 #endif

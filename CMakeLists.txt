@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 4.0)
 
-project(SKYMERGE VERSION 1.0.0 LANGUAGES C CXX)
+project(SKYMERGE VERSION 1.0.0 LANGUAGES C CXX CUDA)
 
 set(LOG_LEVEL INFO)
 

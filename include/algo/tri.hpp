@@ -14,9 +14,7 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "algo/tracks.hpp"
 #include "ds/imgdata.hpp"
-#include "ds/matchpair.hpp"
 #include "tools/debug.hpp"
 #include "tools/log.hpp"
 #include "tools/progress.hpp"
@@ -25,36 +23,13 @@
 
 namespace SkyMerge {
 
-inline auto build_track(const MatchPairs& match_img_pairs, Progress& progress) -> Tracks {
-  if(match_img_pairs.empty()) {
-    THIS_LOG_WARN("No input!");
-    return {};
-  }
-  THIS_MESSAGE("Build tracks.");
-  progress.reset(static_cast<int>(match_img_pairs.size()));
-  TracksMaintainer tracks_maintainer;
-  for(const auto& match_img_pair : match_img_pairs) {
-    if(!match_img_pair.valid) {
-      continue;
-    }
-    for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
-      tracks_maintainer.append_match(
-          PointIdx{.img_idx = match_img_pair.first, .pnt_idx = lhs},
-          PointIdx{.img_idx = match_img_pair.second, .pnt_idx = rhs},
-          score);
-    }
-    progress.update();
-  }
-  return tracks_maintainer.get_tracks();
-}
-
 inline auto triangulation(
     Tracks&   tracks,
     ImgsData& imgs_data,
     Progress& progress
 #ifdef ENABLE_VISUALIZE_OUTPUT
     ,
-    const fs::path& pcd_output_dir
+    const std::filesystem::path& pcd_output_dir
 #endif
     ) noexcept -> TrackPointVec {
   if(imgs_data.empty()) {

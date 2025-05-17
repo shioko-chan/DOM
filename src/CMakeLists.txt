@@ -6,8 +6,8 @@ list(APPEND CMAKE_MODULE_PATH "/usr/share/cmake/geographiclib")
 find_package(GeographicLib REQUIRED)
 find_package(PCL REQUIRED)
 find_package(MPI REQUIRED)
-find_package(CGAL REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(CUDAToolkit REQUIRED)
 
 set(exiv2_INCLUDE_DIR ${exiv2_DIR}/../../../include)
 set(exiv2_LIB_DIR ${exiv2_DIR}/../..)
@@ -18,7 +18,7 @@ file(GLOB_RECURSE SOURCES *.cpp)
 
 add_executable(skymerge ${SOURCES})
 
-target_include_directories(skymerge PUBLIC
+target_include_directories(skymerge PRIVATE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
   $<INSTALL_INTERFACE:include>
   ${OpenCV_INCLUDE_DIRS}
@@ -28,6 +28,7 @@ target_include_directories(skymerge PUBLIC
   ${PCL_INCLUDE_DIRS}
   ${MPI_INCLUDE_PATH}
   ${EIGEN_INCLUDE_PATH}
+  ${CUDAToolkit_INCLUDE_DIRS}
 )
 
 target_link_directories(skymerge PRIVATE
@@ -55,10 +56,10 @@ target_link_libraries(skymerge PRIVATE
   ${OpenCV_LIBS}
   onnxruntime
   ceres
-  CGAL::CGAL
   GeographicLib
   ${PCL_LIBRARIES}
   Eigen3::Eigen
+  CUDA::cudart
 )
 
 if(ENABLE_PARALLEL)

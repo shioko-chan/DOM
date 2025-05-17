@@ -25,17 +25,17 @@ class Filter {
 public:
 
   static void filter_outliers_statistical(
-      TrackPointVec* tri_res_vec,
+      TrackPointVec* track_point_vec,
 #ifdef ENABLE_VISUALIZE_OUTPUT
-      const fs::path& pcd_output_path,
+      const std::filesystem::path& pcd_output_path,
 #endif
       int    mean_k      = 100,
       double std_dev_mul = 1.0) {
-    if(tri_res_vec->empty()) {
+    if(track_point_vec->empty()) {
       THIS_LOG_WARN("[Filter] Empty input data, cannot filter outliers");
       return;
     }
-    PointCloudPtr cloud = tri_res_vec2point_cloud(*tri_res_vec);
+    PointCloudPtr cloud = track_point_vec2point_cloud(*track_point_vec);
 
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor{true};
     sor.setInputCloud(cloud);
@@ -48,7 +48,7 @@ public:
     const auto              indices_ptr = sor.getRemovedIndices();
     std::unordered_set<int> indices_to_remove(indices_ptr->begin(), indices_ptr->end());
 
-    filter_by_idx(tri_res_vec, indices_to_remove);
+    filter_by_idx(track_point_vec, indices_to_remove);
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
     THIS_LOG_INFO(
@@ -58,18 +58,18 @@ public:
   }
 
   static void filter_outliers_radius(
-      TrackPointVec* tri_res_vec,
+      TrackPointVec* track_point_vec,
 #ifdef ENABLE_VISUALIZE_OUTPUT
-      const fs::path& pcd_output_path,
+      const std::filesystem::path& pcd_output_path,
 #endif
       double radius        = 5.0,
       int    min_neighbors = 2) {
-    if(tri_res_vec->empty()) {
+    if(track_point_vec->empty()) {
       THIS_LOG_WARN("[Filter] Empty input data, cannot filter outliers");
       return;
     }
 
-    PointCloudPtr cloud = tri_res_vec2point_cloud(*tri_res_vec);
+    PointCloudPtr cloud = track_point_vec2point_cloud(*track_point_vec);
 
     pcl::RadiusOutlierRemoval<pcl::PointXYZ> ror{true};
     ror.setInputCloud(cloud);
@@ -82,7 +82,7 @@ public:
     const auto              indices_ptr = ror.getRemovedIndices();
     std::unordered_set<int> indices_to_remove(indices_ptr->begin(), indices_ptr->end());
 
-    filter_by_idx(tri_res_vec, indices_to_remove);
+    filter_by_idx(track_point_vec, indices_to_remove);
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
     THIS_LOG_INFO("[Filter] Radius filtering: {} points removed from {} points", indices_to_remove.size(), cloud->size());
@@ -91,16 +91,16 @@ public:
   }
 
   static void smooth_surface(
-      TrackPointVec* tri_res_vec,
+      TrackPointVec* track_point_vec,
 #ifdef ENABLE_VISUALIZE_OUTPUT
-      const fs::path& pcd_output_path,
+      const std::filesystem::path& pcd_output_path,
 #endif
       int polynomial_order = 2) noexcept {
-    if(tri_res_vec->empty()) {
+    if(track_point_vec->empty()) {
       THIS_LOG_WARN("[Filter] Empty input data, cannot smooth surface");
       return;
     }
-    auto cloud    = tri_res_vec2point_cloud(*tri_res_vec);
+    auto cloud    = track_point_vec2point_cloud(*track_point_vec);
     auto smoothed = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     auto kdtree   = std::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
     kdtree->setInputCloud(cloud);
@@ -121,8 +121,8 @@ public:
     std::unordered_set<size_t> keep_indices;
     for(size_t i = 0; i < smoothed->size(); ++i) {
       int original_idx = corresponding_indices->indices[i];
-      if(original_idx >= 0 && original_idx < tri_res_vec->size()) {
-        auto& point_origin   = (*tri_res_vec)[original_idx].pnt3d;
+      if(original_idx >= 0 && original_idx < track_point_vec->size()) {
+        auto& point_origin   = (*track_point_vec)[original_idx].pnt3d;
         auto  point_smoothed = (*smoothed)[i].getVector3fMap();
         point_origin[0]      = static_cast<double>(point_smoothed.x());
         point_origin[1]      = static_cast<double>(point_smoothed.y());
@@ -130,7 +130,7 @@ public:
         keep_indices.insert(original_idx);
       }
     }
-    keep_by_idx(tri_res_vec, keep_indices);
+    keep_by_idx(track_point_vec, keep_indices);
 
 #ifdef ENABLE_VISUALIZE_OUTPUT
     THIS_LOG_INFO("[Filter] Surface smoothing: {} points processed from {} points", smoothed->size(), cloud->size());
@@ -138,12 +138,13 @@ public:
 #endif
   }
 
-  static void filter_reprojection_error(TrackPointVec* tri_res_vec, ImgsData& imgs_data, double threshold = 4.0) noexcept {
-    if(tri_res_vec->empty()) {
+  static void
+  filter_reprojection_error(TrackPointVec* track_point_vec, ImgsData& imgs_data, double threshold = 4.0) noexcept {
+    if(track_point_vec->empty()) {
       THIS_LOG_WARN("[BA] Empty input data, cannot filter outliers");
       return;
     }
-    for(auto& [pnt3d, pnt2d_idx_vec] : *tri_res_vec) {
+    for(auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
       std::erase_if(pnt2d_idx_vec, [&imgs_data, &pnt3d, threshold](const auto& pnt2d_idx) noexcept {
         const auto& img_data     = imgs_data[pnt2d_idx.img_idx];
         const auto& [ob_x, ob_y] = img_data.get_kpnts()[pnt2d_idx.pnt_idx];
@@ -158,8 +159,8 @@ public:
     }
   }
 
-  static void filter_near_observations(TrackPointVec* tri_res_vec, ImgsData& imgs_data, double threshold = 5.0) {
-    for(auto& [pnt3d, pnt2d_idx_vec] : *tri_res_vec) {
+  static void filter_near_observations(TrackPointVec* track_point_vec, ImgsData& imgs_data, double threshold = 5.0) {
+    for(auto& [pnt3d, pnt2d_idx_vec] : *track_point_vec) {
       std::erase_if(pnt2d_idx_vec, [&imgs_data, &pnt3d, threshold](const auto& pnt2d_idx) noexcept {
         const auto& img_data = imgs_data[pnt2d_idx.img_idx];
         auto pnt = world2camera(img_data.A_w2c_array_raw().data(), img_data.t_w2c_array_raw().data(), pnt3d.data());
@@ -168,15 +169,16 @@ public:
     }
   }
 
-  static void filter_track_too_few_observations(TrackPointVec* tri_res_vec, int min_points = 2) {
+  static void filter_track_too_few_observations(TrackPointVec* track_point_vec, int min_points = 2) {
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    int cnt = tri_res_vec->size();
+    int cnt = track_point_vec->size();
 #endif
-    std::erase_if(*tri_res_vec, [min_points](const auto& tri_res) noexcept {
+    std::erase_if(*track_point_vec, [min_points](const auto& tri_res) noexcept {
       return tri_res.pnt2d_idx_vec.size() < min_points;
     });
 #ifdef ENABLE_VISUALIZE_OUTPUT
-    THIS_LOG_INFO("[Filter] Too few observations filtering: {} points before, {} points after", cnt, tri_res_vec->size());
+    THIS_LOG_INFO(
+        "[Filter] Too few observations filtering: {} points before, {} points after", cnt, track_point_vec->size());
 #endif
   }
 
@@ -190,9 +192,9 @@ public:
 #endif
   }
 
-  static void filter_invalid_image(const TrackPointVec& tri_res_vec, ImgsData& imgs_data) {
+  static void filter_invalid_image(const TrackPointVec& track_point_vec, ImgsData& imgs_data) {
     std::unordered_set<int> img_id;
-    for(const auto& tri_res : tri_res_vec) {
+    for(const auto& tri_res : track_point_vec) {
       for(const auto& [idx, _] : tri_res.pnt2d_idx_vec) {
         img_id.insert(idx);
       }

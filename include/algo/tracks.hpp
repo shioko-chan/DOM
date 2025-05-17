@@ -11,7 +11,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "ds/matchpair.hpp"
 #include "tools/debug.hpp"
+#include "tools/progress.hpp"
 #include "types.hpp"
 
 namespace SkyMerge {
@@ -29,24 +31,6 @@ struct alignas(64) EdgeWithWeight {
     return ostream;
   }
 };
-
-inline auto operator<<(std::ostream& ostream, const PointIdxPairs& min_cut) -> std::ostream& {
-  ostream << "Minimum Cut Edges (" << min_cut.size() << " edges): " << '\n';
-  for(const auto& [u, v] : min_cut) {
-    ostream << u << "--" << v << '\n';
-  }
-  return ostream;
-}
-
-inline auto operator<<(std::ostream& ostream, const WeightMap& map) -> std::ostream& {
-  ostream << "WeightMap: " << '\n';
-  for(const auto& [u, next] : map) {
-    for(const auto& [v, w] : next) {
-      ostream << u << "--" << v << '\n';
-    }
-  }
-  return ostream;
-}
 
 inline auto operator<<(WeightMap& map, const EdgeWithWeight& edge) -> WeightMap& {
   map[edge.u][edge.v] = edge.weight;
@@ -184,8 +168,8 @@ public:
   auto get_tracks() const -> Tracks {
     PointIdxUSet visited;
     Tracks       result;
-    for(const auto& [pnt, _] : pnt_map) {
-      if(visited.contains(pnt)) {
+    for(const auto& [pnt, next] : pnt_map) {
+      if(visited.contains(pnt) || next.empty()) {
         continue;
       }
       PointIdxs res;
@@ -237,5 +221,27 @@ private:
   }
 };
 
+inline auto build_track(const MatchPairs& match_img_pairs, Progress& progress) -> Tracks {
+  if(match_img_pairs.empty()) {
+    THIS_LOG_WARN("No input!");
+    return {};
+  }
+  THIS_MESSAGE("Build tracks.");
+  progress.reset(static_cast<int>(match_img_pairs.size()));
+  TracksMaintainer tracks_maintainer;
+  for(const auto& match_img_pair : match_img_pairs) {
+    if(!match_img_pair.valid) {
+      continue;
+    }
+    for(const auto& [lhs, rhs, score] : match_img_pair.matches) {
+      tracks_maintainer.append_match(
+          PointIdx{.img_idx = match_img_pair.first, .pnt_idx = lhs},
+          PointIdx{.img_idx = match_img_pair.second, .pnt_idx = rhs},
+          score);
+    }
+    progress.update();
+  }
+  return tracks_maintainer.get_tracks();
+}
 } // namespace SkyMerge
 #endif
