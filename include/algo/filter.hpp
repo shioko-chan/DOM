@@ -1,5 +1,5 @@
-#ifndef SKYMERGE_FILTER_HPP
-#define SKYMERGE_FILTER_HPP
+#ifndef SKYMERGE_POINTCLOUD_FILTER_HPP
+#define SKYMERGE_POINTCLOUD_FILTER_HPP
 
 #include <thread>
 #include <unordered_set>

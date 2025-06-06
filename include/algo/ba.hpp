@@ -1,5 +1,5 @@
-#ifndef SKYMERGE_BA_HPP
-#define SKYMERGE_BA_HPP
+#ifndef SKYMERGE_BUNDLE_ADJUSTMENT_HPP
+#define SKYMERGE_BUNDLE_ADJUSTMENT_HPP
 
 #include <algorithm>
 #include <cassert>

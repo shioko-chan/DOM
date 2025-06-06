@@ -23,7 +23,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "algo/rotate_rectify.hpp"
+#include "algo/rectify.hpp"
 #include "config.hpp"
 #include "ds/image.hpp"
 #include "tools/debug.hpp"
