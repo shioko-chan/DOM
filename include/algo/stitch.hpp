@@ -48,7 +48,13 @@ public:
     auto [start_x, end_x, start_y, end_y] = get_min_max_xy(point_cloud);
     auto width                            = static_cast<int>(std::ceil((end_x - start_x) / grid_length));
     auto height                           = static_cast<int>(std::ceil((end_y - start_y) / grid_length));
-    auto height_map    = height_map_by_grid(point_cloud, width, height, start_x, start_y, grid_length, progress);
+    auto height_map = height_map_by_grid(point_cloud, width, height, start_x, start_y, grid_length, progress);
+#ifdef ENABLE_VISUALIZE_OUTPUT
+    double min_val;
+    double max_val;
+    cv::minMaxLoc(height_map, &min_val, &max_val);
+    cv::imwrite("height_map.png", (max_val - height_map) * 255.0 / (max_val - min_val));
+#endif
     auto pixel_img_map = find_pixel_map(imgs_data, height_map, width, height, start_x, start_y, grid_length, progress);
     cv::Mat texture    = cv::Mat::zeros(height, width, CV_8UC3);
     run(

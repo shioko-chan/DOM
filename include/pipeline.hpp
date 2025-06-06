@@ -100,27 +100,29 @@ public:
   [[nodiscard]] auto triangulate(ImgsData& imgs_data, MatchPairs& match_pairs) noexcept {
 #ifdef ENABLE_VISUALIZE_OUTPUT
     auto tracks = build_track(match_pairs, progress);
-    Filter::filter_track_too_few_observations(&tracks, 2);
+    // Filter::filter_track_too_few_observations(&tracks, 2);
     auto track_point_vec = triangulation(tracks, imgs_data, progress, temporary_save_path);
     THIS_LOG_INFO("[Pipeline] Filtering outliers using statistical method");
-    Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "f1.pcd");
+    // Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "fs1.pcd");
     THIS_LOG_INFO("[Pipeline] Filtering outliers using radius method");
-    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f2.pcd");
-    Filter::filter_near_observations(&track_point_vec, imgs_data);
-    Filter::filter_track_too_few_observations(&track_point_vec);
-    Filter::filter_invalid_image(track_point_vec, imgs_data);
+    // Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f2.pcd");
+    // Filter::filter_near_observations(&track_point_vec, imgs_data);
+    // Filter::filter_track_too_few_observations(&track_point_vec);
+    // Filter::filter_invalid_image(track_point_vec, imgs_data);
     BA::ba(imgs_data, &track_point_vec, 3.0);
     export_pcd(temporary_save_path / "ba.pcd", track_point_vec2point_cloud(track_point_vec));
-    Filter::filter_reprojection_error(&track_point_vec, imgs_data, 3.0);
-    Filter::filter_track_too_few_observations(&track_point_vec);
+    // Filter::filter_reprojection_error(&track_point_vec, imgs_data, 3.0);
+    // Filter::filter_track_too_few_observations(&track_point_vec);
     Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
-    Filter::filter_invalid_image(track_point_vec, imgs_data);
-    BA::ba(imgs_data, &track_point_vec, -1);
-    export_pcd(temporary_save_path / "ba1.pcd", track_point_vec2point_cloud(track_point_vec));
-    Filter::filter_reprojection_error(&track_point_vec, imgs_data, 1.0);
-    Filter::filter_track_too_few_observations(&track_point_vec);
-    Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
-    Filter::filter_invalid_image(track_point_vec, imgs_data);
+    Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "fs2.pcd");
+      // Filter::filter_invalid_image(track_point_vec, imgs_data);
+      // BA::ba(imgs_data, &track_point_vec, -1);
+      // export_pcd(temporary_save_path / "ba1.pcd", track_point_vec2point_cloud(track_point_vec));
+      // Filter::filter_reprojection_error(&track_point_vec, imgs_data, 1.0);
+      // Filter::filter_track_too_few_observations(&track_point_vec);
+      // Filter::filter_outliers_radius(&track_point_vec, temporary_save_path / "f3.pcd");
+      // Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "fs3.pcd");
+      // Filter::filter_invalid_image(track_point_vec, imgs_data);
 #else
     auto res = triangulation(match_pairs, imgs_data, progress);
     THIS_MESSAGE("[Pipeline] Filtering outliers using statistical method");
@@ -141,7 +143,7 @@ public:
 
   void stitch(ImgsData& imgs_data, const PointCloudPtr& point_cloud) {
     THIS_MESSAGE("[Pipeline] Stitching images");
-    cv::Mat texture = Stitcher::stitch(imgs_data, point_cloud, progress);
+    cv::Mat texture = Stitcher::stitch(imgs_data, point_cloud, progress, GRID_LENGTH);
     if(texture.empty()) {
       THIS_LOG_ERROR("[Pipeline] Stitching failed");
       return;
@@ -150,20 +152,6 @@ public:
     cv::imwrite(panorama_path.string(), texture);
     THIS_MESSAGE("[Pipeline] Stitched image saved to {}", panorama_path.string());
   }
-
-  // void stitch(ImgsData& imgs_data, const TrackPointVec& point_cloud) {
-  //   THIS_MESSAGE("[Pipeline] Stitching images");
-  //   cv::Mat texture = TriMeshStitcher::stitch(imgs_data, point_cloud, progress, TARGET_RESOLUTION);
-  //   // DSM     dsm{point_cloud, progress};
-  //   // cv::Mat texture = DSMStitcher::stitch(imgs_data, dsm, progress, 0.05);
-  //   if(texture.empty()) {
-  //     THIS_LOG_ERROR("[Pipeline] Stitching failed");
-  //     return;
-  //   }
-  //   std::filesystem::path panorama_path = output_dir / "stitched_image.jpg";
-  //   cv::imwrite(panorama_path.string(), texture);
-  //   THIS_MESSAGE("[Pipeline] Stitched image saved to {}", panorama_path.string());
-  // }
 };
 
 } // namespace SkyMerge
