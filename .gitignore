@@ -3,3 +3,4 @@ res/
 core
 models
 .cache/
+.DS_Store
