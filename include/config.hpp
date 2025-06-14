@@ -28,7 +28,7 @@ enum method_t : std::uint8_t { SUPERPOINT, DISK };
 
 constexpr method_t FEATURE_EXTRACTION_METHOD{DISK};
 
-constexpr double GRID_LENGTH{0.05}; // meters
+constexpr float GRID_LENGTH{0.05F}; // meters
 
 } // namespace SkyMerge
 

@@ -1,14 +1,12 @@
 #ifndef SKYMERGE_ALGO_STITCH1_HPP
 #define SKYMERGE_ALGO_STITCH1_HPP
 
-#include <opencv2/core/hal/interface.h>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <mutex>
 #include <numeric>
-#include <opencv2/core/matx.hpp>
 #include <optional>
 #include <ranges>
 #include <sstream>
@@ -17,7 +15,6 @@
 #include <opencv2/core.hpp>
 #include <opencv2/opencv.hpp>
 
-#include "algo/filter.hpp"
 #include "algo/knn.hpp"
 #include "ds/imgdata.hpp"
 #include "tools/debug.hpp"
@@ -38,10 +35,10 @@ private:
 public:
 
   static auto
-  stitch(ImgsData& imgs_data, const PointCloudPtr& point_cloud, Progress& progress, float grid_length = 0.05) noexcept
+  stitch(ImgsData& imgs_data, const PointCloudPtr& point_cloud, Progress& progress, float grid_length = 0.05F) noexcept
       -> cv::Mat {
     if(imgs_data.empty() || point_cloud->empty()) {
-      THIS_LOG_ERROR("empty imgs_data or dsm");
+      THIS_LOG_ERROR("empty imgs_data or point cloud, cannot stitch");
       return {};
     }
     THIS_MESSAGE("start stitching");
@@ -106,25 +103,25 @@ private:
       point_cloud_2d->emplace_back(point_.x(), point_.y());
     }
     cv::Mat height_map = cv::Mat::zeros(height, width, CV_32FC1);
-    run(
-        width,
-        [start_x, start_y, grid_length, width, height, &point_cloud_2d, &height_map, &calculate_z](int x_i) noexcept {
-          pcl::KdTreeFLANN<pcl::PointXY> kd_tree;
-          kd_tree.setInputCloud(point_cloud_2d);
-          float x_pos = start_x + (static_cast<float>(x_i) * grid_length);
-          for(int y_i = 0; y_i < height; ++y_i) {
-            float              y_pos = start_y + (static_cast<float>(y_i) * grid_length);
-            pcl::PointXY       search_point(x_pos, y_pos);
-            std::vector<int>   indices;
-            std::vector<float> distances;
-            kd_tree.nearestKSearch(search_point, 100, indices, distances);
-            if(indices.empty()) {
-              continue;
-            }
-            height_map.at<float>(y_i, x_i) = calculate_z(indices, distances);
-          }
-        },
-        progress);
+    // run(
+    //     width,
+    //     [start_x, start_y, grid_length, width, height, &point_cloud_2d, &height_map, &calculate_z](int x_i) noexcept {
+    //       pcl::KdTreeFLANN<pcl::PointXY> kd_tree;
+    //       kd_tree.setInputCloud(point_cloud_2d);
+    //       float x_pos = start_x + (static_cast<float>(x_i) * grid_length);
+    //       for(int y_i = 0; y_i < height; ++y_i) {
+    //         float              y_pos = start_y + (static_cast<float>(y_i) * grid_length);
+    //         pcl::PointXY       search_point(x_pos, y_pos);
+    //         std::vector<int>   indices;
+    //         std::vector<float> distances;
+    //         kd_tree.nearestKSearch(search_point, 100, indices, distances);
+    //         if(indices.empty()) {
+    //           continue;
+    //         }
+    //         height_map.at<float>(y_i, x_i) = calculate_z(indices, distances);
+    //       }
+    //     },
+    //     progress);
     return height_map;
   }
 
