@@ -1,9 +1,8 @@
-#ifndef SKYMERGE_ALGO_STITCH1_HPP
-#define SKYMERGE_ALGO_STITCH1_HPP
+#ifndef SKYMERGE_ALGO_STITCH_HPP
+#define SKYMERGE_ALGO_STITCH_HPP
 
 #include <chrono>
 #include <cmath>
-#include <cstddef>
 #include <limits>
 #include <mutex>
 #include <numeric>
