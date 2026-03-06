@@ -1,5 +1,6 @@
 build*
 res/
+out/
 core
 models
 .cache/

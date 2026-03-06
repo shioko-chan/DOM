@@ -36,7 +36,7 @@ target_link_directories(skymerge PRIVATE
   ${exiv2_LIB_DIR}
 )
 
-set(MODEL_FILE_PREFIX ${CMAKE_BINARY_DIR}/data/models)
+set(MODEL_FILE_PREFIX ${CMAKE_INSTALL_PREFIX}/models)
 target_compile_definitions(skymerge PRIVATE SUPERPOINT_WEIGHT="${MODEL_FILE_PREFIX}/superpoint.onnx")
 target_compile_definitions(skymerge PRIVATE SUPERPOINT_LIGHTGLUE_WEIGHT="${MODEL_FILE_PREFIX}/superpoint_lightglue_fused.onnx")
 target_compile_definitions(skymerge PRIVATE DISK_WEIGHT="${MODEL_FILE_PREFIX}/disk.onnx")
@@ -76,3 +76,7 @@ install(TARGETS skymerge
   RUNTIME DESTINATION bin
 )
 install(DIRECTORY ../include DESTINATION include)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/models/
+  DESTINATION models
+  FILES_MATCHING PATTERN "*.onnx"
+)
