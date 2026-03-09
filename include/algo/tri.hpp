@@ -47,8 +47,8 @@ inline auto triangulation(
       [&all_res, &res_mtx, &tracks, &imgs_data, &points, &points_mtx](int idx) noexcept {
 #else
   run(
-      pntidx_vecs.size(),
-      [&all_res, &res_mtx, &pntidx_vecs, &imgs_data](int idx) noexcept {
+      tracks.size(),
+      [&all_res, &res_mtx, &tracks, &imgs_data](int idx) noexcept {
 #endif
         auto& pntidx_vec = tracks[idx];
         auto  len        = static_cast<int64_t>(pntidx_vec.size());

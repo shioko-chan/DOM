@@ -124,21 +124,15 @@ public:
       // Filter::filter_outliers_statistical(&track_point_vec, temporary_save_path / "fs3.pcd");
       // Filter::filter_invalid_image(track_point_vec, imgs_data);
 #else
-    auto res = triangulation(match_pairs, imgs_data, progress);
-    THIS_MESSAGE("[Pipeline] Filtering outliers using statistical method");
-    Filter::filter_outliers_statistical(&res);
-    THIS_MESSAGE("[Pipeline] Filtering outliers using radius method");
-    Filter::filter_outliers_radius(&res);
-    Filter::filter_near_observes(imgs_data, &res);
-    Filter::filter_too_few_points(&res);
-    Filter::filter_invalid_image(res, imgs_data);
-    THIS_MESSAGE("[Pipeline] Smoothing surface");
-    auto smoothed = Filter::smooth_surface(&res, DSM_RESOLUTION);
-    BA::ba(imgs_data, &res);
-    Filter::filter_outliers_radius(&res);
+    auto tracks = build_track(match_pairs, progress);
+    auto track_point_vec = triangulation(tracks, imgs_data, progress);
+    THIS_LOG_INFO("[Pipeline] Filtering outliers using statistical method");
+    THIS_LOG_INFO("[Pipeline] Filtering outliers using radius method");
+    BA::ba(imgs_data, &track_point_vec, 3.0);
+    Filter::filter_outliers_radius(&track_point_vec);
+    Filter::filter_outliers_statistical(&track_point_vec);
 #endif
     return track_point_vec2point_cloud(track_point_vec);
-    // return track_point_vec;
   }
 
   void stitch(ImgsData& imgs_data, const PointCloudPtr& point_cloud) {
