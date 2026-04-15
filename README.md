@@ -1,7 +1,7 @@
 # SkyMerge
 
 基于C++的高性能图像拼接系统
-
+![panorama](./img/result.jpg)
 ## 软件依赖
 - **CMake** 4.0+
 - **C++23** 兼容的编译器（GCC 13.3.0可用）
